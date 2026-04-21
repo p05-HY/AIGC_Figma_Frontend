@@ -1,0 +1,89 @@
+####################################
+# Android / Kotlin (Gradle KTS)
+####################################
+
+# Gradle build outputs & caches
+.gradle/
+build/
+**/build/
+gradle-app.setting
+!gradle/wrapper/gradle-wrapper.jar
+!gradle/wrapper/gradle-wrapper.properties
+
+# Local machine config (SDK path, signing, etc.)
+local.properties
+keystore.properties
+signing.properties
+
+# Android signing artifacts
+*.jks
+*.keystore
+*.pepk
+
+# Compiled APK / AAB / mapping
+*.apk
+*.aab
+*.ap_
+output.json
+release/
+captures/
+
+# Native build intermediates
+.externalNativeBuild/
+.cxx/
+
+####################################
+# IntelliJ IDEA / Android Studio
+####################################
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+
+# Android Studio 3.x+
+.navigation/
+
+####################################
+# Java / Kotlin compiled output
+####################################
+*.class
+*.jar
+!gradle/wrapper/gradle-wrapper.jar
+
+####################################
+# Logs & temp files
+####################################
+*.log
+logs/
+*.tmp
+*.temp
+*.bak
+*.orig
+
+####################################
+# OS-generated files
+####################################
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+
+####################################
+# Sensitive / environment files
+####################################
+.env
+.env.*
+secrets.properties
+google-services.json
