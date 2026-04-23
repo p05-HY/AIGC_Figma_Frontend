@@ -30,11 +30,18 @@ data class ChatHistory(
     val title: String,
     val timestamp: String,
     val isCurrent: Boolean = false,
+    val isPinned: Boolean = false,
 )
 
 data class SmartRecommendation(
     val title: String,
     val subtitle: String,
+)
+
+val defaultRecommendations = listOf(
+    SmartRecommendation("您下午3点有产品评审会议", "需要我帮您准备会议材料和议程摘要？"),
+    SmartRecommendation("今天深圳多云转晴 28°C", "出门建议带把伞，下午可能有阵雨"),
+    SmartRecommendation("您有3个未读快递通知", "需要我帮您查看物流详情吗？"),
 )
 
 data class PermissionItem(

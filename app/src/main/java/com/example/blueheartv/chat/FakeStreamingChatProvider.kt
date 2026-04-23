@@ -1,27 +1,28 @@
 package com.example.blueheartv.chat
 
+import com.example.blueheartv.model.Message
 import kotlinx.coroutines.delay
 
 class FakeStreamingChatProvider : ChatProvider {
     override suspend fun streamReply(
-        prompt: String,
+        messages: List<Message>,
         onEvent: (ChatStreamEvent) -> Unit,
     ) {
-        val normalizedPrompt = prompt.trim()
-        if (normalizedPrompt.isEmpty()) {
+        val lastUserContent = messages.lastOrNull { it.isUser }?.content?.trim().orEmpty()
+        if (lastUserContent.isEmpty()) {
             onEvent(ChatStreamEvent.Error("输入为空", retryable = false))
             return
         }
 
-        if (normalizedPrompt.contains("失败测试")) {
+        if (lastUserContent.contains("失败测试")) {
             delay(300)
             onEvent(ChatStreamEvent.Error("模拟网络错误，请稍后重试"))
             return
         }
 
-        val isRouteQuery = normalizedPrompt.contains("路线") ||
-            normalizedPrompt.contains("导航") ||
-            normalizedPrompt.contains("地图")
+        val isRouteQuery = lastUserContent.contains("路线") ||
+            lastUserContent.contains("导航") ||
+            lastUserContent.contains("地图")
 
         if (isRouteQuery) {
             streamRouteReply(onEvent)

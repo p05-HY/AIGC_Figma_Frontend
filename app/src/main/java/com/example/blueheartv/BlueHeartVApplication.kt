@@ -1,11 +1,32 @@
 package com.example.blueheartv
 
 import android.app.Application
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.os.Build
+import com.example.blueheartv.chat.AppContextHolder
+import com.example.blueheartv.di.appModule
 import com.example.blueheartv.telemetry.AppEventLogger
+import org.koin.android.ext.koin.androidContext
+import org.koin.core.context.startKoin
 
 class BlueHeartVApplication : Application() {
+
+    companion object {
+        const val CHANNEL_FLOATING = "floating_ball_channel"
+    }
+
     override fun onCreate() {
         super.onCreate()
+
+        AppContextHolder.install(applicationContext)
+
+        startKoin {
+            androidContext(this@BlueHeartVApplication)
+            modules(appModule)
+        }
+
+        createNotificationChannels()
 
         val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
@@ -15,6 +36,21 @@ class BlueHeartVApplication : Application() {
                 throwable = throwable,
             )
             defaultHandler?.uncaughtException(thread, throwable)
+        }
+    }
+
+    private fun createNotificationChannels() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                CHANNEL_FLOATING,
+                "悬浮球服务",
+                NotificationManager.IMPORTANCE_LOW,
+            ).apply {
+                description = "保持悬浮球在桌面运行"
+                setShowBadge(false)
+            }
+            getSystemService(NotificationManager::class.java)
+                ?.createNotificationChannel(channel)
         }
     }
 }

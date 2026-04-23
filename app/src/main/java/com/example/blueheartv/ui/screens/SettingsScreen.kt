@@ -17,15 +17,19 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.blueheartv.floating.FloatingServiceLauncher
 import com.example.blueheartv.ui.theme.*
 
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
+    onNavigateToDetail: (String) -> Unit = {},
 ) {
+    val context = LocalContext.current
     val gradientBrush = Brush.radialGradient(
         colors = listOf(GradientBlueStart, GradientBlueEnd),
         center = Offset(0.5f, 0.5f),
@@ -79,11 +83,11 @@ fun SettingsScreen(
                 shadowElevation = 2.dp,
             ) {
                 Column {
-                    SettingsItem(Icons.Outlined.Person, "个人信息")
+                    SettingsItem(Icons.Outlined.Person, "个人信息") { onNavigateToDetail("profile") }
                     SettingsDivider()
-                    SettingsItem(Icons.Outlined.Notifications, "通知设置")
+                    SettingsItem(Icons.Outlined.Notifications, "通知设置") { onNavigateToDetail("notifications") }
                     SettingsDivider()
-                    SettingsItem(Icons.Outlined.Security, "隐私与安全")
+                    SettingsItem(Icons.Outlined.Security, "隐私与安全") { onNavigateToDetail("privacy") }
                 }
             }
 
@@ -98,11 +102,11 @@ fun SettingsScreen(
                 shadowElevation = 2.dp,
             ) {
                 Column {
-                    SettingsItem(Icons.Outlined.Language, "语言设置")
+                    SettingsItem(Icons.Outlined.Language, "语言设置") { onNavigateToDetail("language") }
                     SettingsDivider()
-                    SettingsItem(Icons.Outlined.DarkMode, "主题外观")
+                    SettingsItem(Icons.Outlined.DarkMode, "主题外观") { onNavigateToDetail("theme") }
                     SettingsDivider()
-                    SettingsItem(Icons.Outlined.Storage, "存储管理")
+                    SettingsItem(Icons.Outlined.Storage, "存储管理") { onNavigateToDetail("storage") }
                 }
             }
 
@@ -117,9 +121,26 @@ fun SettingsScreen(
                 shadowElevation = 2.dp,
             ) {
                 Column {
-                    SettingsItem(Icons.Outlined.Help, "帮助与反馈")
+                    SettingsItem(Icons.Outlined.ChatBubble, "开启悬浮球") {
+                        FloatingServiceLauncher.launch(context)
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                shape = RoundedCornerShape(16.dp),
+                color = SurfaceWhite,
+                shadowElevation = 2.dp,
+            ) {
+                Column {
+                    SettingsItem(Icons.Outlined.Help, "帮助与反馈") { onNavigateToDetail("help") }
                     SettingsDivider()
-                    SettingsItem(Icons.Outlined.Info, "关于")
+                    SettingsItem(Icons.Outlined.Info, "关于") { onNavigateToDetail("about") }
                 }
             }
 

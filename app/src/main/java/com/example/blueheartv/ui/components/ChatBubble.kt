@@ -1,43 +1,88 @@
 package com.example.blueheartv.ui.components
 
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.ContentCopy
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
+import androidx.compose.material.icons.outlined.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.blueheartv.R
 import com.example.blueheartv.model.Message
 import com.example.blueheartv.model.ToolCall
 import com.example.blueheartv.ui.theme.*
+import com.example.blueheartv.util.ToastType
+import com.example.blueheartv.util.ToastUtil
+import kotlinx.coroutines.delay
 
+private const val TYPEWRITER_DELAY_MS = 35L
+
+@Composable
+fun rememberTypewriterText(fullText: String, isStreaming: Boolean): String {
+    var displayedLength by remember { mutableIntStateOf(0) }
+    val currentFullText by rememberUpdatedState(fullText)
+
+    LaunchedEffect(isStreaming) {
+        if (!isStreaming) {
+            displayedLength = currentFullText.length
+            return@LaunchedEffect
+        }
+        while (displayedLength < currentFullText.length) {
+            delay(TYPEWRITER_DELAY_MS)
+            val target = currentFullText.length
+            if (displayedLength < target) {
+                displayedLength++
+            }
+        }
+    }
+
+    LaunchedEffect(fullText) {
+        if (isStreaming && displayedLength < fullText.length) {
+            while (displayedLength < fullText.length) {
+                delay(TYPEWRITER_DELAY_MS)
+                displayedLength++
+            }
+        } else if (!isStreaming) {
+            displayedLength = fullText.length
+        }
+    }
+
+    return if (displayedLength >= fullText.length) fullText else fullText.substring(0, displayedLength)
+}
+
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun UserBubble(
     message: Message,
+    onCopy: (String) -> Unit = {},
+    onDelete: (String) -> Unit = {},
+    onEditConfirm: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val bubbleShape = RoundedCornerShape(
@@ -47,32 +92,170 @@ fun UserBubble(
         bottomEnd = 10.dp,
     )
 
+    var showMenu by remember { mutableStateOf(false) }
+    var isEditing by remember { mutableStateOf(false) }
+    var editText by remember { mutableStateOf(message.content) }
+    var enableTextSelection by remember { mutableStateOf(false) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+    val focusRequester = remember { FocusRequester() }
+
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text("删除消息") },
+            text = { Text("确定要删除这条消息吗？") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDeleteConfirm = false
+                    onDelete(message.id)
+                }) { Text("确定") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) { Text("取消") }
+            },
+        )
+    }
+
     Row(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 24.dp, vertical = 4.dp),
         horizontalArrangement = Arrangement.End,
     ) {
-        Box(
-            modifier = Modifier
-                .widthIn(max = 260.dp)
-                .border(1.dp, BorderGray, bubbleShape)
-                .background(SurfaceWhite, bubbleShape)
-                .padding(16.dp),
-        ) {
-            Text(
-                text = message.content,
-                fontSize = 16.sp,
-                color = TextDark,
-                lineHeight = 24.sp,
-            )
+        Box {
+            Box(
+                modifier = Modifier
+                    .widthIn(max = 260.dp)
+                    .border(1.dp, BorderGray, bubbleShape)
+                    .background(SurfaceWhite, bubbleShape)
+                    .combinedClickable(
+                        onClick = {},
+                        onLongClick = { if (!isEditing) showMenu = true },
+                    )
+                    .padding(16.dp),
+            ) {
+                if (isEditing) {
+                    Column {
+                        BasicTextField(
+                            value = editText,
+                            onValueChange = { editText = it },
+                            textStyle = TextStyle(
+                                fontSize = 16.sp,
+                                color = TextDark,
+                                lineHeight = 24.sp,
+                            ),
+                            cursorBrush = SolidColor(BlueAccent),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .focusRequester(focusRequester),
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            IconButton(
+                                onClick = {
+                                    isEditing = false
+                                    editText = message.content
+                                },
+                                modifier = Modifier.size(32.dp),
+                            ) {
+                                Icon(Icons.Outlined.Close, "取消", tint = MaterialTheme.colorScheme.error)
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            IconButton(
+                                onClick = {
+                                    isEditing = false
+                                    val newContent = editText.trim()
+                                    if (newContent.isNotBlank() && newContent != message.content) {
+                                        onEditConfirm(newContent)
+                                    }
+                                },
+                                modifier = Modifier.size(32.dp),
+                            ) {
+                                Icon(Icons.Outlined.Check, "确认", tint = BlueAccent)
+                            }
+                        }
+                    }
+                    LaunchedEffect(Unit) {
+                        delay(100)
+                        focusRequester.requestFocus()
+                    }
+                } else if (enableTextSelection) {
+                    SelectionContainer {
+                        Text(
+                            text = message.content,
+                            fontSize = 16.sp,
+                            color = TextDark,
+                            lineHeight = 24.sp,
+                        )
+                    }
+                } else {
+                    Text(
+                        text = message.content,
+                        fontSize = 16.sp,
+                        color = TextDark,
+                        lineHeight = 24.sp,
+                    )
+                }
+            }
+            DropdownMenu(
+                expanded = showMenu,
+                onDismissRequest = { showMenu = false },
+                offset = DpOffset(0.dp, 0.dp),
+            ) {
+                DropdownMenuItem(
+                    text = { Text("复制") },
+                    onClick = {
+                        showMenu = false
+                        onCopy(message.content)
+                    },
+                    leadingIcon = { Icon(Icons.Outlined.ContentCopy, null, Modifier.size(18.dp)) },
+                )
+                DropdownMenuItem(
+                    text = { Text("修改") },
+                    onClick = {
+                        showMenu = false
+                        editText = message.content
+                        isEditing = true
+                    },
+                    leadingIcon = { Icon(Icons.Outlined.Edit, null, Modifier.size(18.dp)) },
+                )
+                DropdownMenuItem(
+                    text = { Text("选取文字") },
+                    onClick = {
+                        showMenu = false
+                        enableTextSelection = true
+                    },
+                    leadingIcon = { Icon(Icons.Outlined.SelectAll, null, Modifier.size(18.dp)) },
+                )
+                DropdownMenuItem(
+                    text = { Text("删除", color = MaterialTheme.colorScheme.error) },
+                    onClick = {
+                        showMenu = false
+                        showDeleteConfirm = true
+                    },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Outlined.Delete, null, Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.error,
+                        )
+                    },
+                )
+            }
         }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun AiBubble(
     message: Message,
+    onCopy: (String) -> Unit = {},
+    onSpeak: (String) -> Unit = {},
+    onDelete: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val bubbleShape = RoundedCornerShape(
@@ -82,6 +265,27 @@ fun AiBubble(
         bottomEnd = 24.dp,
     )
 
+    var showMenu by remember { mutableStateOf(false) }
+    var enableTextSelection by remember { mutableStateOf(false) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text("删除消息") },
+            text = { Text("确定要删除这条回答吗？") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDeleteConfirm = false
+                    onDelete(message.id)
+                }) { Text("确定") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) { Text("取消") }
+            },
+        )
+    }
+
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -89,7 +293,6 @@ fun AiBubble(
         horizontalArrangement = Arrangement.Start,
         verticalAlignment = Alignment.Top,
     ) {
-        // Robot avatar
         Box(
             modifier = Modifier
                 .size(42.dp)
@@ -108,22 +311,89 @@ fun AiBubble(
         Spacer(modifier = Modifier.width(8.dp))
 
         Column {
-            Box(
-                modifier = Modifier
-                    .widthIn(max = 300.dp)
-                    .shadow(2.dp, bubbleShape)
-                    .background(LightGray, bubbleShape)
-                    .padding(16.dp),
-            ) {
-                if (message.isLoading) {
-                    LoadingDots()
-                } else {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        message.toolCalls?.takeIf { it.isNotEmpty() }?.let { toolCalls ->
-                            ToolCallCard(toolCalls = toolCalls)
+            Box {
+                Box(
+                    modifier = Modifier
+                        .widthIn(max = 300.dp)
+                        .shadow(2.dp, bubbleShape)
+                        .background(LightGray, bubbleShape)
+                        .combinedClickable(
+                            onClick = {},
+                            onLongClick = {
+                                if (!message.isLoading) showMenu = true
+                            },
+                        )
+                        .padding(16.dp),
+                ) {
+                    if (message.isLoading && message.content.isBlank()) {
+                        LoadingDots()
+                    } else {
+                        val isStreaming = message.deliveryState == com.example.blueheartv.model.MessageDeliveryState.STREAMING
+                        val displayText = rememberTypewriterText(message.content, isStreaming)
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            message.toolCalls?.takeIf { it.isNotEmpty() }?.let { toolCalls ->
+                                ToolCallCard(toolCalls = toolCalls)
+                            }
+                            if (enableTextSelection) {
+                                SelectionContainer {
+                                    MarkdownMessageContent(content = displayText)
+                                }
+                            } else {
+                                MarkdownMessageContent(content = displayText)
+                            }
                         }
-                        MarkdownMessageContent(content = message.content)
                     }
+                }
+                DropdownMenu(
+                    expanded = showMenu,
+                    onDismissRequest = { showMenu = false },
+                    offset = DpOffset(0.dp, 0.dp),
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("创建文档") },
+                        onClick = {
+                            showMenu = false
+                            ToastUtil.show("创建文档功能开发中", ToastType.INFO)
+                        },
+                        leadingIcon = { Icon(Icons.Outlined.Description, null, Modifier.size(18.dp)) },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("选取文字") },
+                        onClick = {
+                            showMenu = false
+                            enableTextSelection = true
+                        },
+                        leadingIcon = { Icon(Icons.Outlined.SelectAll, null, Modifier.size(18.dp)) },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("收藏") },
+                        onClick = {
+                            showMenu = false
+                            ToastUtil.show("收藏功能开发中", ToastType.INFO)
+                        },
+                        leadingIcon = { Icon(Icons.Outlined.BookmarkBorder, null, Modifier.size(18.dp)) },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("导出文件") },
+                        onClick = {
+                            showMenu = false
+                            ToastUtil.show("导出文件功能开发中", ToastType.INFO)
+                        },
+                        leadingIcon = { Icon(Icons.Outlined.FileDownload, null, Modifier.size(18.dp)) },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("删除", color = MaterialTheme.colorScheme.error) },
+                        onClick = {
+                            showMenu = false
+                            showDeleteConfirm = true
+                        },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Outlined.Delete, null, Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.error,
+                            )
+                        },
+                    )
                 }
             }
         }
@@ -164,7 +434,7 @@ private fun ToolCallCard(toolCalls: List<ToolCall>) {
 }
 
 @Composable
-private fun MarkdownMessageContent(content: String) {
+fun MarkdownMessageContent(content: String) {
     val clipboardManager = LocalClipboardManager.current
     val blocks = remember(content) { parseMarkdownBlocks(content) }
 
@@ -173,14 +443,12 @@ private fun MarkdownMessageContent(content: String) {
             when (block) {
                 is MarkdownBlock.TextBlock -> {
                     if (block.text.isNotBlank()) {
-                        SelectionContainer {
-                            Text(
-                                text = block.text,
-                                fontSize = 16.sp,
-                                color = TextBlack,
-                                lineHeight = 24.sp,
-                            )
-                        }
+                        Text(
+                            text = block.text,
+                            fontSize = 16.sp,
+                            color = TextBlack,
+                            lineHeight = 24.sp,
+                        )
                     }
                 }
 

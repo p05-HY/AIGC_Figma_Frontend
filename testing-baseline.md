@@ -27,5 +27,6 @@
 
 - `app/src/test/java/com/example/blueheartv/test/MainDispatcherRule.kt`
 - `app/src/test/java/com/example/blueheartv/viewmodel/ChatViewModelTest.kt`
+- `app/src/test/java/com/example/blueheartv/chat/SiliconFlowChatProviderTest.kt`
 - `app/src/androidTest/java/com/example/blueheartv/MainNavigationSmokeTest.kt`
 - `app/src/androidTest/java/com/example/blueheartv/HomeChatFlowUiTest.kt`

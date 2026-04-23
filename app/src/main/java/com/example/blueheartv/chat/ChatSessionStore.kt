@@ -11,6 +11,7 @@ data class StoredChatSession(
     val id: String,
     val title: String,
     val updatedAtMillis: Long,
+    val isPinned: Boolean = false,
     val messages: List<Message>,
 )
 
@@ -46,6 +47,7 @@ object ChatSessionStore {
 
                     val title = item.optString("title").ifBlank { "当前对话" }
                     val updatedAtMillis = item.optLong("updatedAtMillis", 0L)
+                    val isPinned = item.optBoolean("isPinned", false)
                     val messagesJson = item.optJSONArray("messages") ?: JSONArray()
 
                     val messages = buildList {
@@ -95,6 +97,7 @@ object ChatSessionStore {
                             id = id,
                             title = title,
                             updatedAtMillis = updatedAtMillis,
+                            isPinned = isPinned,
                             messages = messages,
                         ),
                     )
@@ -116,15 +119,24 @@ object ChatSessionStore {
     ) {
         if (context == null) return
 
-        val normalizedSessions = snapshot.sessions
+        val mergedSnapshot = mergeSnapshots(
+            existing = load(context),
+            incoming = snapshot,
+        )
+
+        val normalizedSessions = mergedSnapshot.sessions
             .sortedByDescending { it.updatedAtMillis }
             .take(MAX_SESSIONS)
             .map { session ->
                 session.copy(messages = session.messages.takeLast(MAX_MESSAGES_PER_SESSION))
             }
 
+        val normalizedActiveSessionId = mergedSnapshot.activeSessionId
+            ?.takeIf { activeId -> normalizedSessions.any { it.id == activeId } }
+            ?: normalizedSessions.firstOrNull()?.id
+
         val root = JSONObject().apply {
-            put("activeSessionId", snapshot.activeSessionId ?: JSONObject.NULL)
+            put("activeSessionId", normalizedActiveSessionId ?: JSONObject.NULL)
             put(
                 "sessions",
                 JSONArray().apply {
@@ -134,6 +146,7 @@ object ChatSessionStore {
                                 put("id", session.id)
                                 put("title", session.title)
                                 put("updatedAtMillis", session.updatedAtMillis)
+                                put("isPinned", session.isPinned)
                                 put(
                                     "messages",
                                     JSONArray().apply {
@@ -182,6 +195,53 @@ object ChatSessionStore {
             .edit()
             .putString(KEY_SNAPSHOT, root.toString())
             .apply()
+    }
+
+    private fun mergeSnapshots(
+        existing: ChatSessionsSnapshot,
+        incoming: ChatSessionsSnapshot,
+    ): ChatSessionsSnapshot {
+        if (existing.sessions.isEmpty()) return incoming
+        if (incoming.sessions.isEmpty()) return existing
+
+        val mergedById = linkedMapOf<String, StoredChatSession>()
+
+        existing.sessions.forEach { session ->
+            mergedById[session.id] = session
+        }
+
+        incoming.sessions.forEach { session ->
+            val current = mergedById[session.id]
+            mergedById[session.id] =
+                if (current == null) {
+                    session
+                } else {
+                    chooseNewerSession(current, session)
+                }
+        }
+
+        val mergedSessions = mergedById.values.toList()
+
+        val activeSessionId = incoming.activeSessionId
+            ?.takeIf { activeId -> mergedById.containsKey(activeId) }
+            ?: existing.activeSessionId?.takeIf { activeId -> mergedById.containsKey(activeId) }
+
+        return ChatSessionsSnapshot(
+            activeSessionId = activeSessionId,
+            sessions = mergedSessions,
+        )
+    }
+
+    private fun chooseNewerSession(
+        current: StoredChatSession,
+        incoming: StoredChatSession,
+    ): StoredChatSession {
+        return when {
+            incoming.updatedAtMillis > current.updatedAtMillis -> incoming
+            incoming.updatedAtMillis < current.updatedAtMillis -> current
+            incoming.messages.size >= current.messages.size -> incoming
+            else -> current
+        }
     }
 
     private fun parseDeliveryState(value: String?): MessageDeliveryState {

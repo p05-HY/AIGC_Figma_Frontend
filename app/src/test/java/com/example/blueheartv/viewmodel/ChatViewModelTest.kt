@@ -1,13 +1,14 @@
 package com.example.blueheartv.viewmodel
 
 import com.example.blueheartv.chat.ChatProvider
-import com.example.blueheartv.chat.ChatSessionsSnapshot
 import com.example.blueheartv.chat.ChatStreamEvent
-import com.example.blueheartv.chat.StoredChatSession
+import com.example.blueheartv.db.MessageEntity
+import com.example.blueheartv.db.SessionEntity
 import com.example.blueheartv.model.Message
 import com.example.blueheartv.model.MessageDeliveryState
 import com.example.blueheartv.test.MainDispatcherRule
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -94,48 +95,34 @@ class ChatViewModelTest {
     }
 
     @Test
-    fun sendMessage_persistsSnapshot() = runTest {
-        var savedSnapshot: ChatSessionsSnapshot? = null
+    fun sendMessage_persistsToDao() = runTest {
+        val dao = FakeChatDao()
         val provider = ScriptedProvider { _, onEvent ->
             onEvent(ChatStreamEvent.TextDelta("ok"))
             onEvent(ChatStreamEvent.Completed)
         }
 
-        val viewModel = createViewModel(
-            chatProvider = provider,
-            saver = { savedSnapshot = it },
-        )
+        val viewModel = createViewModel(chatProvider = provider, dao = dao)
         viewModel.onInputChanged("persist me")
         viewModel.sendMessage()
         advanceUntilIdle()
 
-        val snapshot = savedSnapshot
-        assertNotNull(snapshot)
-        assertFalse(snapshot!!.sessions.isEmpty())
-        assertFalse(snapshot.sessions.first().messages.isEmpty())
+        val sessions = dao.getAllSessions()
+        assertFalse(sessions.isEmpty())
+        val messages = dao.getMessagesForSession(sessions.first().id)
+        assertFalse(messages.isEmpty())
     }
 
     @Test
     fun restoreSessions_recoversLastConversation() = runTest {
-        val snapshot = ChatSessionsSnapshot(
-            activeSessionId = "session-1",
-            sessions = listOf(
-                StoredChatSession(
-                    id = "session-1",
-                    title = "恢复会话",
-                    updatedAtMillis = 2000L,
-                    messages = listOf(
-                        Message("m1", "hi", isUser = true),
-                        Message("m2", "hello", isUser = false),
-                    ),
-                ),
-            ),
-        )
+        val dao = FakeChatDao()
+        dao.upsertSession(SessionEntity("session-1", "恢复会话", 2000L, false))
+        dao.upsertMessages(listOf(
+            MessageEntity("m1", "session-1", "hi", true, "COMPLETED", null, null, 0),
+            MessageEntity("m2", "session-1", "hello", false, "COMPLETED", null, null, 1),
+        ))
 
-        val viewModel = createViewModel(
-            loader = { snapshot },
-            saver = {},
-        )
+        val viewModel = createViewModel(dao = dao)
 
         val uiState = viewModel.uiState.value
         assertFalse(uiState.histories.isEmpty())
@@ -144,31 +131,69 @@ class ChatViewModelTest {
         assertEquals(ChatState.CHAT_SIMPLE, uiState.chatState)
     }
 
+    @Test
+    fun persistSessions_debounced() = runTest {
+        val dao = FakeChatDao()
+        val provider = ScriptedProvider { _, onEvent ->
+            onEvent(ChatStreamEvent.TextDelta("ok"))
+            onEvent(ChatStreamEvent.Completed)
+        }
+
+        val viewModel = createViewModel(
+            chatProvider = provider,
+            dao = dao,
+            persistDebounceMs = 100L,
+        )
+
+        viewModel.onInputChanged("first")
+        viewModel.sendMessage()
+        advanceUntilIdle()
+
+        val sessionId = viewModel.uiState.value.histories.firstOrNull()?.id
+        require(!sessionId.isNullOrBlank())
+
+        viewModel.renameSession(sessionId, "新标题")
+
+        // Before debounce, DAO should not have the new title yet
+        val beforeTitle = dao.getAllSessions().firstOrNull { it.id == sessionId }?.title
+        assertTrue(beforeTitle == null || beforeTitle != "新标题")
+
+        advanceTimeBy(150L)
+        advanceUntilIdle()
+
+        val afterTitle = dao.getAllSessions().firstOrNull { it.id == sessionId }?.title
+        assertEquals("新标题", afterTitle)
+    }
+
     private fun createViewModel(
         chatProvider: ChatProvider = ScriptedProvider { _, onEvent ->
             onEvent(ChatStreamEvent.Completed)
         },
-        loader: () -> ChatSessionsSnapshot = { ChatSessionsSnapshot(null, emptyList()) },
-        saver: (ChatSessionsSnapshot) -> Unit = {},
+        dao: FakeChatDao = FakeChatDao(),
         timeProvider: () -> Long = { System.currentTimeMillis() },
+        persistDebounceMs: Long = 0L,
     ): ChatViewModel {
-        return ChatViewModel(
-            chatProvider = chatProvider,
-            snapshotLoader = loader,
-            snapshotSaver = saver,
+        val repo = ChatSessionRepository(
+            dao = dao,
             timeProvider = timeProvider,
             idProvider = { "id-${System.nanoTime()}" },
+            persistDebounceMs = persistDebounceMs,
+            scope = this,
+        )
+        return ChatViewModel(
+            chatProvider = chatProvider,
+            repo = repo,
         )
     }
 
     private class ScriptedProvider(
-        private val script: suspend (String, (ChatStreamEvent) -> Unit) -> Unit,
+        private val script: suspend (List<Message>, (ChatStreamEvent) -> Unit) -> Unit,
     ) : ChatProvider {
         override suspend fun streamReply(
-            prompt: String,
+            messages: List<Message>,
             onEvent: (ChatStreamEvent) -> Unit,
         ) {
-            script(prompt, onEvent)
+            script(messages, onEvent)
         }
     }
 }

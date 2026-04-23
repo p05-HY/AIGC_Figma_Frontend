@@ -12,8 +12,8 @@ class MainNavigationSmokeTest {
     val composeRule = createAndroidComposeRule<MainActivity>()
 
     @Test
-    fun launchApp_showsAuthScreen() {
-        composeRule.onNodeWithText("欢迎使用超级蓝心小V")
+    fun launchApp_showsHomeScreen() {
+        composeRule.onNodeWithText("智能推荐")
             .assertIsDisplayed()
     }
 }

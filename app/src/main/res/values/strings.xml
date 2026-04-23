@@ -1,4 +1,126 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">超级蓝心小V</string>
+
+    <!-- HomeScreen -->
+    <string name="smart_recommendations">智能推荐</string>
+    <string name="welcome_title">您好！我是超级蓝心小V~</string>
+    <string name="welcome_subtitle">有什么我可以帮助您的吗？</string>
+    <string name="btn_read_screen">读取屏幕</string>
+    <string name="btn_today_schedule">今日行程</string>
+    <string name="btn_today_delivery">今日快递</string>
+    <string name="btn_today_weather">今日天气</string>
+    <string name="input_placeholder">发消息…</string>
+    <string name="retry">重试</string>
+
+    <!-- Quick action prompts -->
+    <string name="prompt_read_screen">请读取我当前屏幕的内容并进行分析</string>
+    <string name="prompt_today_schedule">请告诉我今天的行程安排</string>
+    <string name="prompt_today_delivery">请帮我查看今天的快递物流状态</string>
+    <string name="prompt_today_weather">请告诉我今天的天气情况和出行建议</string>
+
+    <!-- FloatingMenu -->
+    <string name="menu_new_chat">新对话</string>
+    <string name="menu_screenshot">截图识别</string>
+    <string name="menu_translate">快速翻译</string>
+    <string name="menu_summarize">内容总结</string>
+    <string name="menu_settings">设置</string>
+    <string name="feature_in_dev_screenshot">截图识别功能开发中</string>
+    <string name="feature_in_dev_translate">快速翻译功能开发中</string>
+    <string name="feature_in_dev_summarize">内容总结功能开发中</string>
+    <string name="feature_in_dev_voice_input">录音功能开发中，权限已就绪</string>
+
+    <!-- Permission rationales -->
+    <string name="rationale_media_attach">需要存储权限以选择图片</string>
+    <string name="rationale_audio_input">需要麦克风权限以进行语音输入</string>
+    <string name="rationale_calendar_schedule">需要日历权限以读取今日行程</string>
+    <string name="rationale_notification_delivery">需要通知权限以读取快递动态提醒</string>
+    <string name="rationale_location_weather">需要位置权限以提供本地天气和出行建议</string>
+
+    <!-- Smart Recommendations -->
+    <string name="rec_meeting_title">您下午3点有产品评审会议</string>
+    <string name="rec_meeting_subtitle">需要我帮您准备会议材料和议程摘要？</string>
+    <string name="rec_weather_title">今天深圳多云转晴 28°C</string>
+    <string name="rec_weather_subtitle">出门建议带把伞，下午可能有阵雨</string>
+    <string name="rec_delivery_title">您有3个未读快递通知</string>
+    <string name="rec_delivery_subtitle">需要我帮您查看物流详情吗？</string>
+
+    <!-- AuthScreen -->
+    <string name="auth_title">超级蓝心小V</string>
+    <string name="auth_subtitle">系统级AI智能体</string>
+    <string name="auth_description">为了给您提供最佳的AI助理体验，\n需要您授权以下权限：</string>
+    <string name="auth_button">一键授权，开始使用</string>
+    <string name="perm_location">位置信息</string>
+    <string name="perm_location_desc">获取位置以提供导航和出行建议</string>
+    <string name="perm_calendar">日历访问</string>
+    <string name="perm_calendar_desc">读取日程安排，智能提醒会议</string>
+    <string name="perm_notification">通知权限</string>
+    <string name="perm_notification_desc">及时推送重要消息和提醒</string>
+    <string name="perm_phone">电话权限</string>
+    <string name="perm_phone_desc">识别来电信息，提供智能建议</string>
+    <string name="perm_storage">存储权限</string>
+    <string name="perm_storage_desc">保存对话记录和用户偏好</string>
+    <string name="perm_accessibility">无障碍服务</string>
+    <string name="perm_accessibility_desc">读取屏幕内容，提供实时AI辅助</string>
+
+    <!-- SettingsScreen -->
+    <string name="settings_title">设置</string>
+    <string name="settings_profile">个人信息</string>
+    <string name="settings_profile_desc">查看或修改您的个人资料</string>
+    <string name="settings_notifications">通知设置</string>
+    <string name="settings_notifications_desc">管理推送通知和提醒</string>
+    <string name="settings_privacy">隐私与安全</string>
+    <string name="settings_privacy_desc">管理数据和安全设置</string>
+    <string name="settings_language">语言设置</string>
+    <string name="settings_language_desc">选择界面语言</string>
+    <string name="settings_theme">主题外观</string>
+    <string name="settings_theme_desc">选择深色或浅色模式</string>
+    <string name="settings_storage">存储管理</string>
+    <string name="settings_storage_desc">查看缓存和数据占用</string>
+    <string name="settings_help">帮助与反馈</string>
+    <string name="settings_help_desc">查看教程、常见问题</string>
+    <string name="settings_about">关于</string>
+    <string name="settings_about_desc">版本信息和协议</string>
+
+    <!-- SettingsDetailScreen -->
+    <string name="nickname">昵称</string>
+    <string name="account">账号</string>
+    <string name="phone_number">手机号</string>
+    <string name="push_notifications">推送通知</string>
+    <string name="message_sound">消息声音</string>
+    <string name="vibration_alert">震动提醒</string>
+    <string name="save_chat_history">保存对话历史</string>
+    <string name="analytics_help_improve">数据分析（帮助改善产品）</string>
+    <string name="clear_all_history">清除所有对话记录</string>
+    <string name="logout_account">注销账号</string>
+    <string name="clear_history_dialog_title">清除对话记录</string>
+    <string name="clear_history_dialog_message">确定要清除所有对话记录吗？此操作无法撤销。</string>
+    <string name="logout_dialog_title">注销账号</string>
+    <string name="logout_dialog_message">确定要注销当前账号吗？注销后需要重新登录。</string>
+    <string name="confirm">确定</string>
+    <string name="cancel">取消</string>
+    <string name="follow_system">跟随系统</string>
+    <string name="light_mode">浅色模式</string>
+    <string name="dark_mode">深色模式</string>
+    <string name="cache_size">缓存大小</string>
+    <string name="chat_records">对话记录</string>
+    <string name="total_usage">总占用</string>
+    <string name="clear_cache">清除缓存</string>
+    <string name="user_tutorial">使用教程</string>
+    <string name="faq">常见问题</string>
+    <string name="feedback">意见反馈</string>
+    <string name="contact_support">联系客服</string>
+    <string name="version">版本号</string>
+    <string name="build_number">构建号</string>
+    <string name="developer">开发者</string>
+    <string name="user_agreement">用户协议</string>
+    <string name="privacy_policy">隐私政策</string>
+    <string name="open_source_licenses">开源许可</string>
+    <string name="no_content">暂无内容</string>
+
+    <!-- Chat -->
+    <string name="current_conversation">当前对话</string>
+    <string name="empty_response">我已经收到你的问题，但暂时没有生成内容。请再试一次。</string>
+    <string name="response_failed">抱歉，这次响应失败了。</string>
+    <string name="request_failed_retry">请求失败，请稍后重试</string>
 </resources>

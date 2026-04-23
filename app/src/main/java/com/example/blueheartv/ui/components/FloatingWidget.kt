@@ -14,6 +14,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.example.blueheartv.R
@@ -26,7 +28,16 @@ fun FloatingWidget(
     onClick: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    var offset by remember { mutableStateOf(Offset(300f, 600f)) }
+    val configuration = LocalConfiguration.current
+    val density = LocalDensity.current
+    val screenWidthPx = with(density) { configuration.screenWidthDp.dp.toPx() }
+    val screenHeightPx = with(density) { configuration.screenHeightDp.dp.toPx() }
+    val widgetSizePx = with(density) { 56.dp.toPx() }
+    val marginPx = with(density) { 16.dp.toPx() }
+
+    var offset by remember {
+        mutableStateOf(Offset(screenWidthPx - widgetSizePx - marginPx, screenHeightPx * 0.7f))
+    }
 
     Box(
         modifier = modifier
@@ -35,8 +46,8 @@ fun FloatingWidget(
                 detectDragGestures { change, dragAmount ->
                     change.consume()
                     offset = Offset(
-                        x = offset.x + dragAmount.x,
-                        y = offset.y + dragAmount.y,
+                        x = (offset.x + dragAmount.x).coerceIn(0f, screenWidthPx - widgetSizePx),
+                        y = (offset.y + dragAmount.y).coerceIn(0f, screenHeightPx - widgetSizePx),
                     )
                 }
             },

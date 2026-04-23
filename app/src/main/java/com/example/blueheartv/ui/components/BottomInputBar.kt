@@ -1,23 +1,27 @@
 package com.example.blueheartv.ui.components
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.outlined.AttachFile
+import androidx.compose.material.icons.outlined.Mic
+import androidx.compose.material.ripple.rememberRipple
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.blueheartv.R
 import com.example.blueheartv.ui.theme.*
 
 @Composable
@@ -26,6 +30,8 @@ fun BottomInputBar(
     onValueChange: (String) -> Unit,
     onSend: () -> Unit,
     sendEnabled: Boolean = true,
+    onAttachClick: () -> Unit = {},
+    onMicClick: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
@@ -48,15 +54,20 @@ fun BottomInputBar(
                 Row(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(horizontal = 14.dp),
+                        .padding(horizontal = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Image(
-                        painter = painterResource(R.drawable.ic_attachment),
-                        contentDescription = "Attach",
-                        modifier = Modifier.size(19.dp),
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
+                    IconButton24(
+                        onClick = onAttachClick,
+                        contentDescription = "Attach file",
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.AttachFile,
+                            contentDescription = null,
+                            modifier = Modifier.size(24.dp),
+                            tint = IconGray,
+                        )
+                    }
 
                     Box(modifier = Modifier.weight(1f)) {
                         if (value.isEmpty()) {
@@ -68,7 +79,7 @@ fun BottomInputBar(
                         }
                         BasicTextField(
                             value = value,
-                            onValueChange = onValueChange,
+                            onValueChange = { if (it.length <= 2000) onValueChange(it) },
                             modifier = Modifier.fillMaxWidth(),
                             textStyle = TextStyle(
                                 fontSize = 14.sp,
@@ -78,28 +89,52 @@ fun BottomInputBar(
                         )
                     }
 
-                    Image(
-                        painter = painterResource(R.drawable.ic_mic),
-                        contentDescription = "Mic",
-                        modifier = Modifier.size(13.dp, 19.dp),
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Image(
-                        painter = painterResource(R.drawable.ic_send_arrow),
+                    IconButton24(
+                        onClick = onMicClick,
+                        contentDescription = "Voice input",
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Mic,
+                            contentDescription = null,
+                            modifier = Modifier.size(24.dp),
+                            tint = IconGray,
+                        )
+                    }
+
+                    IconButton24(
+                        onClick = { if (sendEnabled) onSend() },
                         contentDescription = "Send",
-                        modifier = Modifier
-                            .size(21.dp)
-                            .then(
-                                if (sendEnabled) {
-                                    Modifier.clickable { onSend() }
-                                } else {
-                                    Modifier
-                                },
-                            ),
-                    )
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.Send,
+                            contentDescription = null,
+                            modifier = Modifier.size(24.dp),
+                            tint = if (sendEnabled) BlueAccent else IconGray,
+                        )
+                    }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun IconButton24(
+    onClick: () -> Unit,
+    contentDescription: String,
+    content: @Composable () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = rememberRipple(bounded = false, radius = 20.dp),
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        content()
     }
 }
 

@@ -4,15 +4,18 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.blueheartv.ui.theme.*
@@ -32,7 +35,6 @@ fun GlassButton(
             .clickable { onClick() },
         contentAlignment = Alignment.Center,
     ) {
-        // Background gradient layer
         Box(
             modifier = Modifier
                 .matchParentSize()
@@ -47,14 +49,12 @@ fun GlassButton(
                 )
         )
 
-        // Border with glass effect
         Box(
             modifier = Modifier
                 .matchParentSize()
                 .border(0.5.dp, ButtonBorderDark, shape)
         )
 
-        // Top highlight stroke
         Box(
             modifier = Modifier
                 .matchParentSize()
@@ -77,7 +77,9 @@ fun GlassButton(
             text = text,
             fontSize = 12.sp,
             color = MutedText,
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
         )
     }
 }
@@ -87,17 +89,19 @@ fun GlassButtonRow(
     buttons: List<String>,
     onButtonClick: (Int) -> Unit = {},
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 13.dp),
+    val screenWidth = LocalConfiguration.current.screenWidthDp.dp
+    val buttonWidth = (screenWidth - 13.dp * 2 - 8.dp * 3) / 3.5f
+
+    LazyRow(
+        modifier = Modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(horizontal = 13.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        buttons.forEach { label ->
+        itemsIndexed(buttons) { index, label ->
             GlassButton(
                 text = label,
-                onClick = { onButtonClick(buttons.indexOf(label)) },
-                modifier = Modifier.weight(1f),
+                onClick = { onButtonClick(index) },
+                modifier = Modifier.width(buttonWidth),
             )
         }
     }

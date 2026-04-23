@@ -1,5 +1,6 @@
 package com.example.blueheartv.ui.components
 
+import android.os.Build
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -7,7 +8,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -20,22 +20,23 @@ import com.example.blueheartv.ui.theme.*
 fun DecorativeBackground(
     modifier: Modifier = Modifier,
 ) {
-    Box(modifier = modifier.fillMaxSize()) {
-        // Background abstract image
+    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+        val w = maxWidth
+        val h = maxHeight
+
         Image(
             painter = painterResource(R.drawable.bg_abstract),
             contentDescription = null,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(790.dp),
+                .height(h),
             contentScale = ContentScale.Crop,
         )
 
-        // Semi-transparent white overlay at top
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(790.dp)
+                .height(h)
                 .background(
                     Brush.verticalGradient(
                         colors = listOf(
@@ -46,39 +47,41 @@ fun DecorativeBackground(
                 )
         )
 
-        // Cyan glow ellipse (top-left area)
+        val blurMod = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            Modifier.blur(100.dp)
+        } else {
+            Modifier
+        }
+
         Box(
             modifier = Modifier
-                .offset(x = 21.dp, y = 322.dp)
-                .size(48.dp, 47.dp)
-                .blur(100.dp)
+                .offset(x = w * 0.05f, y = h * 0.4f)
+                .size(w * 0.12f, w * 0.12f)
+                .then(blurMod)
                 .background(GlowCyanShadow, CircleShape),
         )
 
-        // Blue glow ellipse (top-right area)
         Box(
             modifier = Modifier
-                .offset(x = 179.dp, y = 12.dp)
-                .size(116.dp, 114.dp)
-                .blur(100.dp)
+                .offset(x = w * 0.46f, y = h * 0.015f)
+                .size(w * 0.3f, w * 0.29f)
+                .then(blurMod)
                 .background(GlowBlueShadow, CircleShape),
         )
 
-        // White glow at bottom
         Box(
             modifier = Modifier
-                .offset(x = 0.dp, y = 680.dp)
-                .size(402.dp, 126.dp)
-                .blur(100.dp)
+                .offset(x = 0.dp, y = h * 0.85f)
+                .size(w, w * 0.32f)
+                .then(blurMod)
                 .background(GlowWhite, CircleShape),
         )
 
-        // Second white glow
         Box(
             modifier = Modifier
-                .offset(x = 113.dp, y = 687.dp)
-                .size(176.dp, 164.dp)
-                .blur(100.dp)
+                .offset(x = w * 0.29f, y = h * 0.86f)
+                .size(w * 0.45f, w * 0.42f)
+                .then(blurMod)
                 .background(GlowWhite, CircleShape),
         )
     }

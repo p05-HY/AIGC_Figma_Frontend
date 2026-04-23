@@ -9,11 +9,17 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
+import androidx.room.Room
 import com.example.blueheartv.chat.ChatProvider
-import com.example.blueheartv.chat.ChatSessionsSnapshot
 import com.example.blueheartv.chat.ChatStreamEvent
+import com.example.blueheartv.db.AppDatabase
+import com.example.blueheartv.model.Message
 import com.example.blueheartv.ui.screens.HomeScreen
+import com.example.blueheartv.viewmodel.ChatSessionRepository
 import com.example.blueheartv.viewmodel.ChatViewModel
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import org.junit.Rule
 import org.junit.Test
 
@@ -24,10 +30,20 @@ class HomeChatFlowUiTest {
 
     @Test
     fun sendMessage_showsMergedToolCallAndReply() {
+        val testScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        val db = Room.inMemoryDatabaseBuilder(
+            composeRule.activity, AppDatabase::class.java,
+        ).allowMainThreadQueries().build()
+        val repo = ChatSessionRepository(
+            dao = db.chatDao(),
+            idProvider = { "test-${System.nanoTime()}" },
+            persistDebounceMs = 0L,
+            scope = testScope,
+        )
         val viewModel = ChatViewModel(
             chatProvider = object : ChatProvider {
                 override suspend fun streamReply(
-                    prompt: String,
+                    messages: List<Message>,
                     onEvent: (ChatStreamEvent) -> Unit,
                 ) {
                     onEvent(ChatStreamEvent.ToolCallStarted("获取当前位置"))
@@ -36,9 +52,7 @@ class HomeChatFlowUiTest {
                     onEvent(ChatStreamEvent.Completed)
                 }
             },
-            snapshotLoader = { ChatSessionsSnapshot(null, emptyList()) },
-            snapshotSaver = {},
-            idProvider = { "test-${System.nanoTime()}" },
+            repo = repo,
         )
 
         composeRule.setContent {

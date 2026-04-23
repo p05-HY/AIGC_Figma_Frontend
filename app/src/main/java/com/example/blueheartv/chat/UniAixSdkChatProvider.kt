@@ -1,8 +1,11 @@
 package com.example.blueheartv.chat
 
 import android.content.Context
+import com.example.blueheartv.model.Message
+import com.example.blueheartv.telemetry.AppEventLogger
 import kotlin.coroutines.resume
 import kotlinx.coroutines.suspendCancellableCoroutine
+import java.lang.reflect.Method
 import java.lang.reflect.Proxy
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -11,12 +14,16 @@ class UniAixSdkChatProvider(
     private val credentialsProvider: () -> UniAixCredentials,
 ) : ChatProvider {
 
+    private var cachedSdkClass: Class<*>? = null
+    private var cachedCallbackClass: Class<*>? = null
+    private var cachedSendMethod: Method? = null
+
     override suspend fun streamReply(
-        prompt: String,
+        messages: List<Message>,
         onEvent: (ChatStreamEvent) -> Unit,
     ) {
-        val normalizedPrompt = prompt.trim()
-        if (normalizedPrompt.isEmpty()) {
+        val lastUserContent = messages.lastOrNull { it.isUser }?.content?.trim().orEmpty()
+        if (lastUserContent.isEmpty()) {
             onEvent(ChatStreamEvent.Error("输入为空", retryable = false))
             return
         }
@@ -27,14 +34,18 @@ class UniAixSdkChatProvider(
             return
         }
 
-        val sdkClass = runCatching { Class.forName(SDK_CLASS_NAME) }
+        val sdkClass = cachedSdkClass ?: runCatching { Class.forName(SDK_CLASS_NAME) }
+            .onSuccess { cachedSdkClass = it }
             .getOrElse {
+                AppEventLogger.warning("uniax_sdk_missing", "SDK class not found: $SDK_CLASS_NAME")
                 onEvent(ChatStreamEvent.Error("uni-ai-x SDK 未就绪，请先完成模块集成"))
                 return
             }
 
-        val callbackClass = runCatching { Class.forName(CALLBACK_CLASS_NAME) }
+        val callbackClass = cachedCallbackClass ?: runCatching { Class.forName(CALLBACK_CLASS_NAME) }
+            .onSuccess { cachedCallbackClass = it }
             .getOrElse {
+                AppEventLogger.warning("uniax_callback_missing", "Callback class not found: $CALLBACK_CLASS_NAME")
                 onEvent(ChatStreamEvent.Error("uni-ai-x 回调接口未找到，请检查 SDK 版本"))
                 return
             }
@@ -56,14 +67,15 @@ class UniAixSdkChatProvider(
             return
         }
 
-        val sendMethod = sdkClass.methods.firstOrNull { method ->
+        val sendMethod = cachedSendMethod ?: sdkClass.methods.firstOrNull { method ->
             method.name == "sendMessage" &&
                 method.parameterTypes.size == 2 &&
                 method.parameterTypes[0] == String::class.java &&
                 method.parameterTypes[1].isAssignableFrom(callbackClass)
-        }
+        }?.also { cachedSendMethod = it }
 
         if (sendMethod == null) {
+            AppEventLogger.warning("uniax_api_incompatible", "sendMessage(String, Callback) not found in $SDK_CLASS_NAME")
             onEvent(ChatStreamEvent.Error("uni-ai-x API 不兼容：未找到 sendMessage(String, Callback)"))
             return
         }
@@ -111,7 +123,7 @@ class UniAixSdkChatProvider(
             }
 
             runCatching {
-                sendMethod.invoke(sdkInstance, normalizedPrompt, callbackProxy)
+                sendMethod.invoke(sdkInstance, lastUserContent, callbackProxy)
             }.onFailure {
                 onEvent(ChatStreamEvent.Error("uni-ai-x 调用失败：${it.message ?: "未知错误"}"))
                 finish()
@@ -171,7 +183,10 @@ class UniAixSdkChatProvider(
                 Class.forName(CALLBACK_CLASS_NAME)
             }.isSuccess
 
-            if (!sdkAvailable) return null
+            if (!sdkAvailable) {
+                AppEventLogger.info("uniax_provider_skip", "SDK classes not on classpath, skipping UniAix provider")
+                return null
+            }
 
             return UniAixSdkChatProvider(
                 contextProvider = { AppContextHolder.getOrNull() },

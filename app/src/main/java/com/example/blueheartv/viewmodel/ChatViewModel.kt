@@ -2,23 +2,15 @@ package com.example.blueheartv.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.blueheartv.chat.AppContextHolder
 import com.example.blueheartv.chat.ChatProvider
-import com.example.blueheartv.chat.ChatProviderRegistry
-import com.example.blueheartv.chat.ChatSessionStore
-import com.example.blueheartv.chat.ChatSessionsSnapshot
 import com.example.blueheartv.chat.ChatStreamEvent
-import com.example.blueheartv.chat.StoredChatSession
 import com.example.blueheartv.model.ChatHistory
 import com.example.blueheartv.model.Message
 import com.example.blueheartv.model.MessageDeliveryState
 import com.example.blueheartv.model.SmartRecommendation
 import com.example.blueheartv.model.ToolCall
+import com.example.blueheartv.model.defaultRecommendations
 import com.example.blueheartv.telemetry.AppEventLogger
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -49,48 +41,33 @@ data class HomeUiState(
     val canRetry: Boolean = false,
     val retryPrompt: String? = null,
     val histories: List<ChatHistory> = emptyList(),
-    val recommendations: List<SmartRecommendation> = sampleRecommendations,
+    val recommendations: List<SmartRecommendation> = defaultRecommendations,
 )
 
 private const val SEND_DEBOUNCE_MS = 500L
-private const val DEFAULT_SESSION_TITLE = "当前对话"
-
-val sampleRecommendations = listOf(
-    SmartRecommendation("您下午3点有产品评审会议", "需要我帮您准备会议材料和议程摘要？"),
-    SmartRecommendation("您下午3点有产品评审会议", "需要我帮您准备会议材料和议程摘要？"),
-    SmartRecommendation("您下午3点有产品评审会议", "需要我帮您准备会议材料和议程摘要？"),
-)
-
-private data class ConversationSession(
-    val id: String,
-    var title: String,
-    var updatedAtMillis: Long,
-    val messages: MutableList<Message>,
-)
 
 class ChatViewModel(
-    private val chatProvider: ChatProvider = ChatProviderRegistry.createProvider(),
-    private val snapshotLoader: () -> ChatSessionsSnapshot = {
-        ChatSessionStore.load(AppContextHolder.getOrNull())
-    },
-    private val snapshotSaver: (ChatSessionsSnapshot) -> Unit = { snapshot ->
-        ChatSessionStore.save(AppContextHolder.getOrNull(), snapshot)
-    },
-    private val timeProvider: () -> Long = { System.currentTimeMillis() },
-    private val idProvider: () -> String = { UUID.randomUUID().toString() },
+    private val chatProvider: ChatProvider,
+    private val repo: ChatSessionRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
     private var streamJob: Job? = null
-    private var activeSessionId: String? = null
     private var lastSendAtMillis: Long = 0L
-
-    private val sessions = mutableListOf<ConversationSession>()
+    private val rawStreamContent = mutableMapOf<String, String>()
+    private val completeThinkTagRegex = Regex("<think>[\\s\\S]*?</think>", RegexOption.IGNORE_CASE)
+    private val unclosedThinkTagRegex = Regex("<think>[\\s\\S]*$", RegexOption.IGNORE_CASE)
+    private val danglingThinkCloseTagRegex = Regex("</think>", RegexOption.IGNORE_CASE)
 
     init {
         restoreSessions()
+    }
+
+    override fun onCleared() {
+        repo.persistImmediate()
+        super.onCleared()
     }
 
     fun onInputChanged(text: String) {
@@ -105,99 +82,142 @@ class ChatViewModel(
         _uiState.update { it.copy(isDrawerOpen = false) }
     }
 
+    val isEmptyConversation: Boolean
+        get() = repo.getActiveSession()?.messages.isNullOrEmpty()
+
     fun startNewConversation() {
+        if (isEmptyConversation) return
         streamJob?.cancel()
-        val newSession = createSession()
-        sessions.add(newSession)
-        activeSessionId = newSession.id
-        persistSessions()
-        publishStateFromActiveSession(
+        repo.startNewSession() ?: return
+        publishActiveSession(
             chatState = ChatState.DEFAULT,
             sessionState = ChatSessionState.IDLE,
-            lastError = null,
-            canRetry = false,
-            retryPrompt = null,
-            closeDrawer = true,
-            keepInputText = false,
+            lastError = null, canRetry = false, retryPrompt = null,
+            closeDrawer = true, keepInputText = false,
         )
     }
 
     fun switchToSimpleChat() {
-        submitPrompt(
-            prompt = "can you speak English?",
-            clearInput = false,
-            resetConversation = true,
-        )
+        submitPrompt("can you speak English?", clearInput = false, resetConversation = true)
     }
 
     fun switchToToolCallingChat() {
-        submitPrompt(
-            prompt = "帮我规划去南山科技园的路线",
-            clearInput = false,
-            resetConversation = true,
-        )
+        submitPrompt("帮我规划去南山科技园的路线", clearInput = false, resetConversation = true)
+    }
+
+    fun sendQuickAction(prompt: String) {
+        submitPrompt(prompt, clearInput = false, resetConversation = true)
     }
 
     fun switchToDefault() {
         startNewConversation()
     }
 
+    fun clearAllHistory() {
+        streamJob?.cancel()
+        repo.clearAll()
+        _uiState.update { HomeUiState() }
+    }
+
+    fun sendRecommendation(rec: SmartRecommendation) {
+        submitPrompt(rec.title + "：" + rec.subtitle, clearInput = false, resetConversation = false)
+    }
+
     fun sendMessage() {
-        val now = timeProvider()
+        val now = repo.now()
         if (now - lastSendAtMillis < SEND_DEBOUNCE_MS) {
             AppEventLogger.info("chat_send_debounced", "ignored duplicate send request")
             return
         }
         lastSendAtMillis = now
-
-        submitPrompt(
-            prompt = _uiState.value.inputText.trim(),
-            clearInput = true,
-            resetConversation = false,
-        )
+        submitPrompt(_uiState.value.inputText.trim(), clearInput = true, resetConversation = false)
     }
 
     fun retryLastMessage() {
         val prompt = _uiState.value.retryPrompt ?: return
-        submitPrompt(
-            prompt = prompt,
-            clearInput = false,
-            resetConversation = false,
-        )
+        submitPrompt(prompt, clearInput = false, resetConversation = false)
     }
 
     fun selectHistory(historyId: String) {
-        val target = sessions.firstOrNull { it.id == historyId } ?: return
+        val target = repo.switchActive(historyId) ?: return
         streamJob?.cancel()
-        activeSessionId = target.id
-
-        publishStateFromActiveSession(
+        publishActiveSession(
             chatState = deriveChatState(target.messages),
             sessionState = ChatSessionState.IDLE,
-            lastError = null,
-            canRetry = false,
-            retryPrompt = null,
-            closeDrawer = true,
-            keepInputText = true,
+            lastError = null, canRetry = false, retryPrompt = null,
+            closeDrawer = true, keepInputText = true,
         )
     }
 
-    private fun submitPrompt(
-        prompt: String,
-        clearInput: Boolean,
-        resetConversation: Boolean,
-    ) {
+    fun renameSession(sessionId: String, newTitle: String) {
+        if (repo.renameSession(sessionId, newTitle)) {
+            _uiState.update { it.copy(histories = repo.buildHistories()) }
+        }
+    }
+
+    fun togglePin(sessionId: String) {
+        if (repo.togglePin(sessionId)) {
+            _uiState.update { it.copy(histories = repo.buildHistories()) }
+        }
+    }
+
+    fun deleteSession(sessionId: String) {
+        repo.deleteSession(sessionId)
+        val active = repo.getActiveSession()
+        _uiState.update { state ->
+            state.copy(
+                chatState = deriveChatState(active?.messages.orEmpty()),
+                messages = active?.messages?.toList().orEmpty(),
+                histories = repo.buildHistories(),
+            )
+        }
+    }
+
+    fun getShareText(sessionId: String): String = repo.getShareText(sessionId)
+
+    fun deleteMessage(messageId: String) {
+        val active = repo.deleteMessage(messageId) ?: return
+        _uiState.update { state ->
+            state.copy(
+                chatState = deriveChatState(active.messages),
+                messages = active.messages.toList(),
+            )
+        }
+    }
+
+    fun quoteMessage(content: String) {
+        val quoted = "「$content」\n"
+        _uiState.update { it.copy(inputText = quoted + it.inputText) }
+    }
+
+    fun editAndResend(messageId: String, newContent: String) {
+        val active = repo.removeMessageAndFollowing(messageId) ?: return
+        _uiState.update { state -> state.copy(messages = active.messages.toList()) }
+        submitPrompt(newContent, clearInput = false, resetConversation = false)
+    }
+
+    fun deleteAiMessage(messageId: String) {
+        val active = repo.deleteAiMessage(messageId) ?: return
+        _uiState.update { state ->
+            state.copy(
+                chatState = deriveChatState(active.messages),
+                messages = active.messages.toList(),
+            )
+        }
+    }
+
+    private fun submitPrompt(prompt: String, clearInput: Boolean, resetConversation: Boolean) {
         if (prompt.isBlank()) return
         if (_uiState.value.sessionState == ChatSessionState.RESPONDING) return
 
-        val activeSession = ensureActiveSession(resetConversation)
+        val activeSession = repo.ensureActiveSession(resetConversation)
         val userMessage = Message(
-            id = createMessageId(),
+            id = repo.createId(),
             content = prompt,
             isUser = true,
             deliveryState = MessageDeliveryState.COMPLETED,
         )
-        val assistantMessageId = createMessageId()
+        val assistantMessageId = repo.createId()
         val assistantPlaceholder = Message(
             id = assistantMessageId,
             content = "",
@@ -205,115 +225,69 @@ class ChatViewModel(
             deliveryState = MessageDeliveryState.SENDING,
         )
 
-        activeSession.messages.add(userMessage)
-        activeSession.messages.add(assistantPlaceholder)
-        activeSession.updatedAtMillis = timeProvider()
-        if (activeSession.title == DEFAULT_SESSION_TITLE) {
-            activeSession.title = prompt.take(18)
-        }
+        repo.appendPromptMessages(userMessage, assistantPlaceholder, titleHint = prompt)
 
-        AppEventLogger.info("chat_send", "session=${activeSession.id} promptLength=${prompt.length}")
-
-        persistSessions()
-
-        publishStateFromActiveSession(
-            chatState = ChatState.CHAT_SIMPLE,
-            sessionState = ChatSessionState.RESPONDING,
-            lastError = null,
-            canRetry = false,
-            retryPrompt = prompt,
-            closeDrawer = true,
-            keepInputText = !clearInput,
+        AppEventLogger.info(
+            "chat_send",
+            "session=${activeSession.id} userMessage=${userMessage.id} assistantMessage=$assistantMessageId promptLength=${prompt.length}",
         )
 
+        publishActiveSession(
+            chatState = ChatState.CHAT_SIMPLE,
+            sessionState = ChatSessionState.RESPONDING,
+            lastError = null, canRetry = false, retryPrompt = prompt,
+            closeDrawer = true, keepInputText = !clearInput,
+        )
         if (clearInput) {
             _uiState.update { it.copy(inputText = "") }
         }
 
-        startStreamingReply(
-            prompt = prompt,
-            assistantMessageId = assistantMessageId,
-        )
+        startStreamingReply(activeSession, assistantMessageId)
     }
 
-    private fun startStreamingReply(
-        prompt: String,
-        assistantMessageId: String,
-    ) {
+    private fun startStreamingReply(activeSession: ConversationSession, assistantMessageId: String) {
         streamJob?.cancel()
         streamJob = viewModelScope.launch {
             val toolCallStatus = linkedMapOf<String, Boolean>()
             var hasToolCalling = false
+            val sessionId = activeSession.id
+
+            val historyMessages = activeSession.messages
+                .filter { it.id != assistantMessageId }
+                .filter { it.deliveryState == MessageDeliveryState.COMPLETED }
 
             try {
-                chatProvider.streamReply(prompt) { event ->
+                chatProvider.streamReply(historyMessages) { event ->
                     when (event) {
                         is ChatStreamEvent.ToolCallStarted -> {
                             hasToolCalling = true
                             toolCallStatus[event.label] = false
-                            updateAssistantMessage(
-                                assistantMessageId = assistantMessageId,
-                                chatState = ChatState.CHAT_TOOL_CALLING,
-                                sessionState = ChatSessionState.RESPONDING,
-                                persist = false,
-                            ) { message ->
-                                message.copy(
-                                    deliveryState = MessageDeliveryState.STREAMING,
-                                    toolCalls = toolCallStatus.toToolCallListOrNull(),
-                                )
+                            updateAssistantMessage(assistantMessageId, ChatState.CHAT_TOOL_CALLING, ChatSessionState.RESPONDING, false) { msg ->
+                                msg.copy(deliveryState = MessageDeliveryState.STREAMING, toolCalls = toolCallStatus.toToolCallListOrNull())
                             }
                         }
-
                         is ChatStreamEvent.ToolCallCompleted -> {
                             hasToolCalling = true
                             toolCallStatus[event.label] = true
-                            updateAssistantMessage(
-                                assistantMessageId = assistantMessageId,
-                                chatState = ChatState.CHAT_TOOL_CALLING,
-                                sessionState = ChatSessionState.RESPONDING,
-                                persist = false,
-                            ) { message ->
-                                message.copy(
-                                    deliveryState = MessageDeliveryState.STREAMING,
-                                    toolCalls = toolCallStatus.toToolCallListOrNull(),
-                                )
+                            updateAssistantMessage(assistantMessageId, ChatState.CHAT_TOOL_CALLING, ChatSessionState.RESPONDING, false) { msg ->
+                                msg.copy(deliveryState = MessageDeliveryState.STREAMING, toolCalls = toolCallStatus.toToolCallListOrNull())
                             }
                         }
-
                         is ChatStreamEvent.TextDelta -> {
-                            updateAssistantMessage(
-                                assistantMessageId = assistantMessageId,
-                                chatState = if (hasToolCalling) {
-                                    ChatState.CHAT_TOOL_CALLING
-                                } else {
-                                    ChatState.CHAT_SIMPLE
-                                },
-                                sessionState = ChatSessionState.RESPONDING,
-                                persist = false,
-                            ) { message ->
-                                message.copy(
-                                    content = message.content + event.chunk,
-                                    deliveryState = MessageDeliveryState.STREAMING,
-                                    toolCalls = toolCallStatus.toToolCallListOrNull(),
-                                )
+                            val raw = (rawStreamContent[assistantMessageId] ?: "") + event.chunk
+                            rawStreamContent[assistantMessageId] = raw
+                            val chatState = if (hasToolCalling) ChatState.CHAT_TOOL_CALLING else ChatState.CHAT_SIMPLE
+                            updateAssistantMessage(assistantMessageId, chatState, ChatSessionState.RESPONDING, false) { msg ->
+                                msg.copy(content = stripThinkTags(raw), deliveryState = MessageDeliveryState.STREAMING, toolCalls = toolCallStatus.toToolCallListOrNull())
                             }
                         }
-
                         ChatStreamEvent.Completed -> {
-                            updateAssistantMessage(
-                                assistantMessageId = assistantMessageId,
-                                chatState = if (hasToolCalling) {
-                                    ChatState.CHAT_TOOL_CALLING
-                                } else {
-                                    ChatState.CHAT_SIMPLE
-                                },
-                                sessionState = ChatSessionState.IDLE,
-                                persist = true,
-                            ) { message ->
-                                message.copy(
-                                    content = message.content.ifBlank {
-                                        "我已经收到你的问题，但暂时没有生成内容。请再试一次。"
-                                    },
+                            val finalContent = stripThinkTags(rawStreamContent.remove(assistantMessageId) ?: "")
+                            AppEventLogger.info("chat_stream_completed", "session=$sessionId assistantMessage=$assistantMessageId hasTool=$hasToolCalling contentLength=${finalContent.length}")
+                            val chatState = if (hasToolCalling) ChatState.CHAT_TOOL_CALLING else ChatState.CHAT_SIMPLE
+                            updateAssistantMessage(assistantMessageId, chatState, ChatSessionState.IDLE, true) { msg ->
+                                msg.copy(
+                                    content = finalContent.ifBlank { "我已经收到你的问题，但暂时没有生成内容。请再试一次。" },
                                     deliveryState = MessageDeliveryState.COMPLETED,
                                     toolCalls = toolCallStatus.toToolCallListOrNull(),
                                     errorMessage = null,
@@ -321,238 +295,84 @@ class ChatViewModel(
                             }
                             _uiState.update { it.copy(lastError = null, canRetry = false) }
                         }
-
                         is ChatStreamEvent.Error -> {
-                            onStreamError(
-                                assistantMessageId = assistantMessageId,
-                                reason = event.message,
-                                retryable = event.retryable,
-                                chatState = if (hasToolCalling) {
-                                    ChatState.CHAT_TOOL_CALLING
-                                } else {
-                                    ChatState.CHAT_SIMPLE
-                                },
-                            )
+                            rawStreamContent.remove(assistantMessageId)
+                            val chatState = if (hasToolCalling) ChatState.CHAT_TOOL_CALLING else ChatState.CHAT_SIMPLE
+                            onStreamError(sessionId, assistantMessageId, event.message, event.retryable, chatState)
                         }
                     }
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
-                AppEventLogger.error("chat_stream_exception", error.message ?: "unknown_error", error)
-                onStreamError(
-                    assistantMessageId = assistantMessageId,
-                    reason = error.message ?: "请求失败，请稍后重试",
-                    retryable = true,
-                    chatState = if (hasToolCalling) {
-                        ChatState.CHAT_TOOL_CALLING
-                    } else {
-                        ChatState.CHAT_SIMPLE
-                    },
-                )
+                AppEventLogger.error("chat_stream_exception", "session=$sessionId assistantMessage=$assistantMessageId ${error.message ?: "unknown_error"}", error)
+                val chatState = if (hasToolCalling) ChatState.CHAT_TOOL_CALLING else ChatState.CHAT_SIMPLE
+                onStreamError(sessionId, assistantMessageId, error.message ?: "请求失败，请稍后重试", true, chatState)
             }
         }
     }
 
-    private fun onStreamError(
-        assistantMessageId: String,
-        reason: String,
-        retryable: Boolean,
-        chatState: ChatState,
-    ) {
-        updateAssistantMessage(
-            assistantMessageId = assistantMessageId,
-            chatState = chatState,
-            sessionState = ChatSessionState.ERROR,
-            persist = true,
-        ) { message ->
-            message.copy(
-                content = message.content.ifBlank { "抱歉，这次响应失败了。" },
-                deliveryState = MessageDeliveryState.FAILED,
-                errorMessage = reason,
-            )
+    private fun onStreamError(sessionId: String, assistantMessageId: String, reason: String, retryable: Boolean, chatState: ChatState) {
+        updateAssistantMessage(assistantMessageId, chatState, ChatSessionState.ERROR, true) { msg ->
+            msg.copy(content = msg.content.ifBlank { "抱歉，这次响应失败了。" }, deliveryState = MessageDeliveryState.FAILED, errorMessage = reason)
         }
-
-        _uiState.update {
-            it.copy(
-                lastError = reason,
-                canRetry = retryable,
-            )
-        }
-
-        AppEventLogger.warning(
-            "chat_stream_error",
-            "chatState=$chatState retryable=$retryable reason=$reason",
-        )
+        _uiState.update { it.copy(lastError = reason, canRetry = retryable) }
+        AppEventLogger.warning("chat_stream_error", "session=$sessionId assistantMessage=$assistantMessageId chatState=$chatState retryable=$retryable reason=$reason")
     }
 
-    private fun updateAssistantMessage(
-        assistantMessageId: String,
-        chatState: ChatState,
-        sessionState: ChatSessionState,
-        persist: Boolean,
-        transform: (Message) -> Message,
-    ) {
-        val activeSession = getActiveSession() ?: return
-        val assistantIndex = activeSession.messages.indexOfFirst { it.id == assistantMessageId }
-        if (assistantIndex < 0) return
+    private fun updateAssistantMessage(assistantMessageId: String, chatState: ChatState, sessionState: ChatSessionState, persist: Boolean, transform: (Message) -> Message) {
+        val active = repo.updateMessage(assistantMessageId, transform) ?: return
 
-        activeSession.messages[assistantIndex] = transform(activeSession.messages[assistantIndex])
-        activeSession.updatedAtMillis = timeProvider()
-
-        if (persist) {
-            persistSessions()
-        }
+        if (persist) repo.requestPersist()
 
         _uiState.update { state ->
-            state.copy(
-                chatState = chatState,
-                sessionState = sessionState,
-                messages = activeSession.messages.toList(),
-                histories = buildHistories(),
-            )
+            state.copy(chatState = chatState, sessionState = sessionState, messages = active.messages.toList(), histories = repo.buildHistories())
         }
     }
 
-    private fun ensureActiveSession(resetConversation: Boolean): ConversationSession {
-        if (resetConversation || getActiveSession() == null) {
-            val newSession = createSession()
-            sessions.add(newSession)
-            activeSessionId = newSession.id
-            return newSession
-        }
-        return getActiveSession()!!
-    }
-
-    private fun getActiveSession(): ConversationSession? {
-        val id = activeSessionId ?: return null
-        return sessions.firstOrNull { it.id == id }
-    }
-
-    private fun createSession(): ConversationSession {
-        return ConversationSession(
-            id = createMessageId(),
-            title = DEFAULT_SESSION_TITLE,
-            updatedAtMillis = timeProvider(),
-            messages = mutableListOf(),
-        )
-    }
-
-    private fun publishStateFromActiveSession(
-        chatState: ChatState,
-        sessionState: ChatSessionState,
-        lastError: String?,
-        canRetry: Boolean,
-        retryPrompt: String?,
-        closeDrawer: Boolean,
-        keepInputText: Boolean,
-    ) {
-        val activeMessages = getActiveSession()?.messages?.toList().orEmpty()
+    private fun publishActiveSession(chatState: ChatState, sessionState: ChatSessionState, lastError: String?, canRetry: Boolean, retryPrompt: String?, closeDrawer: Boolean, keepInputText: Boolean) {
+        val msgs = repo.getActiveSession()?.messages?.toList().orEmpty()
         _uiState.update { state ->
             state.copy(
-                chatState = if (activeMessages.isEmpty()) ChatState.DEFAULT else chatState,
+                chatState = if (msgs.isEmpty()) ChatState.DEFAULT else chatState,
                 sessionState = sessionState,
-                messages = activeMessages,
+                messages = msgs,
                 isDrawerOpen = if (closeDrawer) false else state.isDrawerOpen,
                 inputText = if (keepInputText) state.inputText else "",
-                lastError = lastError,
-                canRetry = canRetry,
-                retryPrompt = retryPrompt,
-                histories = buildHistories(),
+                lastError = lastError, canRetry = canRetry, retryPrompt = retryPrompt,
+                histories = repo.buildHistories(),
             )
         }
-    }
-
-    private fun buildHistories(): List<ChatHistory> {
-        return sessions
-            .sortedByDescending { it.updatedAtMillis }
-            .map { session ->
-                ChatHistory(
-                    id = session.id,
-                    title = session.title.ifBlank { DEFAULT_SESSION_TITLE },
-                    timestamp = formatHistoryTime(session.updatedAtMillis),
-                    isCurrent = session.id == activeSessionId,
-                )
-            }
-    }
-
-    private fun persistSessions() {
-        val snapshot = ChatSessionsSnapshot(
-            activeSessionId = activeSessionId,
-            sessions = sessions.map { session ->
-                StoredChatSession(
-                    id = session.id,
-                    title = session.title,
-                    updatedAtMillis = session.updatedAtMillis,
-                    messages = session.messages.toList(),
-                )
-            },
-        )
-        snapshotSaver(snapshot)
     }
 
     private fun restoreSessions() {
-        val snapshot = snapshotLoader()
-        if (snapshot.sessions.isEmpty()) {
-            _uiState.update { it.copy(histories = emptyList()) }
-            return
-        }
-
-        sessions.clear()
-        sessions.addAll(snapshot.sessions.map { it.toConversationSession() })
-        activeSessionId = snapshot.activeSessionId
-            ?.takeIf { id -> sessions.any { it.id == id } }
-            ?: sessions.maxByOrNull { it.updatedAtMillis }?.id
-
-        val activeSession = getActiveSession()
+        val result = repo.restore()
+        val active = result.activeSession
         _uiState.update { state ->
             state.copy(
-                chatState = deriveChatState(activeSession?.messages.orEmpty()),
+                chatState = deriveChatState(active?.messages.orEmpty()),
                 sessionState = ChatSessionState.IDLE,
-                messages = activeSession?.messages?.toList().orEmpty(),
-                histories = buildHistories(),
-                lastError = null,
-                canRetry = false,
-                retryPrompt = null,
+                messages = active?.messages?.toList().orEmpty(),
+                histories = result.histories,
+                lastError = null, canRetry = false, retryPrompt = null,
             )
         }
-    }
-
-    private fun StoredChatSession.toConversationSession(): ConversationSession {
-        return ConversationSession(
-            id = id,
-            title = title,
-            updatedAtMillis = updatedAtMillis,
-            messages = messages.toMutableList(),
-        )
     }
 
     private fun deriveChatState(messages: List<Message>): ChatState {
         if (messages.isEmpty()) return ChatState.DEFAULT
-        val hasToolCalls = messages.any { !it.toolCalls.isNullOrEmpty() }
-        return if (hasToolCalls) ChatState.CHAT_TOOL_CALLING else ChatState.CHAT_SIMPLE
+        return if (messages.any { !it.toolCalls.isNullOrEmpty() }) ChatState.CHAT_TOOL_CALLING else ChatState.CHAT_SIMPLE
     }
 
-    private fun formatHistoryTime(updatedAtMillis: Long): String {
-        val diffMillis = timeProvider() - updatedAtMillis
-        val diffMinutes = diffMillis / 60_000
-        return when {
-            diffMinutes < 1 -> "刚刚"
-            diffMinutes < 60 -> "${diffMinutes}分钟前"
-            diffMinutes < 24 * 60 -> "${diffMinutes / 60}小时前"
-            else -> {
-                val formatter = SimpleDateFormat("MM-dd HH:mm", Locale.CHINA)
-                formatter.format(Date(updatedAtMillis))
-            }
-        }
+    private fun stripThinkTags(text: String): String {
+        var result = text.replace(completeThinkTagRegex, "")
+        result = result.replace(unclosedThinkTagRegex, "")
+        result = result.replace(danglingThinkCloseTagRegex, "")
+        return result.trimStart()
     }
-
-    private fun createMessageId(): String = idProvider()
 
     private fun LinkedHashMap<String, Boolean>.toToolCallListOrNull(): List<ToolCall>? {
         if (isEmpty()) return null
-        return entries.map { (label, isComplete) ->
-            ToolCall(label = label, isComplete = isComplete)
-        }
+        return entries.map { (label, isComplete) -> ToolCall(label = label, isComplete = isComplete) }
     }
 }
