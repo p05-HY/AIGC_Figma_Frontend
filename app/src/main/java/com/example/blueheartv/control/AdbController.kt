@@ -2,7 +2,8 @@ package com.example.blueheartv.control
 
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
@@ -55,6 +56,8 @@ class AdbController(context: Context) {
     }
 
     fun destroy() {
-        runBlocking { executor.destroy() }
+        GlobalScope.launch(Dispatchers.IO) {
+            runCatching { executor.destroy() }
+        }
     }
 }
