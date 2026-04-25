@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import android.provider.Settings
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.lifecycle.lifecycleScope
 import com.example.blueheartv.control.AdbAccessibilityService
 import kotlinx.coroutines.launch
@@ -107,29 +108,34 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background,
                 ) {
-                    val trigger by permissionCheckTrigger
-                    val needsOverlay = !Settings.canDrawOverlays(this@MainActivity)
-                    val needsAccessibility = !isAccessibilityServiceEnabled()
-                    val needsShizuku = runCatching {
-                        Shizuku.checkSelfPermission() != android.content.pm.PackageManager.PERMISSION_GRANTED
-                    }.getOrDefault(true)
+                    // 用 remember + mutableStateOf 包裹，确保 Compose 能追踪变化
+                    val triggerCount by permissionCheckTrigger
+                    val needsOverlay = remember(triggerCount) {
+                        !Settings.canDrawOverlays(this@MainActivity)
+                    }
+                    val needsAccessibility = remember(triggerCount) {
+                        !isAccessibilityServiceEnabled()
+                    }
+                    val needsShizuku = remember(triggerCount) {
+                        runCatching {
+                            Shizuku.checkSelfPermission() != android.content.pm.PackageManager.PERMISSION_GRANTED
+                        }.getOrDefault(true)
+                    }
 
                     androidx.compose.foundation.layout.Column(
                         modifier = Modifier.fillMaxSize()
                     ) {
                         if (needsOverlay || needsAccessibility || needsShizuku) {
                             androidx.compose.material3.Card(
-                                modifier = androidx.compose.ui.Modifier
+                                modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(androidx.compose.foundation.layout.PaddingValues(
-                                        start = 12.dp, end = 12.dp, top = 8.dp
-                                    )),
+                                    .padding(start = 12.dp, end = 12.dp, top = 8.dp),
                                 colors = androidx.compose.material3.CardDefaults.cardColors(
                                     containerColor = MaterialTheme.colorScheme.errorContainer
                                 )
                             ) {
                                 androidx.compose.foundation.layout.Column(
-                                    modifier = androidx.compose.ui.Modifier.padding(12.dp),
+                                    modifier = Modifier.padding(12.dp),
                                     verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp)
                                 ) {
                                     androidx.compose.material3.Text(
@@ -138,13 +144,17 @@ class MainActivity : ComponentActivity() {
                                         color = MaterialTheme.colorScheme.onErrorContainer
                                     )
                                     if (needsShizuku) {
-                                        androidx.compose.material3.TextButton(onClick = { requestShizukuPermissionIfNeeded() }) {
+                                        androidx.compose.material3.TextButton(
+                                            onClick = { requestShizukuPermissionIfNeeded() }
+                                        ) {
                                             androidx.compose.material3.Text("授权 Shizuku（执行 shell 命令）")
                                         }
                                     }
                                     if (needsAccessibility) {
                                         androidx.compose.material3.TextButton(onClick = {
-                                            accessibilitySettingsLauncher.launch(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                                            accessibilitySettingsLauncher.launch(
+                                                Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                                            )
                                         }) {
                                             androidx.compose.material3.Text("开启无障碍服务（AI 控制手机）")
                                         }
@@ -152,8 +162,10 @@ class MainActivity : ComponentActivity() {
                                     if (needsOverlay) {
                                         androidx.compose.material3.TextButton(onClick = {
                                             overlaySettingsLauncher.launch(
-                                                Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                                    "package:$packageName".toUri())
+                                                Intent(
+                                                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                                    "package:$packageName".toUri()
+                                                )
                                             )
                                         }) {
                                             androidx.compose.material3.Text("授权悬浮窗（状态提示）")
