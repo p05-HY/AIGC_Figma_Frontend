@@ -64,6 +64,7 @@ android {
     buildFeatures {
         buildConfig = true
         compose = true
+        aidl = true
     }
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.8"
@@ -90,6 +91,10 @@ dependencies {
     implementation("androidx.navigation:navigation-compose:2.7.6")
     implementation("androidx.compose.animation:animation")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
+    // Shizuku（从 ADB-Test 迁移，阶段1编译所需）
+    implementation("dev.rikka.shizuku:api:13.1.5")
+    implementation("dev.rikka.shizuku:provider:13.1.5")
 
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")
