@@ -126,5 +126,6 @@
 
     <!-- ADB Control -->
     <string name="accessibility_service_desc">采集当前界面的 UI 树，并同步前台应用信息给 AI 助手。</string>
+    <string name="accessibility_service_label">AI 助手控制服务</string>
     <string name="overlay_waiting">等待指令</string>
 </resources>

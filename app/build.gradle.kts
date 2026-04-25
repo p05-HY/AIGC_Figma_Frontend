@@ -92,9 +92,13 @@ dependencies {
     implementation("androidx.compose.animation:animation")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
-    // Shizuku（从 ADB-Test 迁移，阶段1编译所需）
+    // Shizuku（从 ADB-Test 迁移）
     implementation("dev.rikka.shizuku:api:13.1.5")
     implementation("dev.rikka.shizuku:provider:13.1.5")
+
+    // ADB-Test 迁移所需
+    implementation("androidx.lifecycle:lifecycle-service:2.7.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
 
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")
