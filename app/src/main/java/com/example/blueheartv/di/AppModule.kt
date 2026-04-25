@@ -26,10 +26,13 @@ val appModule = module {
         ChatSessionRepository(dao = dao, scope = get())
     }
 
+    single { com.example.blueheartv.control.AdbController(androidContext()) }
+
     single {
         ChatViewModel(
             chatProvider = ChatProviderRegistry.createProvider(),
             repo = get(),
+            adbController = get(),
         )
     }
 }

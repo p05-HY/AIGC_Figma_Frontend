@@ -18,6 +18,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import com.example.blueheartv.control.ControlAction
+import com.example.blueheartv.control.PhoneControlRouter
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 enum class ChatState {
     DEFAULT,
@@ -49,6 +53,7 @@ private const val SEND_DEBOUNCE_MS = 500L
 class ChatViewModel(
     private val chatProvider: ChatProvider,
     private val repo: ChatSessionRepository,
+    private val adbController: com.example.blueheartv.control.AdbController,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(HomeUiState())
@@ -242,8 +247,45 @@ class ChatViewModel(
             _uiState.update { it.copy(inputText = "") }
         }
 
-        startStreamingReply(activeSession, assistantMessageId)
+        val controlAction = PhoneControlRouter.parse(prompt)
+        if (controlAction != null) {
+            handleControlAction(controlAction, assistantMessageId)
+        } else {
+            startStreamingReply(activeSession, assistantMessageId)
+        }
     }
+
+    private fun handleControlAction(action: ControlAction, assistantMessageId: String) {
+        streamJob?.cancel()
+        streamJob = viewModelScope.launch {
+            val result = executeControlAction(action)
+            updateAssistantMessage(assistantMessageId, ChatState.CHAT_SIMPLE, ChatSessionState.IDLE, true) { msg ->
+                msg.copy(
+                    content = result,
+                    deliveryState = com.example.blueheartv.model.MessageDeliveryState.COMPLETED,
+                    errorMessage = null,
+                )
+            }
+            _uiState.update { it.copy(lastError = null, canRetry = false) }
+        }
+    }
+
+    private suspend fun executeControlAction(action: ControlAction): String =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                when (action) {
+                    is ControlAction.GoHome     -> adbController.pressKey(3)
+                    is ControlAction.GoBack     -> adbController.pressKey(4)
+                    is ControlAction.Tap        -> adbController.tap(action.x, action.y)
+                    is ControlAction.Swipe      -> adbController.swipe(action.x1, action.y1, action.x2, action.y2)
+                    is ControlAction.LaunchApp  -> adbController.launchApp(action.packageName)
+                    is ControlAction.TypeText   -> adbController.typeText(action.text)
+                    is ControlAction.PressKey   -> adbController.pressKey(action.keycode)
+                    is ControlAction.RunShell   -> adbController.runShell(action.command)
+                    is ControlAction.DumpScreen -> adbController.dumpUiTree()
+                }
+            }.getOrElse { e -> "操作失败：${e.message}" }
+        }
 
     private fun startStreamingReply(activeSession: ConversationSession, assistantMessageId: String) {
         streamJob?.cancel()
