@@ -1,127 +1,132 @@
 # AIGC_Figma_Frontend
 
-超级蓝心小V —— 一款基于 Jetpack Compose 构建的 Android AI 智能助手应用，支持多模型对话、流式响应、悬浮球交互和本地会话持久化。
+超级蓝心小V（BlueHeartV）是一款 Android AI 智能助手客户端。
+V2 版本在原有多模型对话能力基础上，融合了手机控制执行链路，实现“自然语言对话 + 设备操作反馈”的一体化体验。
 
-## 项目定位
+## 项目简介
 
-本项目是 AIGC + Figma 设计稿驱动的 Android 前端实现，目标是打造一个系统级 AI 智能体客户端，具备聊天对话、屏幕辅助、日程管理等能力。当前版本已实现核心聊天功能和基础 UI 框架。
+本项目面向 AIGC 场景与移动端智能体交互，核心目标是：
+- 提供稳定的多模型流式对话体验
+- 支持会话历史持久化与多会话管理
+- 支持悬浮球快捷交互
+- 在 V2 中新增手机控制能力（Shizuku + ADB 指令 + 无障碍快照）
+
+## V2 更新说明（融合外部项目能力）
+
+V2 主要改动：
+- 新增控制模块目录：app/src/main/java/com/example/blueheartv/control
+- 新增控制路由：PhoneControlRouter（识别用户控制意图）
+- 新增执行入口：AdbController（统一封装 shell、按键、点击、滑动等）
+- 新增 AIDL 接口与无障碍服务声明
+- Manifest 与依赖已合并 Shizuku、AccessibilityService 相关配置
+
+融合结果：从“聊天应用”升级为“可执行动作的 AI 助手前端”。
 
 ## 技术栈
 
-| 类别 | 技术 |
-|------|------|
-| 语言 | Kotlin |
-| UI 框架 | Jetpack Compose + Material3 |
-| 架构模式 | MVVM (ViewModel + StateFlow) |
-| 依赖注入 | Koin 3.5 |
-| 本地数据库 | Room 2.6 (KSP) |
-| 网络请求 | OkHttp3 4.12 |
-| 导航 | Navigation Compose 2.7 |
-| 构建工具 | Gradle 8.13 (Kotlin DSL) |
-| 最低 SDK | 26 (Android 8.0) |
-| 目标 SDK | 34 (Android 14) |
+- 语言：Kotlin
+- UI：Jetpack Compose + Material3
+- 架构：MVVM（ViewModel + StateFlow）
+- 依赖注入：Koin
+- 本地存储：Room + KSP
+- 网络：OkHttp
+- 系统控制：Shizuku + AIDL + AccessibilityService
+- 构建：Gradle Kotlin DSL
 
-## 项目结构
+## 核心能力
 
-```
-app/src/main/java/com/example/blueheartv/
-├── chat/                  # 聊天服务层（多 Provider 架构）
-│   ├── ChatProvider.kt          # 聊天接口定义
-│   ├── SiliconFlowChatProvider  # SiliconFlow API 实现
-│   ├── UniAixSdkChatProvider    # UniAix SDK 实现
-│   ├── FakeStreamingChatProvider# 测试用模拟 Provider
-│   └── ChatSessionStore.kt     # 会话存储
-├── db/                    # Room 数据库（Entity / DAO / Database）
-├── di/                    # Koin 依赖注入模块
-├── floating/              # 悬浮球服务（前台 Service + 悬浮窗）
-├── model/                 # 数据模型（Message, ChatHistory, ToolCall）
-├── navigation/            # 导航图与路由定义
-├── telemetry/             # 事件日志
-├── ui/
-│   ├── components/        # 可复用 UI 组件
-│   │   ├── ChatBubble.kt        # 聊天气泡
-│   │   ├── BottomInputBar.kt    # 底部输入栏
-│   │   ├── ActionToolbar.kt     # 操作工具栏
-│   │   ├── HistoryDrawer.kt     # 历史记录抽屉
-│   │   ├── FloatingWidget.kt    # 悬浮组件
-│   │   ├── SmartCard.kt         # 智能推荐卡片
-│   │   ├── TopBar.kt            # 顶部导航栏
-│   │   └── ...
-│   ├── screens/           # 页面
-│   │   ├── HomeScreen.kt        # 主聊天页
-│   │   ├── SettingsScreen.kt    # 设置页
-│   │   └── SettingsDetailScreen # 设置详情页
-│   └── theme/             # 主题（颜色、字体、深色模式）
-├── util/                  # 工具类（权限、弹窗、Toast）
-├── viewmodel/             # ViewModel 与 Repository
-├── BlueHeartVApplication.kt     # Application 入口
-└── MainActivity.kt              # 主 Activity
-```
+- 多模型对话与流式输出
+- 多会话管理与本地历史持久化
+- 悬浮球服务与快捷入口
+- 工具调用状态展示
+- 手机控制执行（V2）
+	- 执行 shell
+	- 模拟按键、点击、滑动、文本输入
+	- 启动应用
+	- 采集当前界面 UI 树
 
-## 核心功能
+## 项目结构说明
 
-- **AI 对话**：支持多 LLM Provider 切换，流式响应实时显示
-- **会话管理**：多会话创建、切换、置顶、重命名，Room 持久化存储
-- **Tool Calling**：支持函数调用追踪与状态展示
-- **悬浮球**：前台 Service 驱动的悬浮窗，支持快捷操作菜单
-- **智能推荐**：首页卡片式快捷入口（行程、天气、快递等）
-- **主题切换**：浅色 / 深色 / 跟随系统
-- **设置系统**：个人信息、通知、隐私、存储管理等完整设置页
-
-> 部分功能（截图识别、快速翻译、内容总结、语音输入）目前处于开发中状态。
+- app/src/main/java/com/example/blueheartv/chat
+	聊天 Provider 抽象与具体实现
+- app/src/main/java/com/example/blueheartv/viewmodel
+	聊天与会话主业务状态管理
+- app/src/main/java/com/example/blueheartv/ui
+	Compose 页面与组件
+- app/src/main/java/com/example/blueheartv/floating
+	悬浮球前台服务
+- app/src/main/java/com/example/blueheartv/control
+	V2 控制执行层（路由、执行器、快照采集、无障碍服务）
+- app/src/main/java/com/example/blueheartv/db
+	Room 数据库实体与 DAO
+- app/src/main/aidl/com/example/blueheartv/control
+	远程 shell 接口定义
+- app/src/main/res/xml/adb_accessibility_service.xml
+	无障碍服务配置
 
 ## 环境要求
 
-- Android Studio Hedgehog (2023.1.1) 或更高版本
-- JDK 17+
+- Android Studio（建议最新稳定版）
+- JDK 17 或更高
 - Android SDK 34
-- Gradle 8.13
+- 可用 Android 设备或模拟器（控制能力建议真机验证）
 
-## 配置
+## 快速启动
 
-项目通过 `local.properties` 配置 API 密钥（该文件不会被提交到 Git）：
+推荐方式（Android Studio）：
+1. 打开项目根目录
+2. 同步 Gradle
+3. 配置 local.properties 中必要参数
+4. 连接设备并运行 app 模块
+
+命令行方式（可选）：
+
+```bash
+gradlew.bat assembleDebug
+gradlew.bat installDebug
+```
+
+## 配置说明
+
+local.properties 示例：
 
 ```properties
-sdk.dir=/path/to/your/Android/SDK
-SILICONFLOW_API_KEY=your_api_key_here
+sdk.dir=你的 Android SDK 路径
+SILICONFLOW_API_KEY=你的密钥
 SILICONFLOW_MODEL=deepseek-ai/DeepSeek-R1-Distill-Qwen-32B
 ```
 
-## 构建与运行
+注意：
+- local.properties 不应提交到 Git
+- API 密钥应只保留在本地开发环境
 
-```bash
-# 编译调试版本
-./gradlew assembleDebug
+## 权限与能力说明
 
-# 安装到已连接设备
-./gradlew installDebug
+主要权限用途：
+- INTERNET：模型请求
+- SYSTEM_ALERT_WINDOW：悬浮球
+- FOREGROUND_SERVICE：前台服务
+- ACCESSIBILITY_SERVICE：界面元素采集与辅助控制
+- 存储与媒体权限：文件与内容访问相关场景
 
-# 编译发布版本
-./gradlew assembleRelease
+V2 控制能力依赖：
+- Shizuku 可用
+- 无障碍服务已启用
 
-# 运行单元测试
-./gradlew test
+若任一条件缺失，控制相关指令将无法完整执行。
 
-# 运行 Instrumented 测试
-./gradlew connectedAndroidTest
-```
+## 开发建议
 
-也可以直接在 Android Studio 中打开项目，选择设备后点击 Run 运行。
+- 将聊天逻辑与控制逻辑保持解耦
+- 新增控制动作时优先扩展 PhoneControlRouter 与 AdbController
+- 所有控制执行必须在后台线程进行，避免阻塞 UI
 
-## 权限说明
+## TODO（可选）
 
-应用声明了以下权限：
-
-| 权限 | 用途 |
-|------|------|
-| INTERNET | 网络请求（AI 对话） |
-| SYSTEM_ALERT_WINDOW | 悬浮球显示 |
-| FOREGROUND_SERVICE | 悬浮球后台服务 |
-| ACCESS_FINE/COARSE_LOCATION | 天气与出行建议 |
-| CAMERA | 拍照识别（开发中） |
-| READ/WRITE_CALENDAR | 日程读取 |
-| POST_NOTIFICATIONS | 消息推送 |
-| RECORD_AUDIO | 语音输入（开发中） |
+- 控制指令由关键词匹配升级为结构化工具调用
+- 增强异常提示与权限引导闭环
+- 增加端到端自动化验证脚本
+- 完善融合版本变更日志
 
 ## 许可证
 

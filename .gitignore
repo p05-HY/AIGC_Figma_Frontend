@@ -6,6 +6,8 @@
 .gradle/
 build/
 **/build/
+dist/
+**/dist/
 gradle-app.setting
 !gradle/wrapper/gradle-wrapper.jar
 !gradle/wrapper/gradle-wrapper.properties
@@ -36,6 +38,7 @@ captures/
 # IntelliJ IDEA / Android Studio
 ####################################
 .idea/
+.vscode/
 *.iml
 *.ipr
 *.iws
