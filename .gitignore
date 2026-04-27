@@ -87,6 +87,9 @@ $RECYCLE.BIN/
 # Claude Code / AI tool artifacts
 ####################################
 .claude/
+/CLAUDE.md
+/CLAUDE.md.xltd
+/CLAUDE.md.xltd.cfg
 
 ####################################
 # Misc generated files
