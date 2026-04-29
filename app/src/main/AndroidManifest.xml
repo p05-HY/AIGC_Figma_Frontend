@@ -50,6 +50,11 @@
             android:exported="false"
             android:foregroundServiceType="specialUse" />
 
+        <service
+            android:name=".system.SystemService"
+            android:exported="false"
+            android:foregroundServiceType="location" />
+
         <provider
             android:name="rikka.shizuku.ShizukuProvider"
             android:authorities="${applicationId}.shizuku"
