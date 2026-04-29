@@ -17,8 +17,15 @@ data class Message(
 ) {
     val isLoading: Boolean
         get() = deliveryState == MessageDeliveryState.SENDING ||
-            deliveryState == MessageDeliveryState.STREAMING
+                deliveryState == MessageDeliveryState.STREAMING
 }
+
+data class ChatAttachment(
+    val id: String,
+    val displayName: String,
+    val mimeType: String,
+    val base64Data: String,
+)
 
 data class ToolCall(
     val label: String,

@@ -1,20 +1,10 @@
 package com.example.blueheartv.viewmodel
 
-import com.example.blueheartv.db.ChatDao
-import com.example.blueheartv.db.SessionEntity
-import com.example.blueheartv.db.toDomain
-import com.example.blueheartv.db.toEntity
+import com.example.blueheartv.chat.RemoteChatThread
 import com.example.blueheartv.model.ChatHistory
 import com.example.blueheartv.model.Message
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.channels.BufferOverflow
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.debounce
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import java.text.SimpleDateFormat
 import java.util.*
-import kotlin.time.Duration.Companion.milliseconds
 
 internal const val DEFAULT_SESSION_TITLE = "当前对话"
 private const val MAX_SESSIONS = 20
@@ -28,55 +18,39 @@ internal data class ConversationSession(
 )
 
 class ChatSessionRepository(
-    private val dao: ChatDao,
     private val timeProvider: () -> Long = { System.currentTimeMillis() },
     private val idProvider: () -> String = { UUID.randomUUID().toString() },
-    persistDebounceMs: Long = 250L,
-    scope: CoroutineScope,
 ) {
     internal val sessions = mutableListOf<ConversationSession>()
     internal var activeSessionId: String? = null
         private set
 
-    private val persistRequests = MutableSharedFlow<Unit>(
-        replay = 0,
-        extraBufferCapacity = 1,
-        onBufferOverflow = BufferOverflow.DROP_OLDEST,
-    )
-
-    init {
-        scope.launch {
-            persistRequests
-                .debounce(persistDebounceMs.milliseconds)
-                .collect { flushToRoom() }
-        }
-    }
-
-    internal fun restore(): SessionRestoreResult {
-        val rows = runBlocking { dao.getAllSessionsWithMessages() }
-        if (rows.isEmpty()) {
-            return SessionRestoreResult(activeSession = null, histories = emptyList())
-        }
-
+    internal fun restore(remoteThreads: List<RemoteChatThread>): SessionRestoreResult {
         sessions.clear()
-        sessions.addAll(rows.map { row ->
-            ConversationSession(
-                id = row.session.id,
-                title = row.session.title,
-                updatedAtMillis = row.session.updatedAtMillis,
-                isPinned = row.session.isPinned,
-                messages = row.messages
-                    .sortedBy { it.orderIndex }
-                    .map { it.toDomain() }
-                    .toMutableList(),
-            )
-        })
+        sessions.addAll(
+            remoteThreads
+                .take(MAX_SESSIONS)
+                .map { it.toConversationSession() },
+        )
         activeSessionId = sessions.maxByOrNull { it.updatedAtMillis }?.id
-
         return SessionRestoreResult(
             activeSession = getActiveSession(),
             histories = buildHistories(),
         )
+    }
+
+    internal fun upsertRemoteThread(thread: RemoteChatThread, makeActive: Boolean = false): ConversationSession {
+        val existing = sessions.indexOfFirst { it.id == thread.id }
+        val session = thread.toConversationSession()
+        if (existing >= 0) {
+            val pinned = sessions[existing].isPinned
+            sessions[existing] = session.copy(isPinned = pinned)
+        } else {
+            sessions.add(session)
+        }
+        if (makeActive) activeSessionId = thread.id
+        trimSessions()
+        return getActiveSession() ?: session
     }
 
     internal fun getActiveSession(): ConversationSession? {
@@ -84,14 +58,17 @@ class ChatSessionRepository(
         return sessions.firstOrNull { it.id == id }
     }
 
-    internal fun ensureActiveSession(reset: Boolean): ConversationSession {
-        if (reset || getActiveSession() == null) {
-            val newSession = createSession()
-            sessions.add(newSession)
-            activeSessionId = newSession.id
-            return newSession
-        }
-        return getActiveSession()!!
+    internal fun clearActiveSession() {
+        activeSessionId = null
+    }
+
+    internal fun createLocalSession(remoteThread: RemoteChatThread): ConversationSession {
+        val session = remoteThread.toConversationSession()
+        sessions.removeAll { it.id == session.id }
+        sessions.add(session)
+        activeSessionId = session.id
+        trimSessions()
+        return session
     }
 
     internal fun switchActive(sessionId: String): ConversationSession? {
@@ -100,26 +77,16 @@ class ChatSessionRepository(
         return target
     }
 
-    internal fun startNewSession(): ConversationSession? {
-        if (getActiveSession()?.messages.isNullOrEmpty()) return null
-        val newSession = createSession()
-        sessions.add(newSession)
-        activeSessionId = newSession.id
-        requestPersist()
-        return newSession
-    }
-
     fun renameSession(sessionId: String, newTitle: String): Boolean {
         val session = sessions.firstOrNull { it.id == sessionId } ?: return false
         session.title = truncateTitle(newTitle)
-        requestPersist()
+        session.updatedAtMillis = timeProvider()
         return true
     }
 
     fun togglePin(sessionId: String): Boolean {
         val session = sessions.firstOrNull { it.id == sessionId } ?: return false
         session.isPinned = !session.isPinned
-        requestPersist()
         return true
     }
 
@@ -128,13 +95,11 @@ class ChatSessionRepository(
         if (activeSessionId == sessionId) {
             activeSessionId = sessions.maxByOrNull { it.updatedAtMillis }?.id
         }
-        requestPersist()
     }
 
     fun clearAll() {
         sessions.clear()
         activeSessionId = null
-        requestPersist()
     }
 
     fun getShareText(sessionId: String): String {
@@ -160,14 +125,14 @@ class ChatSessionRepository(
             toRemove.add(active.messages[idx + 1].id)
         }
         active.messages.removeAll { it.id in toRemove }
-        requestPersist()
+        active.updatedAtMillis = timeProvider()
         return active
     }
 
     internal fun deleteAiMessage(messageId: String): ConversationSession? {
         val active = getActiveSession() ?: return null
         active.messages.removeAll { it.id == messageId }
-        requestPersist()
+        active.updatedAtMillis = timeProvider()
         return active
     }
 
@@ -181,16 +146,8 @@ class ChatSessionRepository(
             toRemove.add(active.messages[idx + 1].id)
         }
         active.messages.removeAll { it.id in toRemove }
-        requestPersist()
+        active.updatedAtMillis = timeProvider()
         return active
-    }
-
-    fun requestPersist() {
-        persistRequests.tryEmit(Unit)
-    }
-
-    fun persistImmediate() {
-        runBlocking { flushToRoom() }
     }
 
     fun createId(): String = idProvider()
@@ -209,7 +166,6 @@ class ChatSessionRepository(
         if (titleHint != null && active.title == DEFAULT_SESSION_TITLE) {
             active.title = truncateTitle(titleHint)
         }
-        requestPersist()
         return active
     }
 
@@ -242,44 +198,26 @@ class ChatSessionRepository(
             }
     }
 
-    private suspend fun flushToRoom() {
-        val currentIds = sessions.map { it.id }.toSet()
-        val storedIds = dao.getAllSessions().map { it.id }.toSet()
-        val deletedIds = storedIds - currentIds
-        deletedIds.forEach { dao.deleteSession(it) }
-
-        sessions.forEach { session ->
-            dao.upsertSession(
-                SessionEntity(
-                    id = session.id,
-                    title = session.title,
-                    updatedAtMillis = session.updatedAtMillis,
-                    isPinned = session.isPinned,
-                ),
-            )
-            dao.deleteMessagesForSession(session.id)
-            if (session.messages.isNotEmpty()) {
-                dao.upsertMessages(
-                    session.messages.mapIndexed { index, msg -> msg.toEntity(session.id, index) },
-                )
-            }
-        }
-
-        val count = dao.sessionCount()
-        if (count > MAX_SESSIONS) {
-            val excess = dao.oldestSessionIds(count - MAX_SESSIONS)
-            excess.forEach { dao.deleteSession(it) }
-            sessions.removeAll { it.id in excess }
-        }
+    private fun RemoteChatThread.toConversationSession(): ConversationSession {
+        return ConversationSession(
+            id = id,
+            title = title.ifBlank { DEFAULT_SESSION_TITLE },
+            updatedAtMillis = updatedAtMillis,
+            messages = messages.toMutableList(),
+        )
     }
 
-    private fun createSession(): ConversationSession {
-        return ConversationSession(
-            id = createId(),
-            title = DEFAULT_SESSION_TITLE,
-            updatedAtMillis = timeProvider(),
-            messages = mutableListOf(),
-        )
+    private fun trimSessions() {
+        if (sessions.size <= MAX_SESSIONS) return
+        val excess = sessions
+            .sortedBy { it.updatedAtMillis }
+            .take(sessions.size - MAX_SESSIONS)
+            .map { it.id }
+            .toSet()
+        sessions.removeAll { it.id in excess }
+        if (activeSessionId in excess) {
+            activeSessionId = sessions.maxByOrNull { it.updatedAtMillis }?.id
+        }
     }
 
     private fun formatHistoryTime(updatedAtMillis: Long): String {

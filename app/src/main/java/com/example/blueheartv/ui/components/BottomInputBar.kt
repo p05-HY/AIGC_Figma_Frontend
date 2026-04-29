@@ -11,9 +11,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.outlined.AttachFile
 import androidx.compose.material.icons.outlined.Mic
-import androidx.compose.material.ripple.rememberRipple
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -29,10 +29,10 @@ fun BottomInputBar(
     value: String,
     onValueChange: (String) -> Unit,
     onSend: () -> Unit,
+    modifier: Modifier = Modifier,
     sendEnabled: Boolean = true,
     onAttachClick: () -> Unit = {},
     onMicClick: () -> Unit = {},
-    modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
         HorizontalDividerLine()
@@ -129,7 +129,7 @@ private fun IconButton24(
             .size(40.dp)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
-                indication = rememberRipple(bounded = false, radius = 20.dp),
+                indication = ripple(bounded = false, radius = 20.dp),
                 onClick = onClick,
             ),
         contentAlignment = Alignment.Center,

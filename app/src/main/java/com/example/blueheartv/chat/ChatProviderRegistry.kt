@@ -3,9 +3,9 @@ package com.example.blueheartv.chat
 object ChatProviderRegistry {
     @Volatile
     private var providerFactory: () -> ChatProvider = {
-        SiliconFlowChatProvider.createOrNull()
-            ?: UniAixSdkChatProvider.createOrNull()
-            ?: FakeStreamingChatProvider()
+        AgentServerChatProvider(
+            AgentServerClient(configProvider = { AgentServerConfigStore.snapshot() }),
+        )
     }
 
     fun createProvider(): ChatProvider = providerFactory()

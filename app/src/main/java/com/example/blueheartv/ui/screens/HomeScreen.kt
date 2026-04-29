@@ -8,12 +8,10 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.ChatBubbleOutline
-import androidx.compose.material.icons.outlined.Screenshot
-import androidx.compose.material.icons.outlined.Summarize
-import androidx.compose.material.icons.outlined.Translate
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -25,6 +23,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.blueheartv.R
+import com.example.blueheartv.model.ChatAttachment
 import com.example.blueheartv.ui.components.*
 import com.example.blueheartv.ui.theme.*
 import com.example.blueheartv.util.AppGlobalUiHost
@@ -75,9 +74,11 @@ fun HomeScreen(
                 onAddClick = { viewModel.startNewConversation() },
             )
 
-            Box(modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()) {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+            ) {
                 when (uiState.chatState) {
                     ChatState.DEFAULT -> DefaultContent(uiState, viewModel)
                     ChatState.CHAT_SIMPLE,
@@ -115,6 +116,11 @@ fun HomeScreen(
             )
 
             Spacer(modifier = Modifier.height(8.dp))
+
+            AttachmentPreviewRow(
+                attachments = uiState.imageAttachments,
+                onRemove = { viewModel.removeImageAttachment(it) },
+            )
 
             BottomInputBar(
                 value = uiState.inputText,
@@ -186,6 +192,56 @@ fun HomeScreen(
         )
 
         AppGlobalUiHost()
+    }
+}
+
+@Composable
+private fun AttachmentPreviewRow(
+    attachments: List<ChatAttachment>,
+    onRemove: (String) -> Unit,
+) {
+    if (attachments.isEmpty()) return
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        attachments.forEach { attachment ->
+            Surface(
+                color = SurfaceWhite,
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+                tonalElevation = 1.dp,
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    androidx.compose.material3.Icon(
+                        imageVector = Icons.Outlined.Image,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = BlueAccent,
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = attachment.displayName,
+                        fontSize = 12.sp,
+                        color = TextBlack,
+                        maxLines = 1,
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    androidx.compose.material3.Icon(
+                        imageVector = Icons.Outlined.Close,
+                        contentDescription = "Remove attachment",
+                        modifier = Modifier
+                            .size(16.dp)
+                            .clickable { onRemove(attachment.id) },
+                        tint = MutedText,
+                    )
+                }
+            }
+        }
     }
 }
 

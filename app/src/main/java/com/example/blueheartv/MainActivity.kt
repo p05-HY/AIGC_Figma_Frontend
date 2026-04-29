@@ -19,9 +19,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
+import com.example.blueheartv.chat.AgentServerConfigStore
 import com.example.blueheartv.chat.AppContextHolder
-import com.example.blueheartv.chat.SiliconFlowConfigStore
 import com.example.blueheartv.control.AdbAccessibilityService
+import com.example.blueheartv.control.AdbWebSocketService
 import com.example.blueheartv.floating.FloatingBallService
 import com.example.blueheartv.navigation.AppNavGraph
 import com.example.blueheartv.ui.theme.BlueHeartVTheme
@@ -86,12 +87,16 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        SiliconFlowConfigStore.configure(
-            apiKey = BuildConfig.SILICONFLOW_API_KEY,
-            model = BuildConfig.SILICONFLOW_MODEL,
+        AgentServerConfigStore.init(
+            context = applicationContext,
+            defaultBaseUrl = BuildConfig.AGENT_SERVER_BASE_URL,
+            defaultApiKey = BuildConfig.AGENT_SERVER_API_KEY,
         )
         AppContextHolder.install(applicationContext)
         ThemeRepository.init(applicationContext)
+        if (AgentServerConfigStore.snapshot().isConfigured) {
+            AdbWebSocketService.start(applicationContext)
+        }
 
         handleSessionIdIntent(intent)
         Shizuku.addRequestPermissionResultListener(shizukuPermissionListener)

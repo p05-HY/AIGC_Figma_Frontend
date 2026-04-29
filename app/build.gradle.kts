@@ -1,10 +1,17 @@
 import java.util.*
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("com.google.devtools.ksp")
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_21)
+    }
 }
 
 val localProperties = Properties().apply {
@@ -19,11 +26,8 @@ val localProperties = Properties().apply {
 fun String.toBuildConfigLiteral(): String =
     "\"${replace("\\", "\\\\").replace("\"", "\\\"")}\""
 
-val siliconFlowApiKey: String = localProperties.getProperty("SILICONFLOW_API_KEY", "")
-val siliconFlowModel: String = localProperties.getProperty(
-    "SILICONFLOW_MODEL",
-    "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
-)
+val agentServerBaseUrl: String = localProperties.getProperty("AGENT_SERVER_BASE_URL", "")
+val agentServerApiKey: String = localProperties.getProperty("AGENT_SERVER_API_KEY", "")
 
 android {
     namespace = "com.example.blueheartv"
@@ -38,8 +42,8 @@ android {
         versionName = "1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        buildConfigField("String", "SILICONFLOW_API_KEY", siliconFlowApiKey.toBuildConfigLiteral())
-        buildConfigField("String", "SILICONFLOW_MODEL", siliconFlowModel.toBuildConfigLiteral())
+        buildConfigField("String", "AGENT_SERVER_BASE_URL", agentServerBaseUrl.toBuildConfigLiteral())
+        buildConfigField("String", "AGENT_SERVER_API_KEY", agentServerApiKey.toBuildConfigLiteral())
 
         vectorDrawables {
             useSupportLibrary = true

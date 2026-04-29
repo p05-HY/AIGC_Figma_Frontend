@@ -20,10 +20,15 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.blueheartv.chat.AgentServerConfigStore
+import com.example.blueheartv.control.AdbWebSocketService
 import com.example.blueheartv.ui.theme.*
+import com.example.blueheartv.util.ToastType
+import com.example.blueheartv.util.ToastUtil
 
 @Composable
 fun SettingsDetailScreen(
@@ -94,6 +99,7 @@ private fun resolveDetail(
     "privacy" -> "隐私与安全" to { PrivacyDetailContent(onClearHistory, onLogout) }
     "language" -> "语言设置" to { LanguageDetailContent() }
     "theme" -> "主题外观" to { ThemeDetailContent() }
+    "agent_server" -> "Agent 服务" to { AgentServerDetailContent() }
     "storage" -> "存储管理" to { StorageDetailContent() }
     "help" -> "帮助与反馈" to { HelpDetailContent() }
     "about" -> "关于" to { AboutDetailContent() }
@@ -308,6 +314,50 @@ private fun ThemeDetailContent() {
                     }
                 }
                 if (index < themes.lastIndex) DetailDivider()
+            }
+        }
+    }
+}
+
+// ── Agent Server ─────────────────────────────────────────────────────────────
+
+@Composable
+private fun AgentServerDetailContent() {
+    val context = LocalContext.current
+    val config by AgentServerConfigStore.config.collectAsState()
+    var baseUrl by remember(config.baseUrl) { mutableStateOf(config.baseUrl) }
+    var apiKey by remember(config.apiKey) { mutableStateOf(config.apiKey) }
+
+    Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+        DetailCard {
+            Column(modifier = Modifier.padding(16.dp)) {
+                OutlinedTextField(
+                    value = baseUrl,
+                    onValueChange = { baseUrl = it },
+                    label = { Text("Server URL") },
+                    placeholder = { Text("http://127.0.0.1:8124") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = apiKey,
+                    onValueChange = { apiKey = it },
+                    label = { Text("X-Api-Key") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Button(
+                    onClick = {
+                        AgentServerConfigStore.update(context, baseUrl, apiKey)
+                        AdbWebSocketService.start(context)
+                        ToastUtil.show("Agent 服务配置已保存", ToastType.SUCCESS)
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("保存并连接")
+                }
             }
         }
     }

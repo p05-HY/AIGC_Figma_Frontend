@@ -5,6 +5,7 @@ import android.graphics.PixelFormat
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
@@ -76,12 +77,22 @@ class AdbOverlayController(
         container.addView(interactionButton)
     }
 
-    fun show() {
+    fun canShow(): Boolean {
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(appContext)
+    }
+
+    fun show(): Boolean {
+        if (!canShow()) return false
         runOnMain {
             if (attached) return@runOnMain
-            windowManager.addView(container, params)
-            attached = true
+            runCatching {
+                windowManager.addView(container, params)
+                attached = true
+            }.onFailure {
+                attached = false
+            }
         }
+        return true
     }
 
     fun update(status: String, detail: String? = null) {
@@ -111,7 +122,7 @@ class AdbOverlayController(
     fun hide() {
         runOnMain {
             if (!attached) return@runOnMain
-            windowManager.removeView(container)
+            runCatching { windowManager.removeView(container) }
             attached = false
         }
     }

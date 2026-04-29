@@ -1,19 +1,16 @@
 package com.example.blueheartv.viewmodel
 
+import com.example.blueheartv.chat.ChatPrompt
 import com.example.blueheartv.chat.ChatProvider
 import com.example.blueheartv.chat.ChatStreamEvent
-import com.example.blueheartv.db.MessageEntity
-import com.example.blueheartv.db.SessionEntity
+import com.example.blueheartv.chat.RemoteChatThread
 import com.example.blueheartv.model.Message
 import com.example.blueheartv.model.MessageDeliveryState
 import com.example.blueheartv.test.MainDispatcherRule
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -26,13 +23,14 @@ class ChatViewModelTest {
 
     @Test
     fun sendMessage_streamSuccess_updatesMessagesAndState() = runTest {
-        val provider = ScriptedProvider { _, onEvent ->
+        val provider = ScriptedProvider { _, _, onEvent ->
             onEvent(ChatStreamEvent.TextDelta("hello"))
             onEvent(ChatStreamEvent.TextDelta(" world"))
             onEvent(ChatStreamEvent.Completed)
         }
 
         val viewModel = createViewModel(chatProvider = provider)
+        advanceUntilIdle()
         viewModel.onInputChanged("test")
         viewModel.sendMessage()
         advanceUntilIdle()
@@ -46,43 +44,13 @@ class ChatViewModelTest {
     }
 
     @Test
-    fun sendMessage_debounce_blocksRapidDuplicateSends() = runTest {
-        var now = 1000L
-        var called = 0
-        val provider = ScriptedProvider { _, onEvent ->
-            called += 1
-            onEvent(ChatStreamEvent.TextDelta("ok"))
-            onEvent(ChatStreamEvent.Completed)
-        }
-
-        val viewModel = createViewModel(
-            chatProvider = provider,
-            timeProvider = { now },
-        )
-
-        viewModel.onInputChanged("hello")
-        viewModel.sendMessage()
-        viewModel.onInputChanged("hello")
-        viewModel.sendMessage()
-
-        advanceUntilIdle()
-        assertEquals(1, called)
-
-        now += 600
-        viewModel.onInputChanged("hello again")
-        viewModel.sendMessage()
-        advanceUntilIdle()
-
-        assertEquals(2, called)
-    }
-
-    @Test
     fun streamError_setsRetryState() = runTest {
-        val provider = ScriptedProvider { _, onEvent ->
+        val provider = ScriptedProvider { _, _, onEvent ->
             onEvent(ChatStreamEvent.Error("network down", retryable = true))
         }
 
         val viewModel = createViewModel(chatProvider = provider)
+        advanceUntilIdle()
         viewModel.onInputChanged("hello")
         viewModel.sendMessage()
         advanceUntilIdle()
@@ -91,94 +59,41 @@ class ChatViewModelTest {
         assertEquals(ChatSessionState.ERROR, uiState.sessionState)
         assertTrue(uiState.canRetry)
         assertEquals("network down", uiState.lastError)
-        assertNotNull(uiState.messages.last().errorMessage)
+        assertEquals(MessageDeliveryState.FAILED, uiState.messages.last().deliveryState)
     }
 
     @Test
-    fun sendMessage_persistsToDao() = runTest {
-        val dao = FakeChatDao()
-        val provider = ScriptedProvider { _, onEvent ->
-            onEvent(ChatStreamEvent.TextDelta("ok"))
-            onEvent(ChatStreamEvent.Completed)
-        }
+    fun restoreSessions_loadsRemoteThreads() = runTest {
+        val provider = ScriptedProvider(
+            remoteThreads = listOf(
+                RemoteChatThread(
+                    id = "thread-1",
+                    title = "远端会话",
+                    updatedAtMillis = 2000L,
+                    messages = listOf(
+                        Message("m1", "hi", isUser = true),
+                        Message("m2", "hello", isUser = false),
+                    ),
+                ),
+            ),
+        )
 
-        val viewModel = createViewModel(chatProvider = provider, dao = dao)
-        viewModel.onInputChanged("persist me")
-        viewModel.sendMessage()
+        val viewModel = createViewModel(chatProvider = provider)
         advanceUntilIdle()
 
-        val sessions = dao.getAllSessions()
-        assertFalse(sessions.isEmpty())
-        val messages = dao.getMessagesForSession(sessions.first().id)
-        assertFalse(messages.isEmpty())
-    }
-
-    @Test
-    fun restoreSessions_recoversLastConversation() = runTest {
-        val dao = FakeChatDao()
-        dao.upsertSession(SessionEntity("session-1", "恢复会话", 2000L, false))
-        dao.upsertMessages(listOf(
-            MessageEntity("m1", "session-1", "hi", true, "COMPLETED", null, null, 0),
-            MessageEntity("m2", "session-1", "hello", false, "COMPLETED", null, null, 1),
-        ))
-
-        val viewModel = createViewModel(dao = dao)
-
         val uiState = viewModel.uiState.value
-        assertFalse(uiState.histories.isEmpty())
-        assertEquals("恢复会话", uiState.histories.first().title)
+        assertEquals("远端会话", uiState.histories.first().title)
         assertEquals(2, uiState.messages.size)
         assertEquals(ChatState.CHAT_SIMPLE, uiState.chatState)
     }
 
-    @Test
-    fun persistSessions_debounced() = runTest {
-        val dao = FakeChatDao()
-        val provider = ScriptedProvider { _, onEvent ->
-            onEvent(ChatStreamEvent.TextDelta("ok"))
-            onEvent(ChatStreamEvent.Completed)
-        }
-
-        val viewModel = createViewModel(
-            chatProvider = provider,
-            dao = dao,
-            persistDebounceMs = 100L,
-        )
-
-        viewModel.onInputChanged("first")
-        viewModel.sendMessage()
-        advanceUntilIdle()
-
-        val sessionId = viewModel.uiState.value.histories.firstOrNull()?.id
-        require(!sessionId.isNullOrBlank())
-
-        viewModel.renameSession(sessionId, "新标题")
-
-        // Before debounce, DAO should not have the new title yet
-        val beforeTitle = dao.getAllSessions().firstOrNull { it.id == sessionId }?.title
-        assertTrue(beforeTitle == null || beforeTitle != "新标题")
-
-        advanceTimeBy(150L)
-        advanceUntilIdle()
-
-        val afterTitle = dao.getAllSessions().firstOrNull { it.id == sessionId }?.title
-        assertEquals("新标题", afterTitle)
-    }
-
     private fun createViewModel(
-        chatProvider: ChatProvider = ScriptedProvider { _, onEvent ->
-            onEvent(ChatStreamEvent.Completed)
-        },
-        dao: FakeChatDao = FakeChatDao(),
+        chatProvider: ChatProvider = ScriptedProvider(),
         timeProvider: () -> Long = { System.currentTimeMillis() },
-        persistDebounceMs: Long = 0L,
     ): ChatViewModel {
         val repo = ChatSessionRepository(
-            dao = dao,
             timeProvider = timeProvider,
             idProvider = { "id-${System.nanoTime()}" },
-            persistDebounceMs = persistDebounceMs,
-            scope = this,
         )
         return ChatViewModel(
             chatProvider = chatProvider,
@@ -187,13 +102,31 @@ class ChatViewModelTest {
     }
 
     private class ScriptedProvider(
-        private val script: suspend (List<Message>, (ChatStreamEvent) -> Unit) -> Unit,
+        private val remoteThreads: List<RemoteChatThread> = emptyList(),
+        private val script: suspend (String, ChatPrompt, (ChatStreamEvent) -> Unit) -> Unit = { _, _, onEvent ->
+            onEvent(ChatStreamEvent.Completed)
+        },
     ) : ChatProvider {
+        override suspend fun createThread(titleHint: String?): RemoteChatThread {
+            return RemoteChatThread("thread-${System.nanoTime()}", titleHint ?: "当前对话", 0L, emptyList())
+        }
+
+        override suspend fun loadThreads(limit: Int): List<RemoteChatThread> = remoteThreads
+
+        override suspend fun loadThread(threadId: String): RemoteChatThread? {
+            return remoteThreads.firstOrNull { it.id == threadId }
+        }
+
+        override suspend fun renameThread(threadId: String, title: String) = Unit
+
+        override suspend fun deleteThread(threadId: String) = Unit
+
         override suspend fun streamReply(
-            messages: List<Message>,
+            threadId: String,
+            prompt: ChatPrompt,
             onEvent: (ChatStreamEvent) -> Unit,
         ) {
-            script(messages, onEvent)
+            script(threadId, prompt, onEvent)
         }
     }
 }

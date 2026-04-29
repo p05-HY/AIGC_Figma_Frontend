@@ -4,16 +4,19 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.net.Uri
+import android.provider.OpenableColumns
 import android.speech.tts.TextToSpeech
+import android.util.Base64
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
 import com.example.blueheartv.R
+import com.example.blueheartv.model.ChatAttachment
 import com.example.blueheartv.util.*
 import com.example.blueheartv.viewmodel.ChatViewModel
-import java.util.Locale
+import java.util.*
 
 class HomeScreenActions(
     val copyToClipboard: (String) -> Unit,
@@ -36,7 +39,7 @@ fun rememberHomeScreenActions(
     DisposableEffect(Unit) {
         val engine = TextToSpeech(context) { status ->
             if (status == TextToSpeech.SUCCESS) {
-                tts?.setLanguage(Locale.CHINESE)
+                tts?.language = Locale.CHINESE
             }
         }
         tts = engine
@@ -48,13 +51,19 @@ fun rememberHomeScreenActions(
         contract = ActivityResultContracts.GetContent(),
     ) { uri: Uri? ->
         if (uri != null) {
-            ToastUtil.show("已选择文件: $uri", ToastType.INFO)
+            val attachment = runCatching { uri.toImageAttachment(context) }.getOrNull()
+            if (attachment != null) {
+                viewModel.addImageAttachment(attachment)
+                ToastUtil.show("已添加图片: ${attachment.displayName}", ToastType.SUCCESS)
+            } else {
+                ToastUtil.show("无法读取图片", ToastType.ERROR)
+            }
         }
     }
 
     // Permission handlers
     val attachPermissionHandler = rememberPermissionHandler(snackbarHostState) {
-        filePickerLauncher.launch("*/*")
+        filePickerLauncher.launch("image/*")
     }
     val micPermissionHandler = rememberPermissionHandler(snackbarHostState) {
         ToastUtil.show(context.getString(R.string.feature_in_dev_voice_input), ToastType.INFO)
@@ -112,6 +121,7 @@ fun rememberHomeScreenActions(
                             rationaleMessage = context.getString(R.string.rationale_calendar_schedule),
                         ),
                     )
+
                     2 -> {
                         val perms = notificationPermissions()
                         if (perms.isEmpty()) {
@@ -125,6 +135,7 @@ fun rememberHomeScreenActions(
                             )
                         }
                     }
+
                     3 -> locationPermissionHandler(
                         PermissionRequest(
                             permissions = locationPermissions(),
@@ -135,4 +146,20 @@ fun rememberHomeScreenActions(
             },
         )
     }
+}
+
+private fun Uri.toImageAttachment(context: Context): ChatAttachment? {
+    val resolver = context.contentResolver
+    val mimeType = resolver.getType(this)?.takeIf { it.startsWith("image/") } ?: return null
+    val bytes = resolver.openInputStream(this)?.use { it.readBytes() } ?: return null
+    val displayName = resolver.query(this, null, null, null, null)?.use { cursor ->
+        val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+        if (index >= 0 && cursor.moveToFirst()) cursor.getString(index) else null
+    } ?: lastPathSegment ?: "image"
+    return ChatAttachment(
+        id = UUID.randomUUID().toString(),
+        displayName = displayName,
+        mimeType = mimeType,
+        base64Data = Base64.encodeToString(bytes, Base64.NO_WRAP),
+    )
 }
