@@ -14,7 +14,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import com.example.blueheartv.R
-import com.example.blueheartv.ui.theme.*
+import com.example.blueheartv.ui.theme.GlowBlueShadow
+import com.example.blueheartv.ui.theme.GlowCyanShadow
+import com.example.blueheartv.ui.theme.GlowWhite
 
 @Composable
 fun DecorativeBackground(

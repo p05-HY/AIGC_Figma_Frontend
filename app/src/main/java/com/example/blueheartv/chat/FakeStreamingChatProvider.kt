@@ -2,6 +2,7 @@ package com.example.blueheartv.chat
 
 import com.example.blueheartv.model.Message
 import kotlinx.coroutines.delay
+import kotlin.time.Duration.Companion.milliseconds
 
 class FakeStreamingChatProvider : ChatProvider {
     override suspend fun streamReply(
@@ -15,14 +16,14 @@ class FakeStreamingChatProvider : ChatProvider {
         }
 
         if (lastUserContent.contains("失败测试")) {
-            delay(300)
+            delay(300.milliseconds)
             onEvent(ChatStreamEvent.Error("模拟网络错误，请稍后重试"))
             return
         }
 
         val isRouteQuery = lastUserContent.contains("路线") ||
-            lastUserContent.contains("导航") ||
-            lastUserContent.contains("地图")
+                lastUserContent.contains("导航") ||
+                lastUserContent.contains("地图")
 
         if (isRouteQuery) {
             streamRouteReply(onEvent)
@@ -40,7 +41,7 @@ class FakeStreamingChatProvider : ChatProvider {
 
         toolCalls.forEach { tool ->
             onEvent(ChatStreamEvent.ToolCallStarted(tool))
-            delay(240)
+            delay(240.milliseconds)
             onEvent(ChatStreamEvent.ToolCallCompleted(tool))
         }
 
@@ -52,7 +53,7 @@ class FakeStreamingChatProvider : ChatProvider {
         )
 
         chunks.forEach { chunk ->
-            delay(180)
+            delay(180.milliseconds)
             onEvent(ChatStreamEvent.TextDelta(chunk))
         }
 
@@ -68,7 +69,7 @@ class FakeStreamingChatProvider : ChatProvider {
         )
 
         chunks.forEach { chunk ->
-            delay(150)
+            delay(150.milliseconds)
             onEvent(ChatStreamEvent.TextDelta(chunk))
         }
 

@@ -1,21 +1,27 @@
 package com.example.blueheartv
 
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Bundle
+import android.provider.Settings
+import android.view.accessibility.AccessibilityManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.ui.unit.dp
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.*
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
 import com.example.blueheartv.chat.AppContextHolder
 import com.example.blueheartv.chat.SiliconFlowConfigStore
+import com.example.blueheartv.control.AdbAccessibilityService
 import com.example.blueheartv.floating.FloatingBallService
 import com.example.blueheartv.navigation.AppNavGraph
 import com.example.blueheartv.ui.theme.BlueHeartVTheme
@@ -23,39 +29,29 @@ import com.example.blueheartv.ui.theme.ThemeRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import android.provider.Settings
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.lifecycle.lifecycleScope
-import com.example.blueheartv.control.AdbAccessibilityService
-import kotlinx.coroutines.launch
 import rikka.shizuku.Shizuku
-import android.view.accessibility.AccessibilityManager
-import android.accessibilityservice.AccessibilityServiceInfo
-import androidx.core.net.toUri
 
 class MainActivity : ComponentActivity() {
 
-    private var permissionCheckTrigger = mutableStateOf(0)
+    private var permissionCheckTrigger = mutableIntStateOf(0)
 
     private val shizukuPermissionListener =
         Shizuku.OnRequestPermissionResultListener { requestCode, _ ->
             if (requestCode == SHIZUKU_REQUEST_CODE) {
-                permissionCheckTrigger.value++
+                permissionCheckTrigger.intValue++
             }
         }
 
     private val accessibilitySettingsLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) {
-        permissionCheckTrigger.value++
+        permissionCheckTrigger.intValue++
     }
 
     private val overlaySettingsLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) {
-        permissionCheckTrigger.value++
+        permissionCheckTrigger.intValue++
     }
 
     private fun isAccessibilityServiceEnabled(): Boolean {
@@ -65,7 +61,7 @@ class MainActivity : ComponentActivity() {
         )
         return enabledServices.any {
             it.resolveInfo.serviceInfo.packageName == packageName &&
-                it.resolveInfo.serviceInfo.name == AdbAccessibilityService::class.java.name
+                    it.resolveInfo.serviceInfo.name == AdbAccessibilityService::class.java.name
         }
     }
 
@@ -118,49 +114,49 @@ class MainActivity : ComponentActivity() {
                     }
                     val needsShizuku = remember(triggerCount) {
                         runCatching {
-                            Shizuku.checkSelfPermission() != android.content.pm.PackageManager.PERMISSION_GRANTED
+                            Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED
                         }.getOrDefault(true)
                     }
 
-                    androidx.compose.foundation.layout.Column(
+                    Column(
                         modifier = Modifier.fillMaxSize()
                     ) {
                         if (needsOverlay || needsAccessibility || needsShizuku) {
-                            androidx.compose.material3.Card(
+                            Card(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(start = 12.dp, end = 12.dp, top = 8.dp),
-                                colors = androidx.compose.material3.CardDefaults.cardColors(
+                                colors = CardDefaults.cardColors(
                                     containerColor = MaterialTheme.colorScheme.errorContainer
                                 )
                             ) {
-                                androidx.compose.foundation.layout.Column(
+                                Column(
                                     modifier = Modifier.padding(12.dp),
-                                    verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp)
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
-                                    androidx.compose.material3.Text(
+                                    Text(
                                         text = "AI 控制功能需要以下权限",
                                         style = MaterialTheme.typography.titleSmall,
                                         color = MaterialTheme.colorScheme.onErrorContainer
                                     )
                                     if (needsShizuku) {
-                                        androidx.compose.material3.TextButton(
+                                        TextButton(
                                             onClick = { requestShizukuPermissionIfNeeded() }
                                         ) {
-                                            androidx.compose.material3.Text("授权 Shizuku（执行 shell 命令）")
+                                            Text("授权 Shizuku（执行 shell 命令）")
                                         }
                                     }
                                     if (needsAccessibility) {
-                                        androidx.compose.material3.TextButton(onClick = {
+                                        TextButton(onClick = {
                                             accessibilitySettingsLauncher.launch(
                                                 Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
                                             )
                                         }) {
-                                            androidx.compose.material3.Text("开启无障碍服务（AI 控制手机）")
+                                            Text("开启无障碍服务（AI 控制手机）")
                                         }
                                     }
                                     if (needsOverlay) {
-                                        androidx.compose.material3.TextButton(onClick = {
+                                        TextButton(onClick = {
                                             overlaySettingsLauncher.launch(
                                                 Intent(
                                                     Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
@@ -168,7 +164,7 @@ class MainActivity : ComponentActivity() {
                                                 )
                                             )
                                         }) {
-                                            androidx.compose.material3.Text("授权悬浮窗（状态提示）")
+                                            Text("授权悬浮窗（状态提示）")
                                         }
                                     }
                                 }

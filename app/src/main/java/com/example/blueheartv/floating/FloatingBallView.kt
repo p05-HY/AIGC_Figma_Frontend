@@ -12,6 +12,7 @@ import android.view.WindowManager
 import android.view.animation.OvershootInterpolator
 import android.widget.FrameLayout
 import android.widget.ImageView
+import androidx.core.content.edit
 import com.example.blueheartv.R
 import kotlin.math.abs
 
@@ -60,7 +61,7 @@ class FloatingBallView(
             @Suppress("DEPRECATION")
             WindowManager.LayoutParams.TYPE_PHONE,
         WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
         PixelFormat.TRANSLUCENT,
     ).apply {
         gravity = Gravity.TOP or Gravity.START
@@ -90,6 +91,7 @@ class FloatingBallView(
                     totalMovement = 0f
                     true
                 }
+
                 MotionEvent.ACTION_MOVE -> {
                     val dx = event.rawX - startX
                     val dy = event.rawY - startY
@@ -99,6 +101,7 @@ class FloatingBallView(
                     windowManager.updateViewLayout(ballView, layoutParams)
                     true
                 }
+
                 MotionEvent.ACTION_UP -> {
                     if (totalMovement < clickThresholdPx) {
                         onClick()
@@ -107,6 +110,7 @@ class FloatingBallView(
                     }
                     true
                 }
+
                 else -> false
             }
         }
@@ -139,10 +143,10 @@ class FloatingBallView(
             start()
         }
 
-        prefs.edit()
-            .putInt(KEY_X, targetX)
-            .putInt(KEY_Y, layoutParams.y)
-            .apply()
+        prefs.edit {
+            putInt(KEY_X, targetX)
+                .putInt(KEY_Y, layoutParams.y)
+        }
     }
 
     private fun createBallDrawable(): android.graphics.drawable.Drawable {

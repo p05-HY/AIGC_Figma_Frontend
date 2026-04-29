@@ -6,15 +6,15 @@ import com.example.blueheartv.db.toDomain
 import com.example.blueheartv.db.toEntity
 import com.example.blueheartv.model.ChatHistory
 import com.example.blueheartv.model.Message
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import java.text.SimpleDateFormat
+import java.util.*
+import kotlin.time.Duration.Companion.milliseconds
 
 internal const val DEFAULT_SESSION_TITLE = "当前对话"
 private const val MAX_SESSIONS = 20
@@ -30,7 +30,7 @@ internal data class ConversationSession(
 class ChatSessionRepository(
     private val dao: ChatDao,
     private val timeProvider: () -> Long = { System.currentTimeMillis() },
-    private val idProvider: () -> String = { java.util.UUID.randomUUID().toString() },
+    private val idProvider: () -> String = { UUID.randomUUID().toString() },
     persistDebounceMs: Long = 250L,
     scope: CoroutineScope,
 ) {
@@ -47,7 +47,7 @@ class ChatSessionRepository(
     init {
         scope.launch {
             persistRequests
-                .debounce(persistDebounceMs)
+                .debounce(persistDebounceMs.milliseconds)
                 .collect { flushToRoom() }
         }
     }

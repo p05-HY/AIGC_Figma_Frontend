@@ -3,16 +3,19 @@ package com.example.blueheartv.ui.screens
 import android.content.Intent
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.Screenshot
+import androidx.compose.material.icons.outlined.Summarize
+import androidx.compose.material.icons.outlined.Translate
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -24,7 +27,9 @@ import androidx.compose.ui.unit.sp
 import com.example.blueheartv.R
 import com.example.blueheartv.ui.components.*
 import com.example.blueheartv.ui.theme.*
-import com.example.blueheartv.util.*
+import com.example.blueheartv.util.AppGlobalUiHost
+import com.example.blueheartv.util.ToastType
+import com.example.blueheartv.util.ToastUtil
 import com.example.blueheartv.viewmodel.ChatSessionState
 import com.example.blueheartv.viewmodel.ChatState
 import com.example.blueheartv.viewmodel.ChatViewModel
@@ -70,12 +75,14 @@ fun HomeScreen(
                 onAddClick = { viewModel.startNewConversation() },
             )
 
-            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            Box(modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()) {
                 when (uiState.chatState) {
                     ChatState.DEFAULT -> DefaultContent(uiState, viewModel)
                     ChatState.CHAT_SIMPLE,
                     ChatState.CHAT_TOOL_CALLING,
-                    -> ChatContent(
+                        -> ChatContent(
                         uiState = uiState,
                         listState = listState,
                         onRefresh = { viewModel.retryLastMessage() },
@@ -168,12 +175,14 @@ fun HomeScreen(
                 modifier = Modifier.padding(end = 72.dp, bottom = 120.dp),
             )
 
-            FloatingWidget(onClick = { showFloatingMenu = !showFloatingMenu })
+            FloatingWidget { showFloatingMenu = !showFloatingMenu }
         }
 
         SnackbarHost(
             hostState = snackbarHostState,
-            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 80.dp),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 80.dp),
         )
 
         AppGlobalUiHost()
@@ -183,7 +192,9 @@ fun HomeScreen(
 @Composable
 private fun ErrorRetryBar(message: String, canRetry: Boolean, onRetry: () -> Unit) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(text = message, fontSize = 12.sp, color = BlueAccentLight, modifier = Modifier.weight(1f))
@@ -193,7 +204,9 @@ private fun ErrorRetryBar(message: String, canRetry: Boolean, onRetry: () -> Uni
                 fontSize = 13.sp,
                 color = BlueAccent,
                 fontWeight = FontWeight.Medium,
-                modifier = Modifier.clickable { onRetry() }.padding(horizontal = 8.dp, vertical = 4.dp),
+                modifier = Modifier
+                    .clickable { onRetry() }
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
             )
         }
     }
@@ -206,14 +219,29 @@ private fun DefaultContent(uiState: HomeUiState, viewModel: ChatViewModel) {
         Text(
             text = stringResource(R.string.smart_recommendations),
             fontSize = 18.sp, color = TextBlack,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp),
         )
         Spacer(modifier = Modifier.height(16.dp))
-        SmartCardRow(recommendations = uiState.recommendations, onCardClick = { rec -> viewModel.sendRecommendation(rec) })
+        SmartCardRow(
+            recommendations = uiState.recommendations,
+            onCardClick = { rec -> viewModel.sendRecommendation(rec) })
         Spacer(modifier = Modifier.weight(1f))
-        Text(text = stringResource(R.string.welcome_title), fontSize = 24.sp, fontWeight = FontWeight.Bold, color = DarkPrimary, textAlign = TextAlign.Center)
+        Text(
+            text = stringResource(R.string.welcome_title),
+            fontSize = 24.sp,
+            fontWeight = FontWeight.Bold,
+            color = DarkPrimary,
+            textAlign = TextAlign.Center
+        )
         Spacer(modifier = Modifier.height(10.dp))
-        Text(text = stringResource(R.string.welcome_subtitle), fontSize = 14.sp, color = MutedText, textAlign = TextAlign.Center)
+        Text(
+            text = stringResource(R.string.welcome_subtitle),
+            fontSize = 14.sp,
+            color = MutedText,
+            textAlign = TextAlign.Center
+        )
         Spacer(modifier = Modifier.height(60.dp))
     }
 }

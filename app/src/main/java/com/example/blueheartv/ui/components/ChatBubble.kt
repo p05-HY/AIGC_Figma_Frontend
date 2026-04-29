@@ -1,14 +1,8 @@
 package com.example.blueheartv.ui.components
 
 import androidx.compose.animation.core.*
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -40,6 +34,7 @@ import com.example.blueheartv.ui.theme.*
 import com.example.blueheartv.util.ToastType
 import com.example.blueheartv.util.ToastUtil
 import kotlinx.coroutines.delay
+import kotlin.time.Duration.Companion.milliseconds
 
 private const val TYPEWRITER_DELAY_MS = 35L
 
@@ -54,7 +49,7 @@ fun rememberTypewriterText(fullText: String, isStreaming: Boolean): String {
             return@LaunchedEffect
         }
         while (displayedLength < currentFullText.length) {
-            delay(TYPEWRITER_DELAY_MS)
+            delay(TYPEWRITER_DELAY_MS.milliseconds)
             val target = currentFullText.length
             if (displayedLength < target) {
                 displayedLength++
@@ -65,7 +60,7 @@ fun rememberTypewriterText(fullText: String, isStreaming: Boolean): String {
     LaunchedEffect(fullText) {
         if (isStreaming && displayedLength < fullText.length) {
             while (displayedLength < fullText.length) {
-                delay(TYPEWRITER_DELAY_MS)
+                delay(TYPEWRITER_DELAY_MS.milliseconds)
                 displayedLength++
             }
         } else if (!isStreaming) {
@@ -80,10 +75,10 @@ fun rememberTypewriterText(fullText: String, isStreaming: Boolean): String {
 @Composable
 fun UserBubble(
     message: Message,
+    modifier: Modifier = Modifier,
     onCopy: (String) -> Unit = {},
     onDelete: (String) -> Unit = {},
     onEditConfirm: (String) -> Unit = {},
-    modifier: Modifier = Modifier,
 ) {
     val bubbleShape = RoundedCornerShape(
         topStart = 24.dp,
@@ -180,7 +175,7 @@ fun UserBubble(
                         }
                     }
                     LaunchedEffect(Unit) {
-                        delay(100)
+                        delay(100.milliseconds)
                         focusRequester.requestFocus()
                     }
                 } else if (enableTextSelection) {
@@ -253,10 +248,10 @@ fun UserBubble(
 @Composable
 fun AiBubble(
     message: Message,
+    modifier: Modifier = Modifier,
     onCopy: (String) -> Unit = {},
     onSpeak: (String) -> Unit = {},
     onDelete: (String) -> Unit = {},
-    modifier: Modifier = Modifier,
 ) {
     val bubbleShape = RoundedCornerShape(
         topStart = 24.dp,

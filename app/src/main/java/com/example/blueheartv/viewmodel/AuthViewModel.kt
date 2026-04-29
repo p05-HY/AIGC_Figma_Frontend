@@ -54,7 +54,7 @@ class AuthViewModel : ViewModel() {
             },
             isGranted = { grantedRuntimePermissions, _, _ ->
                 grantedRuntimePermissions.contains(Manifest.permission.READ_CALENDAR) &&
-                    grantedRuntimePermissions.contains(Manifest.permission.WRITE_CALENDAR)
+                        grantedRuntimePermissions.contains(Manifest.permission.WRITE_CALENDAR)
             },
         ),
         PermissionDefinition(
@@ -69,7 +69,7 @@ class AuthViewModel : ViewModel() {
             },
             isGranted = { grantedRuntimePermissions, _, _ ->
                 grantedRuntimePermissions.contains(Manifest.permission.ACCESS_COARSE_LOCATION) ||
-                    grantedRuntimePermissions.contains(Manifest.permission.ACCESS_FINE_LOCATION)
+                        grantedRuntimePermissions.contains(Manifest.permission.ACCESS_FINE_LOCATION)
             },
         ),
         PermissionDefinition(
@@ -103,10 +103,10 @@ class AuthViewModel : ViewModel() {
             isGranted = { grantedRuntimePermissions, _, sdk ->
                 if (sdk >= 33) {
                     grantedRuntimePermissions.contains(Manifest.permission.CAMERA) &&
-                        grantedRuntimePermissions.contains(Manifest.permission.READ_MEDIA_IMAGES)
+                            grantedRuntimePermissions.contains(Manifest.permission.READ_MEDIA_IMAGES)
                 } else {
                     grantedRuntimePermissions.contains(Manifest.permission.CAMERA) &&
-                        grantedRuntimePermissions.contains(Manifest.permission.READ_EXTERNAL_STORAGE)
+                            grantedRuntimePermissions.contains(Manifest.permission.READ_EXTERNAL_STORAGE)
                 }
             },
         ),
@@ -227,7 +227,7 @@ class AuthViewModel : ViewModel() {
 
         val overlayDefinition = permissionDefinitions.first { it.key == PermissionKey.OVERLAY }
         val overlayMissing = overlayDefinition.required &&
-            !overlayDefinition.isGranted(grantedRuntimePermissions, canDrawOverlays, sdk)
+                !overlayDefinition.isGranted(grantedRuntimePermissions, canDrawOverlays, sdk)
 
         when {
             missingRuntimePermissions.isNotEmpty() -> {
@@ -277,7 +277,7 @@ class AuthViewModel : ViewModel() {
 
         val overlayDefinition = permissionDefinitions.first { it.key == PermissionKey.OVERLAY }
         val overlayMissing = overlayDefinition.required &&
-            !overlayDefinition.isGranted(grantedRuntimePermissions, canDrawOverlays, sdk)
+                !overlayDefinition.isGranted(grantedRuntimePermissions, canDrawOverlays, sdk)
 
         if (pendingOverlayRequestAfterRuntime && overlayMissing) {
             pendingOverlayRequestAfterRuntime = false

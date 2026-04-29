@@ -18,13 +18,14 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.blueheartv.ui.theme.*
+import com.example.blueheartv.ui.theme.ButtonBorderDark
+import com.example.blueheartv.ui.theme.MutedText
 
 @Composable
 fun GlassButton(
     text: String,
-    onClick: () -> Unit = {},
     modifier: Modifier = Modifier,
+    onClick: () -> Unit = {},
 ) {
     val shape = RoundedCornerShape(10.dp)
 

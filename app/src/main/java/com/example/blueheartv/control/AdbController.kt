@@ -1,10 +1,7 @@
 package com.example.blueheartv.control
 
 import android.content.Context
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.*
 
 /**
  * AdbController 是合并后 App 内部调用 ADB 执行能力的统一入口。
@@ -55,6 +52,7 @@ class AdbController(context: Context) {
         }
     }
 
+    @OptIn(DelicateCoroutinesApi::class)
     fun destroy() {
         GlobalScope.launch(Dispatchers.IO) {
             runCatching { executor.destroy() }

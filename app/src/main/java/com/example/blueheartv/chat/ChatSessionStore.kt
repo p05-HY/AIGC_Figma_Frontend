@@ -1,6 +1,7 @@
 package com.example.blueheartv.chat
 
 import android.content.Context
+import androidx.core.content.edit
 import com.example.blueheartv.model.Message
 import com.example.blueheartv.model.MessageDeliveryState
 import com.example.blueheartv.model.ToolCall
@@ -192,9 +193,9 @@ object ChatSessionStore {
         }
 
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .edit()
-            .putString(KEY_SNAPSHOT, root.toString())
-            .apply()
+            .edit {
+                putString(KEY_SNAPSHOT, root.toString())
+            }
     }
 
     private fun mergeSnapshots(

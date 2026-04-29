@@ -1,7 +1,9 @@
 package com.example.blueheartv.di
 
 import com.example.blueheartv.chat.ChatProviderRegistry
+import com.example.blueheartv.control.AdbController
 import com.example.blueheartv.db.AppDatabase
+import com.example.blueheartv.db.ChatDao
 import com.example.blueheartv.db.SharedPrefsMigrator
 import com.example.blueheartv.viewmodel.ChatSessionRepository
 import com.example.blueheartv.viewmodel.ChatViewModel
@@ -21,12 +23,12 @@ val appModule = module {
     single { get<AppDatabase>().chatDao() }
 
     single {
-        val dao = get<com.example.blueheartv.db.ChatDao>()
+        val dao = get<ChatDao>()
         runBlocking { SharedPrefsMigrator.migrateIfNeeded(androidContext(), dao) }
         ChatSessionRepository(dao = dao, scope = get())
     }
 
-    single { com.example.blueheartv.control.AdbController(androidContext()) }
+    single { AdbController(androidContext()) }
 
     single {
         ChatViewModel(

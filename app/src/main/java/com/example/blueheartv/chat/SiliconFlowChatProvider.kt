@@ -1,11 +1,6 @@
 package com.example.blueheartv.chat
 
 import com.example.blueheartv.model.Message
-import java.io.IOException
-import java.net.ConnectException
-import java.net.SocketTimeoutException
-import java.net.UnknownHostException
-import java.util.concurrent.TimeUnit
 import com.example.blueheartv.telemetry.AppEventLogger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -16,6 +11,11 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.IOException
+import java.net.ConnectException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
+import java.util.concurrent.TimeUnit
 
 class SiliconFlowChatProvider(
     private val apiKeyProvider: () -> String?,
@@ -76,7 +76,7 @@ class SiliconFlowChatProvider(
         try {
             client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
-                    val errorText = response.body?.string().orEmpty().take(MAX_HTTP_ERROR_BODY)
+                    val errorText = response.body.string().take(MAX_HTTP_ERROR_BODY)
                     val retryable = isRetryableHttpCode(response.code)
                     val message = if (errorText.isNotBlank()) {
                         "SiliconFlow 请求失败(${response.code})：$errorText"
@@ -88,11 +88,7 @@ class SiliconFlowChatProvider(
                     return@use
                 }
 
-                val source = response.body?.source()
-                if (source == null) {
-                    onEvent(ChatStreamEvent.Error("SiliconFlow 响应为空"))
-                    return@use
-                }
+                val source = response.body.source()
 
                 var hasDelta = false
                 while (!source.exhausted()) {
@@ -171,7 +167,7 @@ class SiliconFlowChatProvider(
             is SocketTimeoutException,
             is ConnectException,
             is UnknownHostException,
-            -> true
+                -> true
 
             else -> error.message?.contains("timeout", ignoreCase = true) == true
         }

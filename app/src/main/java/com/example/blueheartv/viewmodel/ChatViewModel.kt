@@ -4,24 +4,16 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.blueheartv.chat.ChatProvider
 import com.example.blueheartv.chat.ChatStreamEvent
-import com.example.blueheartv.model.ChatHistory
-import com.example.blueheartv.model.Message
-import com.example.blueheartv.model.MessageDeliveryState
-import com.example.blueheartv.model.SmartRecommendation
-import com.example.blueheartv.model.ToolCall
-import com.example.blueheartv.model.defaultRecommendations
+import com.example.blueheartv.control.AdbController
+import com.example.blueheartv.control.ControlAction
+import com.example.blueheartv.control.PhoneControlRouter
+import com.example.blueheartv.model.*
 import com.example.blueheartv.telemetry.AppEventLogger
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Job
+import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.launch
-import com.example.blueheartv.control.ControlAction
-import com.example.blueheartv.control.PhoneControlRouter
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 
 enum class ChatState {
     DEFAULT,
@@ -53,7 +45,7 @@ private const val SEND_DEBOUNCE_MS = 500L
 class ChatViewModel(
     private val chatProvider: ChatProvider,
     private val repo: ChatSessionRepository,
-    private val adbController: com.example.blueheartv.control.AdbController,
+    private val adbController: AdbController,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(HomeUiState())
@@ -274,14 +266,14 @@ class ChatViewModel(
         withContext(Dispatchers.IO) {
             runCatching {
                 when (action) {
-                    is ControlAction.GoHome     -> adbController.pressKey(3)
-                    is ControlAction.GoBack     -> adbController.pressKey(4)
-                    is ControlAction.Tap        -> adbController.tap(action.x, action.y)
-                    is ControlAction.Swipe      -> adbController.swipe(action.x1, action.y1, action.x2, action.y2)
-                    is ControlAction.LaunchApp  -> adbController.launchApp(action.packageName)
-                    is ControlAction.TypeText   -> adbController.typeText(action.text)
-                    is ControlAction.PressKey   -> adbController.pressKey(action.keycode)
-                    is ControlAction.RunShell   -> adbController.runShell(action.command)
+                    is ControlAction.GoHome -> adbController.pressKey(3)
+                    is ControlAction.GoBack -> adbController.pressKey(4)
+                    is ControlAction.Tap -> adbController.tap(action.x, action.y)
+                    is ControlAction.Swipe -> adbController.swipe(action.x1, action.y1, action.x2, action.y2)
+                    is ControlAction.LaunchApp -> adbController.launchApp(action.packageName)
+                    is ControlAction.TypeText -> adbController.typeText(action.text)
+                    is ControlAction.PressKey -> adbController.pressKey(action.keycode)
+                    is ControlAction.RunShell -> adbController.runShell(action.command)
                     is ControlAction.DumpScreen -> adbController.dumpUiTree()
                 }
             }.getOrElse { e -> "操作失败：${e.message}" }
@@ -304,28 +296,59 @@ class ChatViewModel(
                         is ChatStreamEvent.ToolCallStarted -> {
                             hasToolCalling = true
                             toolCallStatus[event.label] = false
-                            updateAssistantMessage(assistantMessageId, ChatState.CHAT_TOOL_CALLING, ChatSessionState.RESPONDING, false) { msg ->
-                                msg.copy(deliveryState = MessageDeliveryState.STREAMING, toolCalls = toolCallStatus.toToolCallListOrNull())
+                            updateAssistantMessage(
+                                assistantMessageId,
+                                ChatState.CHAT_TOOL_CALLING,
+                                ChatSessionState.RESPONDING,
+                                false
+                            ) { msg ->
+                                msg.copy(
+                                    deliveryState = MessageDeliveryState.STREAMING,
+                                    toolCalls = toolCallStatus.toToolCallListOrNull()
+                                )
                             }
                         }
+
                         is ChatStreamEvent.ToolCallCompleted -> {
                             hasToolCalling = true
                             toolCallStatus[event.label] = true
-                            updateAssistantMessage(assistantMessageId, ChatState.CHAT_TOOL_CALLING, ChatSessionState.RESPONDING, false) { msg ->
-                                msg.copy(deliveryState = MessageDeliveryState.STREAMING, toolCalls = toolCallStatus.toToolCallListOrNull())
+                            updateAssistantMessage(
+                                assistantMessageId,
+                                ChatState.CHAT_TOOL_CALLING,
+                                ChatSessionState.RESPONDING,
+                                false
+                            ) { msg ->
+                                msg.copy(
+                                    deliveryState = MessageDeliveryState.STREAMING,
+                                    toolCalls = toolCallStatus.toToolCallListOrNull()
+                                )
                             }
                         }
+
                         is ChatStreamEvent.TextDelta -> {
                             val raw = (rawStreamContent[assistantMessageId] ?: "") + event.chunk
                             rawStreamContent[assistantMessageId] = raw
                             val chatState = if (hasToolCalling) ChatState.CHAT_TOOL_CALLING else ChatState.CHAT_SIMPLE
-                            updateAssistantMessage(assistantMessageId, chatState, ChatSessionState.RESPONDING, false) { msg ->
-                                msg.copy(content = stripThinkTags(raw), deliveryState = MessageDeliveryState.STREAMING, toolCalls = toolCallStatus.toToolCallListOrNull())
+                            updateAssistantMessage(
+                                assistantMessageId,
+                                chatState,
+                                ChatSessionState.RESPONDING,
+                                false
+                            ) { msg ->
+                                msg.copy(
+                                    content = stripThinkTags(raw),
+                                    deliveryState = MessageDeliveryState.STREAMING,
+                                    toolCalls = toolCallStatus.toToolCallListOrNull()
+                                )
                             }
                         }
+
                         ChatStreamEvent.Completed -> {
                             val finalContent = stripThinkTags(rawStreamContent.remove(assistantMessageId) ?: "")
-                            AppEventLogger.info("chat_stream_completed", "session=$sessionId assistantMessage=$assistantMessageId hasTool=$hasToolCalling contentLength=${finalContent.length}")
+                            AppEventLogger.info(
+                                "chat_stream_completed",
+                                "session=$sessionId assistantMessage=$assistantMessageId hasTool=$hasToolCalling contentLength=${finalContent.length}"
+                            )
                             val chatState = if (hasToolCalling) ChatState.CHAT_TOOL_CALLING else ChatState.CHAT_SIMPLE
                             updateAssistantMessage(assistantMessageId, chatState, ChatSessionState.IDLE, true) { msg ->
                                 msg.copy(
@@ -337,6 +360,7 @@ class ChatViewModel(
                             }
                             _uiState.update { it.copy(lastError = null, canRetry = false) }
                         }
+
                         is ChatStreamEvent.Error -> {
                             rawStreamContent.remove(assistantMessageId)
                             val chatState = if (hasToolCalling) ChatState.CHAT_TOOL_CALLING else ChatState.CHAT_SIMPLE
@@ -347,32 +371,68 @@ class ChatViewModel(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
-                AppEventLogger.error("chat_stream_exception", "session=$sessionId assistantMessage=$assistantMessageId ${error.message ?: "unknown_error"}", error)
+                AppEventLogger.error(
+                    "chat_stream_exception",
+                    "session=$sessionId assistantMessage=$assistantMessageId ${error.message ?: "unknown_error"}",
+                    error
+                )
                 val chatState = if (hasToolCalling) ChatState.CHAT_TOOL_CALLING else ChatState.CHAT_SIMPLE
                 onStreamError(sessionId, assistantMessageId, error.message ?: "请求失败，请稍后重试", true, chatState)
             }
         }
     }
 
-    private fun onStreamError(sessionId: String, assistantMessageId: String, reason: String, retryable: Boolean, chatState: ChatState) {
+    private fun onStreamError(
+        sessionId: String,
+        assistantMessageId: String,
+        reason: String,
+        retryable: Boolean,
+        chatState: ChatState
+    ) {
         updateAssistantMessage(assistantMessageId, chatState, ChatSessionState.ERROR, true) { msg ->
-            msg.copy(content = msg.content.ifBlank { "抱歉，这次响应失败了。" }, deliveryState = MessageDeliveryState.FAILED, errorMessage = reason)
+            msg.copy(
+                content = msg.content.ifBlank { "抱歉，这次响应失败了。" },
+                deliveryState = MessageDeliveryState.FAILED,
+                errorMessage = reason
+            )
         }
         _uiState.update { it.copy(lastError = reason, canRetry = retryable) }
-        AppEventLogger.warning("chat_stream_error", "session=$sessionId assistantMessage=$assistantMessageId chatState=$chatState retryable=$retryable reason=$reason")
+        AppEventLogger.warning(
+            "chat_stream_error",
+            "session=$sessionId assistantMessage=$assistantMessageId chatState=$chatState retryable=$retryable reason=$reason"
+        )
     }
 
-    private fun updateAssistantMessage(assistantMessageId: String, chatState: ChatState, sessionState: ChatSessionState, persist: Boolean, transform: (Message) -> Message) {
+    private fun updateAssistantMessage(
+        assistantMessageId: String,
+        chatState: ChatState,
+        sessionState: ChatSessionState,
+        persist: Boolean,
+        transform: (Message) -> Message
+    ) {
         val active = repo.updateMessage(assistantMessageId, transform) ?: return
 
         if (persist) repo.requestPersist()
 
         _uiState.update { state ->
-            state.copy(chatState = chatState, sessionState = sessionState, messages = active.messages.toList(), histories = repo.buildHistories())
+            state.copy(
+                chatState = chatState,
+                sessionState = sessionState,
+                messages = active.messages.toList(),
+                histories = repo.buildHistories()
+            )
         }
     }
 
-    private fun publishActiveSession(chatState: ChatState, sessionState: ChatSessionState, lastError: String?, canRetry: Boolean, retryPrompt: String?, closeDrawer: Boolean, keepInputText: Boolean) {
+    private fun publishActiveSession(
+        chatState: ChatState,
+        sessionState: ChatSessionState,
+        lastError: String?,
+        canRetry: Boolean,
+        retryPrompt: String?,
+        closeDrawer: Boolean,
+        keepInputText: Boolean
+    ) {
         val msgs = repo.getActiveSession()?.messages?.toList().orEmpty()
         _uiState.update { state ->
             state.copy(

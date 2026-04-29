@@ -41,6 +41,7 @@ import com.example.blueheartv.ui.theme.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.abs
+import kotlin.time.Duration.Companion.milliseconds
 
 private const val AUTO_SCROLL_INTERVAL_MS = 3000L
 private const val RESUME_DELAY_MS = 3000L
@@ -102,7 +103,7 @@ fun SmartCardRow(
     LaunchedEffect(count) {
         if (count <= 1) return@LaunchedEffect
         while (true) {
-            delay(AUTO_SCROLL_INTERVAL_MS)
+            delay(AUTO_SCROLL_INTERVAL_MS.milliseconds)
             if (!userInteracting && System.currentTimeMillis() - lastInteractionTime > RESUME_DELAY_MS) {
                 val next = (currentIndex + 1) % count
                 val delta = if (next == 0) {
@@ -305,9 +306,9 @@ fun SmartCardRow(
 @Composable
 private fun SmartCard(
     recommendation: SmartRecommendation,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit = {},
     cardWidth: Dp = 270.dp,
-    modifier: Modifier = Modifier,
     elevation: Dp = 4.dp,
 ) {
     val cardShape = RoundedCornerShape(16.dp)

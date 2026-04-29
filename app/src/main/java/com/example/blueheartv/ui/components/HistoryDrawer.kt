@@ -28,6 +28,7 @@ import com.example.blueheartv.ui.theme.*
 fun HistoryDrawer(
     isOpen: Boolean,
     histories: List<ChatHistory>,
+    modifier: Modifier = Modifier,
     onClose: () -> Unit,
     onNewChat: () -> Unit = {},
     onHistoryClick: (ChatHistory) -> Unit = {},
@@ -36,20 +37,19 @@ fun HistoryDrawer(
     onShare: (ChatHistory) -> Unit = {},
     onDelete: (ChatHistory) -> Unit = {},
     onSettings: () -> Unit = {},
-    modifier: Modifier = Modifier,
 ) {
     AnimatedVisibility(
         visible = isOpen,
         enter = fadeIn(animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing)) +
-            slideInHorizontally(
-                animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
-                initialOffsetX = { -it },
-            ),
+                slideInHorizontally(
+                    animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
+                    initialOffsetX = { -it },
+                ),
         exit = fadeOut(animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing)) +
-            slideOutHorizontally(
-                animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
-                targetOffsetX = { -it },
-            ),
+                slideOutHorizontally(
+                    animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
+                    targetOffsetX = { -it },
+                ),
     ) {
         Box(modifier = modifier.fillMaxSize()) {
             Box(
@@ -106,7 +106,7 @@ fun HistoryDrawer(
                     }
 
                     Spacer(modifier = Modifier.height(16.dp))
-                    Divider(thickness = 0.5.dp, color = DividerColor)
+                    HorizontalDivider(Modifier, thickness = 0.5.dp, color = DividerColor)
                     Spacer(modifier = Modifier.height(8.dp))
 
                     // History list
@@ -130,7 +130,7 @@ fun HistoryDrawer(
                     }
 
                     // Bottom settings entry
-                    Divider(thickness = 0.5.dp, color = DividerColor)
+                    HorizontalDivider(Modifier, thickness = 0.5.dp, color = DividerColor)
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()

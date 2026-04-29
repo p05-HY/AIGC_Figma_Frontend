@@ -52,7 +52,6 @@ out/
 ####################################
 *.class
 *.jar
-!gradle/wrapper/gradle-wrapper.jar
 
 ####################################
 # Logs & temp files

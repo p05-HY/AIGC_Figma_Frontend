@@ -3,11 +3,11 @@ package com.example.blueheartv.chat
 import android.content.Context
 import com.example.blueheartv.model.Message
 import com.example.blueheartv.telemetry.AppEventLogger
-import kotlin.coroutines.resume
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.lang.reflect.Method
 import java.lang.reflect.Proxy
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.coroutines.resume
 
 class UniAixSdkChatProvider(
     private val contextProvider: () -> Context?,
@@ -69,18 +69,21 @@ class UniAixSdkChatProvider(
 
         val sendMethod = cachedSendMethod ?: sdkClass.methods.firstOrNull { method ->
             method.name == "sendMessage" &&
-                method.parameterTypes.size == 2 &&
-                method.parameterTypes[0] == String::class.java &&
-                method.parameterTypes[1].isAssignableFrom(callbackClass)
+                    method.parameterTypes.size == 2 &&
+                    method.parameterTypes[0] == String::class.java &&
+                    method.parameterTypes[1].isAssignableFrom(callbackClass)
         }?.also { cachedSendMethod = it }
 
         if (sendMethod == null) {
-            AppEventLogger.warning("uniax_api_incompatible", "sendMessage(String, Callback) not found in $SDK_CLASS_NAME")
+            AppEventLogger.warning(
+                "uniax_api_incompatible",
+                "sendMessage(String, Callback) not found in $SDK_CLASS_NAME"
+            )
             onEvent(ChatStreamEvent.Error("uni-ai-x API 不兼容：未找到 sendMessage(String, Callback)"))
             return
         }
 
-        suspendCancellableCoroutine<Unit> { continuation ->
+        suspendCancellableCoroutine { continuation ->
             val finished = AtomicBoolean(false)
             val hasDelta = AtomicBoolean(false)
 
@@ -159,16 +162,16 @@ class UniAixSdkChatProvider(
         credentials.token?.let { token ->
             sdkClass.methods.firstOrNull { method ->
                 method.name == "setToken" &&
-                    method.parameterTypes.size == 1 &&
-                    method.parameterTypes[0] == String::class.java
+                        method.parameterTypes.size == 1 &&
+                        method.parameterTypes[0] == String::class.java
             }?.invoke(sdkInstance, token)
         }
 
         credentials.apiKey?.let { apiKey ->
             sdkClass.methods.firstOrNull { method ->
                 method.name == "setApiKey" &&
-                    method.parameterTypes.size == 1 &&
-                    method.parameterTypes[0] == String::class.java
+                        method.parameterTypes.size == 1 &&
+                        method.parameterTypes[0] == String::class.java
             }?.invoke(sdkInstance, apiKey)
         }
     }

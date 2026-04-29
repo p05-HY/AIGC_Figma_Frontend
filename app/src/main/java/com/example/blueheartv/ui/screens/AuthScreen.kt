@@ -1,43 +1,42 @@
 package com.example.blueheartv.ui.screens
 
 import android.content.Intent
-import android.net.Uri
+import android.content.pm.PackageManager
 import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.outlined.*
-import androidx.compose.material3.*
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import androidx.core.net.toUri
 import com.example.blueheartv.R
 import com.example.blueheartv.ui.theme.*
 import com.example.blueheartv.viewmodel.AuthViewModel
@@ -55,7 +54,7 @@ fun AuthScreen(
         return viewModel.runtimePermissionsForSdk(sdk)
             .filter { permission ->
                 ContextCompat.checkSelfPermission(context, permission) ==
-                    android.content.pm.PackageManager.PERMISSION_GRANTED
+                        PackageManager.PERMISSION_GRANTED
             }
             .toSet()
     }
@@ -107,7 +106,7 @@ fun AuthScreen(
         if (uiState.requestOverlayPermission) {
             val intent = Intent(
                 Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                Uri.parse("package:${context.packageName}"),
+                "package:${context.packageName}".toUri(),
             )
             overlayPermissionLauncher.launch(intent)
             viewModel.onOverlayPermissionRequestConsumed()
@@ -211,10 +210,10 @@ fun AuthScreen(
                             },
                         )
                         if (index < uiState.permissions.lastIndex) {
-                            Divider(
+                            HorizontalDivider(
                                 modifier = Modifier.padding(horizontal = 24.dp),
                                 thickness = 0.5.dp,
-                                color = DividerColor.copy(alpha = 0.5f),
+                                color = DividerColor.copy(alpha = 0.5f)
                             )
                         }
                     }

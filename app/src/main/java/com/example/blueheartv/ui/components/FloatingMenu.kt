@@ -1,13 +1,15 @@
 package com.example.blueheartv.ui.components
 
 import androidx.compose.animation.*
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
-import androidx.compose.material3.*
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -15,7 +17,9 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.blueheartv.ui.theme.*
+import com.example.blueheartv.ui.theme.DividerColor
+import com.example.blueheartv.ui.theme.SurfaceWhite
+import com.example.blueheartv.ui.theme.TextBlack
 
 data class FloatingMenuItem(
     val icon: ImageVector,
@@ -27,8 +31,8 @@ data class FloatingMenuItem(
 fun FloatingMenu(
     visible: Boolean,
     onDismiss: () -> Unit,
-    items: List<FloatingMenuItem> = defaultMenuItems(),
     modifier: Modifier = Modifier,
+    items: List<FloatingMenuItem> = defaultMenuItems(),
 ) {
     AnimatedVisibility(
         visible = visible,
@@ -70,10 +74,10 @@ fun FloatingMenu(
                         )
                     }
                     if (item != items.last()) {
-                        Divider(
+                        HorizontalDivider(
                             modifier = Modifier.padding(horizontal = 16.dp),
                             thickness = 0.5.dp,
-                            color = DividerColor,
+                            color = DividerColor
                         )
                     }
                 }

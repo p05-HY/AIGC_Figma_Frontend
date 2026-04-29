@@ -2,7 +2,6 @@ package com.example.blueheartv.floating
 
 import android.annotation.SuppressLint
 import android.content.Context
-import android.content.Intent
 import android.graphics.PixelFormat
 import android.os.Build
 import android.view.GestureDetector
@@ -21,35 +20,30 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.*
-import androidx.lifecycle.setViewTreeLifecycleOwner
-import androidx.lifecycle.setViewTreeViewModelStoreOwner
 import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
-import com.example.blueheartv.MainActivity
 import com.example.blueheartv.R
-import com.example.blueheartv.model.Message
 import com.example.blueheartv.ui.components.AiBubble
-import com.example.blueheartv.ui.components.LoadingDots
 import com.example.blueheartv.ui.components.UserBubble
 import com.example.blueheartv.ui.theme.*
 import com.example.blueheartv.viewmodel.ChatSessionState
 import com.example.blueheartv.viewmodel.ChatViewModel
-import com.example.blueheartv.viewmodel.HomeUiState
 import org.koin.java.KoinJavaComponent.get
 
 class FloatingChatWindow(
@@ -76,7 +70,7 @@ class FloatingChatWindow(
             @Suppress("DEPRECATION")
             WindowManager.LayoutParams.TYPE_PHONE,
         WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-            WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
+                WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
         PixelFormat.TRANSLUCENT,
     ).apply {
         gravity = Gravity.CENTER
@@ -220,7 +214,9 @@ private fun FloatingChatContent(
                 if (uiState.messages.isEmpty()) {
                     item {
                         Box(
-                            modifier = Modifier.fillMaxWidth().padding(top = 40.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 40.dp),
                             contentAlignment = Alignment.Center,
                         ) {
                             Text("有什么可以帮你的？", fontSize = 14.sp, color = MutedText)

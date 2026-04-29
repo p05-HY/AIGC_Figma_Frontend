@@ -7,15 +7,18 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.Help
 import androidx.compose.material.icons.outlined.*
-import androidx.compose.material3.*
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -55,7 +58,7 @@ fun SettingsScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(
-                    imageVector = Icons.Default.ArrowBack,
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                     contentDescription = "Back",
                     modifier = Modifier
                         .size(24.dp)
@@ -138,7 +141,7 @@ fun SettingsScreen(
                 shadowElevation = 2.dp,
             ) {
                 Column {
-                    SettingsItem(Icons.Outlined.Help, "帮助与反馈") { onNavigateToDetail("help") }
+                    SettingsItem(Icons.AutoMirrored.Outlined.Help, "帮助与反馈") { onNavigateToDetail("help") }
                     SettingsDivider()
                     SettingsItem(Icons.Outlined.Info, "关于") { onNavigateToDetail("about") }
                 }
@@ -196,9 +199,9 @@ private fun SettingsItem(
 
 @Composable
 private fun SettingsDivider() {
-    Divider(
+    HorizontalDivider(
         modifier = Modifier.padding(horizontal = 20.dp),
         thickness = 0.5.dp,
-        color = DividerColor,
+        color = DividerColor
     )
 }

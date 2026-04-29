@@ -1,6 +1,7 @@
 package com.example.blueheartv.db
 
 import android.content.Context
+import androidx.core.content.edit
 import com.example.blueheartv.chat.ChatSessionStore
 
 object SharedPrefsMigrator {
@@ -12,7 +13,7 @@ object SharedPrefsMigrator {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         if (prefs.getBoolean(MIGRATION_DONE_KEY, false)) return
         if (!prefs.contains("snapshot_v1")) {
-            prefs.edit().putBoolean(MIGRATION_DONE_KEY, true).apply()
+            prefs.edit { putBoolean(MIGRATION_DONE_KEY, true) }
             return
         }
 
@@ -37,9 +38,9 @@ object SharedPrefsMigrator {
             }
         }
 
-        prefs.edit()
-            .remove("snapshot_v1")
-            .putBoolean(MIGRATION_DONE_KEY, true)
-            .apply()
+        prefs.edit {
+            remove("snapshot_v1")
+                .putBoolean(MIGRATION_DONE_KEY, true)
+        }
     }
 }

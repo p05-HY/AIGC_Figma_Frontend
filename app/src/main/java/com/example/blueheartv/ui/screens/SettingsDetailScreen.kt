@@ -8,7 +8,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.ExitToApp
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -57,7 +59,7 @@ fun SettingsDetailScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(
-                    imageVector = Icons.Default.ArrowBack,
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                     contentDescription = "Back",
                     modifier = Modifier
                         .size(24.dp)
@@ -215,7 +217,7 @@ private fun PrivacyDetailContent(
             DetailDivider()
             DetailActionRow(
                 label = "注销账号",
-                icon = Icons.Outlined.ExitToApp,
+                icon = Icons.AutoMirrored.Outlined.ExitToApp,
                 tint = Color(0xFFE53935),
                 onClick = { showLogoutDialog = true },
             )
@@ -338,7 +340,7 @@ private fun StorageDetailContent() {
 private fun HelpDetailContent() {
     Column(modifier = Modifier.padding(horizontal = 16.dp)) {
         DetailCard {
-            DetailActionRow(label = "使用教程", icon = Icons.Outlined.MenuBook)
+            DetailActionRow(label = "使用教程", icon = Icons.AutoMirrored.Outlined.MenuBook)
             DetailDivider()
             DetailActionRow(label = "常见问题", icon = Icons.Outlined.QuestionAnswer)
             DetailDivider()
@@ -533,9 +535,9 @@ private fun SwitchRow(
 
 @Composable
 private fun DetailDivider() {
-    Divider(
+    HorizontalDivider(
         modifier = Modifier.padding(horizontal = 20.dp),
         thickness = 0.5.dp,
-        color = DividerColor,
+        color = DividerColor
     )
 }

@@ -6,7 +6,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.*
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.Error
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -24,6 +27,7 @@ import com.example.blueheartv.ui.theme.TextBlack
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlin.time.Duration.Companion.milliseconds
 
 // ============================================================
 // Usage:
@@ -75,9 +79,9 @@ fun AppToastHost(
         ToastUtil.events.collect { event ->
             currentEvent = event
             visible = true
-            delay(event.durationMs)
+            delay(event.durationMs.milliseconds)
             visible = false
-            delay(300)
+            delay(300.milliseconds)
             currentEvent = null
         }
     }
