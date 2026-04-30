@@ -3,6 +3,7 @@ package com.example.blueheartv.system
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.ContentUris
+import android.content.ContentValues
 import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
@@ -132,7 +133,7 @@ class SystemApi(
         )
         for (index in 0 until reminders.length()) {
             val reminder = reminders.getJSONObject(index)
-            val values = android.content.ContentValues().apply {
+            val values = ContentValues().apply {
                 put(CalendarContract.Reminders.EVENT_ID, eventId)
                 put(CalendarContract.Reminders.MINUTES, reminder.requiredInt("minutes"))
                 put(CalendarContract.Reminders.METHOD, reminderMethodFromString(reminder.requiredString("method")))
@@ -170,8 +171,8 @@ class SystemApi(
         error("没有可写日历。")
     }
 
-    private fun eventValues(event: JSONObject): android.content.ContentValues {
-        return android.content.ContentValues().apply {
+    private fun eventValues(event: JSONObject): ContentValues {
+        return ContentValues().apply {
             putStringIfPresent(event, "title", CalendarContract.Events.TITLE)
             putStringIfPresent(event, "description", CalendarContract.Events.DESCRIPTION)
             putStringIfPresent(event, "eventLocation", CalendarContract.Events.EVENT_LOCATION)
@@ -302,7 +303,7 @@ private fun ApplicationInfo.isSystemApp(): Boolean {
             (flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0
 }
 
-private fun android.content.ContentValues.putStringIfPresent(
+private fun ContentValues.putStringIfPresent(
     source: JSONObject,
     jsonKey: String,
     column: String
@@ -312,7 +313,7 @@ private fun android.content.ContentValues.putStringIfPresent(
     }
 }
 
-private fun android.content.ContentValues.putLongIfPresent(
+private fun ContentValues.putLongIfPresent(
     source: JSONObject,
     jsonKey: String,
     column: String
@@ -322,7 +323,7 @@ private fun android.content.ContentValues.putLongIfPresent(
     }
 }
 
-private fun android.content.ContentValues.putBooleanIfPresent(
+private fun ContentValues.putBooleanIfPresent(
     source: JSONObject,
     jsonKey: String,
     column: String

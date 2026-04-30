@@ -93,6 +93,13 @@ class SystemService : Service() {
         private const val NOTIFICATION_ID = 2001
         private const val NOTIFICATION_CHANNEL_ID = "system_connection"
 
+        fun start(context: Context, serverBaseUrl: String) {
+            if (serverBaseUrl.isBlank()) return
+            context.startForegroundService(
+                createStartIntent(context, SystemConfig(serverBaseUrl = serverBaseUrl)),
+            )
+        }
+
         fun createStartIntent(context: Context, config: SystemConfig): Intent {
             return Intent(context, SystemService::class.java).apply {
                 action = ACTION_START

@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.blueheartv.chat.AgentServerConfigStore
 import com.example.blueheartv.control.AdbWebSocketService
+import com.example.blueheartv.system.SystemService
 import com.example.blueheartv.ui.theme.*
 import com.example.blueheartv.util.ToastType
 import com.example.blueheartv.util.ToastUtil
@@ -352,6 +353,7 @@ private fun AgentServerDetailContent() {
                     onClick = {
                         AgentServerConfigStore.update(context, baseUrl, apiKey)
                         AdbWebSocketService.start(context)
+                        SystemService.start(context, baseUrl)
                         ToastUtil.show("Agent 服务配置已保存", ToastType.SUCCESS)
                     },
                     modifier = Modifier.fillMaxWidth(),

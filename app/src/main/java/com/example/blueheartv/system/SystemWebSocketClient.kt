@@ -124,6 +124,8 @@ class SystemWebSocketClient(
             .encodedPath(PROTOCOL_PATH)
             .build()
             .toString()
+            .replaceFirst("https://", "wss://")
+            .replaceFirst("http://", "ws://")
     }
 
     private companion object {

@@ -25,6 +25,7 @@ import com.example.blueheartv.control.AdbAccessibilityService
 import com.example.blueheartv.control.AdbWebSocketService
 import com.example.blueheartv.floating.FloatingBallService
 import com.example.blueheartv.navigation.AppNavGraph
+import com.example.blueheartv.system.SystemService
 import com.example.blueheartv.ui.theme.BlueHeartVTheme
 import com.example.blueheartv.ui.theme.ThemeRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -96,6 +97,7 @@ class MainActivity : ComponentActivity() {
         ThemeRepository.init(applicationContext)
         if (AgentServerConfigStore.snapshot().isConfigured) {
             AdbWebSocketService.start(applicationContext)
+            SystemService.start(applicationContext, AgentServerConfigStore.snapshot().baseUrl)
         }
 
         handleSessionIdIntent(intent)

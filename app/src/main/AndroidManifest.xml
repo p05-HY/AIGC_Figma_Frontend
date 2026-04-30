@@ -64,7 +64,7 @@
         <service
             android:name=".system.SystemService"
             android:exported="false"
-            android:foregroundServiceType="location" />
+            android:foregroundServiceType="specialUse" />
 
         <service
             android:name=".control.AdbWebSocketService"
