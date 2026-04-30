@@ -35,8 +35,15 @@ fun rememberPermissionHandler(
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions(),
     ) { results ->
+        val requested = results.keys
         val allGranted = results.isNotEmpty() && results.values.all { it }
+        val selectedPhotosGranted = Build.VERSION.SDK_INT >= 34 &&
+                android.Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED in requested &&
+                results[android.Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED] == true
         if (allGranted) {
+            pendingOnGranted?.invoke()
+            pendingOnGranted = null
+        } else if (selectedPhotosGranted) {
             pendingOnGranted?.invoke()
             pendingOnGranted = null
         } else {
@@ -57,7 +64,7 @@ fun rememberPermissionHandler(
         AlertDialog(
             onDismissRequest = { showSettingsDialog = false },
             title = { Text("权限被拒绝") },
-            text = { Text(settingsDialogMessage + "，请前往系统设置开启。") },
+            text = { Text("$settingsDialogMessage，请前往系统设置开启。") },
             confirmButton = {
                 TextButton(onClick = {
                     showSettingsDialog = false
@@ -113,7 +120,12 @@ fun rememberPermissionHandler(
 }
 
 fun imagePermissions(): List<String> {
-    return if (Build.VERSION.SDK_INT >= 33) {
+    return if (Build.VERSION.SDK_INT >= 34) {
+        listOf(
+            android.Manifest.permission.READ_MEDIA_IMAGES,
+            android.Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
+        )
+    } else if (Build.VERSION.SDK_INT >= 33) {
         listOf(android.Manifest.permission.READ_MEDIA_IMAGES)
     } else {
         listOf(android.Manifest.permission.READ_EXTERNAL_STORAGE)

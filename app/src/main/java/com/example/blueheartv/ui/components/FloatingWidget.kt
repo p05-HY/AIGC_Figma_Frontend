@@ -15,8 +15,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -29,14 +29,14 @@ fun FloatingWidget(
     modifier: Modifier = Modifier,
     onClick: () -> Unit = {},
 ) {
-    val configuration = LocalConfiguration.current
+    val windowInfo = LocalWindowInfo.current
     val density = LocalDensity.current
-    val screenWidthPx = with(density) { configuration.screenWidthDp.dp.toPx() }
-    val screenHeightPx = with(density) { configuration.screenHeightDp.dp.toPx() }
+    val screenWidthPx = windowInfo.containerSize.width.toFloat()
+    val screenHeightPx = windowInfo.containerSize.height.toFloat()
     val widgetSizePx = with(density) { 56.dp.toPx() }
     val marginPx = with(density) { 16.dp.toPx() }
 
-    var offset by remember {
+    var offset by remember(screenWidthPx, screenHeightPx) {
         mutableStateOf(Offset(screenWidthPx - widgetSizePx - marginPx, screenHeightPx * 0.7f))
     }
 

@@ -68,7 +68,7 @@ class MainActivity : ComponentActivity() {
 
     private fun requestShizukuPermissionIfNeeded() {
         if (Shizuku.isPreV11()) return
-        if (Shizuku.checkSelfPermission() != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+        if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
             Shizuku.requestPermission(SHIZUKU_REQUEST_CODE)
         }
     }

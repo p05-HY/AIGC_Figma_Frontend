@@ -45,6 +45,9 @@ fun HomeScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
     val actions = rememberHomeScreenActions(viewModel, snackbarHostState)
+    val screenshotInDevText = stringResource(R.string.feature_in_dev_screenshot)
+    val translateInDevText = stringResource(R.string.feature_in_dev_translate)
+    val summarizeInDevText = stringResource(R.string.feature_in_dev_summarize)
 
     val shouldAutoScroll by remember(uiState.messages.size, uiState.sessionState) {
         derivedStateOf {
@@ -167,15 +170,15 @@ fun HomeScreen(
                     },
                     FloatingMenuItem(Icons.Outlined.Screenshot, stringResource(R.string.menu_screenshot)) {
                         showFloatingMenu = false
-                        ToastUtil.show(context.getString(R.string.feature_in_dev_screenshot), ToastType.INFO)
+                        ToastUtil.show(screenshotInDevText, ToastType.INFO)
                     },
                     FloatingMenuItem(Icons.Outlined.Translate, stringResource(R.string.menu_translate)) {
                         showFloatingMenu = false
-                        ToastUtil.show(context.getString(R.string.feature_in_dev_translate), ToastType.INFO)
+                        ToastUtil.show(translateInDevText, ToastType.INFO)
                     },
                     FloatingMenuItem(Icons.Outlined.Summarize, stringResource(R.string.menu_summarize)) {
                         showFloatingMenu = false
-                        ToastUtil.show(context.getString(R.string.feature_in_dev_summarize), ToastType.INFO)
+                        ToastUtil.show(summarizeInDevText, ToastType.INFO)
                     },
                 ),
                 modifier = Modifier.padding(end = 72.dp, bottom = 120.dp),

@@ -45,6 +45,7 @@ import com.example.blueheartv.ui.theme.*
 import com.example.blueheartv.viewmodel.ChatSessionState
 import com.example.blueheartv.viewmodel.ChatViewModel
 import org.koin.java.KoinJavaComponent.get
+import kotlin.math.abs
 
 class FloatingChatWindow(
     private val context: Context,
@@ -110,7 +111,7 @@ class FloatingChatWindow(
 
         val gestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
             override fun onFling(e1: MotionEvent?, e2: MotionEvent, velocityX: Float, velocityY: Float): Boolean {
-                if (e1 != null && e1.y - e2.y > 150 && Math.abs(velocityY) > 300) {
+                if (e1 != null && e1.y - e2.y > 150 && abs(velocityY) > 300) {
                     val sessionId = chatViewModel.uiState.value.let { state ->
                         state.histories.firstOrNull { it.isCurrent }?.id
                     }

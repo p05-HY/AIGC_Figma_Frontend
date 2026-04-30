@@ -12,6 +12,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import com.example.blueheartv.R
 import com.example.blueheartv.model.ChatAttachment
 import com.example.blueheartv.util.*
@@ -33,6 +34,16 @@ fun rememberHomeScreenActions(
     snackbarHostState: SnackbarHostState,
 ): HomeScreenActions {
     val context = LocalContext.current
+    val voiceInputInDevText = stringResource(R.string.feature_in_dev_voice_input)
+    val promptReadScreen = stringResource(R.string.prompt_read_screen)
+    val promptTodaySchedule = stringResource(R.string.prompt_today_schedule)
+    val promptTodayDelivery = stringResource(R.string.prompt_today_delivery)
+    val promptTodayWeather = stringResource(R.string.prompt_today_weather)
+    val rationaleMediaAttach = stringResource(R.string.rationale_media_attach)
+    val rationaleAudioInput = stringResource(R.string.rationale_audio_input)
+    val rationaleCalendarSchedule = stringResource(R.string.rationale_calendar_schedule)
+    val rationaleNotificationDelivery = stringResource(R.string.rationale_notification_delivery)
+    val rationaleLocationWeather = stringResource(R.string.rationale_location_weather)
 
     // TTS
     var tts by remember { mutableStateOf<TextToSpeech?>(null) }
@@ -66,16 +77,16 @@ fun rememberHomeScreenActions(
         filePickerLauncher.launch("image/*")
     }
     val micPermissionHandler = rememberPermissionHandler(snackbarHostState) {
-        ToastUtil.show(context.getString(R.string.feature_in_dev_voice_input), ToastType.INFO)
+        ToastUtil.show(voiceInputInDevText, ToastType.INFO)
     }
     val calendarPermissionHandler = rememberPermissionHandler(snackbarHostState) {
-        viewModel.sendQuickAction(context.getString(R.string.prompt_today_schedule))
+        viewModel.sendQuickAction(promptTodaySchedule)
     }
     val locationPermissionHandler = rememberPermissionHandler(snackbarHostState) {
-        viewModel.sendQuickAction(context.getString(R.string.prompt_today_weather))
+        viewModel.sendQuickAction(promptTodayWeather)
     }
     val notificationPermissionHandler = rememberPermissionHandler(snackbarHostState) {
-        viewModel.sendQuickAction(context.getString(R.string.prompt_today_delivery))
+        viewModel.sendQuickAction(promptTodayDelivery)
     }
 
     return remember(viewModel, snackbarHostState) {
@@ -94,7 +105,7 @@ fun rememberHomeScreenActions(
                 attachPermissionHandler(
                     PermissionRequest(
                         permissions = imagePermissions(),
-                        rationaleMessage = context.getString(R.string.rationale_media_attach),
+                        rationaleMessage = rationaleMediaAttach,
                     ),
                 )
             },
@@ -102,23 +113,23 @@ fun rememberHomeScreenActions(
                 micPermissionHandler(
                     PermissionRequest(
                         permissions = audioPermissions(),
-                        rationaleMessage = context.getString(R.string.rationale_audio_input),
+                        rationaleMessage = rationaleAudioInput,
                     ),
                 )
             },
             requestQuickAction = { index ->
                 val prompts = listOf(
-                    context.getString(R.string.prompt_read_screen),
-                    context.getString(R.string.prompt_today_schedule),
-                    context.getString(R.string.prompt_today_delivery),
-                    context.getString(R.string.prompt_today_weather),
+                    promptReadScreen,
+                    promptTodaySchedule,
+                    promptTodayDelivery,
+                    promptTodayWeather,
                 )
                 when (index) {
                     0 -> viewModel.sendQuickAction(prompts[index])
                     1 -> calendarPermissionHandler(
                         PermissionRequest(
                             permissions = calendarPermissions(),
-                            rationaleMessage = context.getString(R.string.rationale_calendar_schedule),
+                            rationaleMessage = rationaleCalendarSchedule,
                         ),
                     )
 
@@ -130,7 +141,7 @@ fun rememberHomeScreenActions(
                             notificationPermissionHandler(
                                 PermissionRequest(
                                     permissions = perms,
-                                    rationaleMessage = context.getString(R.string.rationale_notification_delivery),
+                                    rationaleMessage = rationaleNotificationDelivery,
                                 ),
                             )
                         }
@@ -139,7 +150,7 @@ fun rememberHomeScreenActions(
                     3 -> locationPermissionHandler(
                         PermissionRequest(
                             permissions = locationPermissions(),
-                            rationaleMessage = context.getString(R.string.rationale_location_weather),
+                            rationaleMessage = rationaleLocationWeather,
                         ),
                     )
                 }

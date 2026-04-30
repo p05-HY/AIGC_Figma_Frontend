@@ -1,14 +1,8 @@
 package com.example.blueheartv
 
 import androidx.activity.ComponentActivity
-import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
-import androidx.compose.ui.test.onNode
-import androidx.compose.ui.test.onNodeWithContentDescription
-import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performTextInput
 import com.example.blueheartv.chat.ChatPrompt
 import com.example.blueheartv.chat.ChatProvider
 import com.example.blueheartv.chat.ChatStreamEvent

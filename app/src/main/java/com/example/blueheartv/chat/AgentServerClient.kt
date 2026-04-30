@@ -57,7 +57,7 @@ class AgentServerClient(
         )
     }
 
-    suspend fun searchThreads(limit: Int): List<RemoteChatThread> {
+    fun searchThreads(limit: Int): List<RemoteChatThread> {
         val body = JSONObject().apply {
             put("limit", limit)
             put("offset", 0)
@@ -315,8 +315,7 @@ class AgentServerClient(
             is String -> content
             is JSONArray -> buildString {
                 for (i in 0 until content.length()) {
-                    val item = content.opt(i)
-                    when (item) {
+                    when (val item = content.opt(i)) {
                         is String -> append(item)
                         is JSONObject -> append(
                             item.optString("text")
@@ -342,8 +341,7 @@ class AgentServerClient(
     }
 
     private fun parseThreadSearch(raw: String): List<RemoteThreadHeader> {
-        val json = parseJson(raw)
-        val array = when (json) {
+        val array = when (val json = parseJson(raw)) {
             is JSONArray -> json
             is JSONObject -> json.optJSONArray("threads")
                 ?: json.optJSONArray("items")

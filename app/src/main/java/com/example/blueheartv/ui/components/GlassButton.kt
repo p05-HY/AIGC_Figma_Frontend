@@ -14,7 +14,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -90,7 +91,8 @@ fun GlassButtonRow(
     buttons: List<String>,
     onButtonClick: (Int) -> Unit = {},
 ) {
-    val screenWidth = LocalConfiguration.current.screenWidthDp.dp
+    val density = LocalDensity.current
+    val screenWidth = with(density) { LocalWindowInfo.current.containerSize.width.toDp() }
     val buttonWidth = (screenWidth - 13.dp * 2 - 8.dp * 3) / 3.5f
 
     LazyRow(

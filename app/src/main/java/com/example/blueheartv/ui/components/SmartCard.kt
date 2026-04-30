@@ -27,8 +27,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
@@ -64,7 +64,7 @@ fun SmartCardRow(
     val dragOffset = remember { Animatable(0f) }
 
     val density = LocalDensity.current
-    val screenWidthDp = LocalConfiguration.current.screenWidthDp.dp
+    val screenWidthDp = with(density) { LocalWindowInfo.current.containerSize.width.toDp() }
     val cardWidthDp = screenWidthDp - 46.dp
     val cardWidthPx = with(density) { cardWidthDp.toPx() }
     val velocityThresholdPx = with(density) { VELOCITY_THRESHOLD_DP_S.dp.toPx() }

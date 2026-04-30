@@ -26,6 +26,7 @@ class SystemApi(
 ) {
     private val appContext = context.applicationContext
 
+    @SuppressLint("QueryAllPackagesPermission")
     fun listApps(type: String): JSONObject {
         require(type in setOf("all", "third", "system")) { "type 必须是 all、third 或 system。" }
         val packageManager = appContext.packageManager
