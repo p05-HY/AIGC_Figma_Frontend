@@ -3,13 +3,18 @@ package com.example.blueheartv.control
 import android.content.ComponentName
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
+import android.os.Bundle
 import android.os.IBinder
+import android.os.RemoteException
+import android.util.Log
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import rikka.shizuku.Shizuku
+
+private const val TAG = "ShizukuAdbExecutor"
 
 class ShizukuAdbExecutor(
     private val packageName: String
@@ -26,11 +31,16 @@ class ShizukuAdbExecutor(
     suspend fun execute(command: String): ShellResult = withContext(Dispatchers.IO) {
         ensurePermission()
         val service = awaitService()
-        val bundle = service.execute(command)
+        var bundle: Bundle? = null
+        try {
+            bundle = service.execute(command)
+        } catch (ex: RemoteException) {
+            Log.e(TAG, ex.message, ex)
+        }
         ShellResult(
-            exitCode = bundle.getInt(KEY_EXIT_CODE),
-            stdout = bundle.getString(KEY_STDOUT).orEmpty(),
-            stderr = bundle.getString(KEY_STDERR).orEmpty()
+            exitCode = bundle?.getInt(KEY_EXIT_CODE) ?: -1,
+            stdout = bundle?.getString(KEY_STDOUT).orEmpty(),
+            stderr = bundle?.getString(KEY_STDERR).orEmpty()
         )
     }
 

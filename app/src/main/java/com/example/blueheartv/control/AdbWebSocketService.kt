@@ -37,7 +37,7 @@ class AdbWebSocketService : Service() {
     override fun onCreate() {
         super.onCreate()
         executor = ShizukuAdbExecutor(packageName)
-        collector = AdbSnapshotCollector(executor)
+        collector = AdbSnapshotCollector(this, executor)
         overlay = AdbOverlayController(this)
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, buildNotification("ADB 工具服务启动中"))
