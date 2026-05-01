@@ -59,6 +59,7 @@ class ChatViewModel(
     private var historyJob: Job? = null
     private var lastSendAtMillis: Long = 0L
     private val rawStreamContent = mutableMapOf<String, String>()
+    private val streamInvocationIds = mutableMapOf<String, String>()
     private val completeThinkTagRegex = Regex("<think>[\\s\\S]*?</think>", RegexOption.IGNORE_CASE)
     private val unclosedThinkTagRegex = Regex("<think>[\\s\\S]*$", RegexOption.IGNORE_CASE)
     private val danglingThinkCloseTagRegex = Regex("</think>", RegexOption.IGNORE_CASE)
@@ -339,6 +340,11 @@ class ChatViewModel(
                     }
 
                     is ChatStreamEvent.TextDelta -> {
+                        val invocationId = event.invocationId ?: assistantMessageId
+                        if (streamInvocationIds[assistantMessageId] != invocationId) {
+                            streamInvocationIds[assistantMessageId] = invocationId
+                            rawStreamContent[assistantMessageId] = ""
+                        }
                         val raw = (rawStreamContent[assistantMessageId] ?: "") + event.chunk
                         rawStreamContent[assistantMessageId] = raw
                         val chatState = if (hasToolCalling) ChatState.CHAT_TOOL_CALLING else ChatState.CHAT_SIMPLE
@@ -357,6 +363,7 @@ class ChatViewModel(
 
                     ChatStreamEvent.Completed -> {
                         val finalContent = stripThinkTags(rawStreamContent.remove(assistantMessageId) ?: "")
+                        streamInvocationIds.remove(assistantMessageId)
                         val chatState = if (hasToolCalling) ChatState.CHAT_TOOL_CALLING else ChatState.CHAT_SIMPLE
                         updateAssistantMessage(assistantMessageId, chatState, ChatSessionState.IDLE) { msg ->
                             msg.copy(
@@ -371,6 +378,7 @@ class ChatViewModel(
 
                     is ChatStreamEvent.Error -> {
                         rawStreamContent.remove(assistantMessageId)
+                        streamInvocationIds.remove(assistantMessageId)
                         val chatState = if (hasToolCalling) ChatState.CHAT_TOOL_CALLING else ChatState.CHAT_SIMPLE
                         onStreamError(threadId, assistantMessageId, event.message, event.retryable, chatState)
                     }

@@ -181,8 +181,8 @@ class AgentServerClient(
         val json = runCatching { parseJson(payload) }.getOrNull() ?: return
         when {
             eventName.contains("messages", ignoreCase = true) -> {
-                extractMessageDelta(json)?.takeIf { it.isNotEmpty() }?.let {
-                    onEvent(ChatStreamEvent.TextDelta(it))
+                extractMessageDelta(json)?.takeIf { it.chunk.isNotEmpty() }?.let {
+                    onEvent(ChatStreamEvent.TextDelta(it.chunk, it.invocationId))
                 }
                 extractNodeName(json)?.let { markNodeActive(it, activeNodes, onEvent) }
             }
@@ -231,15 +231,43 @@ class AgentServerClient(
         }
     }
 
-    private fun extractMessageDelta(json: Any): String? {
+    private fun extractMessageDelta(json: Any): MessageDelta? {
         if (json is JSONArray && json.length() > 0) {
-            return extractMessageDelta(json.opt(0))
+            val chunk = json.optJSONObject(0) ?: return extractMessageDelta(json.opt(0))
+            val content = chunk.opt("content")
+                ?: chunk.optJSONObject("kwargs")?.opt("content")
+                ?: chunk.optJSONObject("message")?.opt("content")
+            val text = contentToText(content) ?: return null
+            return MessageDelta(
+                chunk = text,
+                invocationId = extractInvocationId(chunk, json.optJSONObject(1)),
+            )
         }
         val obj = json as? JSONObject ?: return null
         val content = obj.opt("content")
             ?: obj.optJSONObject("kwargs")?.opt("content")
             ?: obj.optJSONObject("message")?.opt("content")
-        return contentToText(content)
+        return contentToText(content)?.let {
+            MessageDelta(
+                chunk = it,
+                invocationId = extractInvocationId(obj, obj.optJSONObject("metadata")),
+            )
+        }
+    }
+
+    private fun extractInvocationId(chunk: JSONObject, metadata: JSONObject?): String? {
+        return chunk.optString("id")
+            .ifBlank { chunk.optJSONObject("message")?.optString("id").orEmpty() }
+            .ifBlank { metadata?.optString("checkpoint_ns").orEmpty() }
+            .ifBlank { metadata?.optString("langgraph_checkpoint_ns").orEmpty() }
+            .ifBlank {
+                metadata?.let {
+                    val node = it.optString("langgraph_node")
+                    val step = it.optString("langgraph_step")
+                    if (node.isNotBlank() && step.isNotBlank()) "$node:$step" else ""
+                }.orEmpty()
+            }
+            .ifBlank { null }
     }
 
     private fun extractNodeName(json: Any): String? {
@@ -259,6 +287,12 @@ class AgentServerClient(
     private fun parseMessages(array: JSONArray?): List<Message> {
         if (array == null) return emptyList()
         return buildList {
+            var pendingAssistant: Message? = null
+            fun flushPendingAssistant() {
+                pendingAssistant?.let(::add)
+                pendingAssistant = null
+            }
+
             for (i in 0 until array.length()) {
                 val obj = array.optJSONObject(i) ?: continue
                 val type = obj.optString("type").ifBlank { obj.optString("role") }
@@ -267,15 +301,20 @@ class AgentServerClient(
                 if (!isUser && !isAssistant) continue
                 val text = contentToText(obj.opt("content")).orEmpty()
                 if (text.isBlank() && isAssistant) continue
-                add(
-                    Message(
-                        id = obj.optString("id").ifBlank { "remote-${UUID.randomUUID()}" },
-                        content = text,
-                        isUser = isUser,
-                        deliveryState = MessageDeliveryState.COMPLETED,
-                    ),
+                val message = Message(
+                    id = obj.optString("id").ifBlank { "remote-${UUID.randomUUID()}" },
+                    content = text,
+                    isUser = isUser,
+                    deliveryState = MessageDeliveryState.COMPLETED,
                 )
+                if (isUser) {
+                    flushPendingAssistant()
+                    add(message)
+                } else {
+                    pendingAssistant = message
+                }
             }
+            flushPendingAssistant()
         }
     }
 
@@ -462,6 +501,11 @@ class AgentServerClient(
         val id: String,
         val metadata: JSONObject,
         val updatedAtMillis: Long,
+    )
+
+    private data class MessageDelta(
+        val chunk: String,
+        val invocationId: String?,
     )
 
     companion object {

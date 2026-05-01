@@ -63,6 +63,28 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun repeatedModelInvocations_keepLatestOutputOnly() = runTest {
+        val provider = ScriptedProvider { _, _, onEvent ->
+            onEvent(ChatStreamEvent.TextDelta("thinking", invocationId = "model-1"))
+            onEvent(ChatStreamEvent.TextDelta(" plan", invocationId = "model-1"))
+            onEvent(ChatStreamEvent.TextDelta("final", invocationId = "model-2"))
+            onEvent(ChatStreamEvent.TextDelta(" answer", invocationId = "model-2"))
+            onEvent(ChatStreamEvent.Completed)
+        }
+
+        val viewModel = createViewModel(chatProvider = provider)
+        advanceUntilIdle()
+        viewModel.onInputChanged("test")
+        viewModel.sendMessage()
+        advanceUntilIdle()
+
+        val uiState = viewModel.uiState.value
+        assertEquals(2, uiState.messages.size)
+        assertEquals("final answer", uiState.messages.last().content)
+        assertEquals(MessageDeliveryState.COMPLETED, uiState.messages.last().deliveryState)
+    }
+
+    @Test
     fun restoreSessions_loadsRemoteThreads() = runTest {
         val provider = ScriptedProvider(
             remoteThreads = listOf(

@@ -5,7 +5,10 @@ sealed interface ChatStreamEvent {
 
     data class ToolCallCompleted(val label: String) : ChatStreamEvent
 
-    data class TextDelta(val chunk: String) : ChatStreamEvent
+    data class TextDelta(
+        val chunk: String,
+        val invocationId: String? = null,
+    ) : ChatStreamEvent
 
     data object Completed : ChatStreamEvent
 
