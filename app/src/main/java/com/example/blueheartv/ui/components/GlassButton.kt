@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -14,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.style.TextOverflow
@@ -26,6 +28,7 @@ import com.example.blueheartv.ui.theme.MutedText
 fun GlassButton(
     text: String,
     modifier: Modifier = Modifier,
+    icon: ImageVector? = null,
     onClick: () -> Unit = {},
 ) {
     val shape = RoundedCornerShape(10.dp)
@@ -75,20 +78,34 @@ fun GlassButton(
                 )
         )
 
-        Text(
-            text = text,
-            fontSize = 12.sp,
-            color = MutedText,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+        ) {
+            if (icon != null) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = MutedText,
+                    modifier = Modifier.size(14.dp),
+                )
+            }
+            Text(
+                text = text,
+                fontSize = 12.sp,
+                color = MutedText,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 
 @Composable
 fun GlassButtonRow(
     buttons: List<String>,
+    icons: List<ImageVector?> = emptyList(),
     onButtonClick: (Int) -> Unit = {},
 ) {
     val density = LocalDensity.current
@@ -103,6 +120,7 @@ fun GlassButtonRow(
         itemsIndexed(buttons) { index, label ->
             GlassButton(
                 text = label,
+                icon = icons.getOrNull(index),
                 onClick = { onButtonClick(index) },
                 modifier = Modifier.width(buttonWidth),
             )

@@ -70,7 +70,8 @@ fun HomeScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .navigationBarsPadding()
-                .imePadding(),
+                .imePadding()
+                .padding(bottom = 24.dp),
         ) {
             AppTopBar(
                 onMenuClick = { viewModel.toggleDrawer() },
@@ -114,6 +115,12 @@ fun HomeScreen(
                     stringResource(R.string.btn_today_schedule),
                     stringResource(R.string.btn_today_delivery),
                     stringResource(R.string.btn_today_weather),
+                ),
+                icons = listOf(
+                    Icons.Outlined.Visibility,
+                    Icons.Outlined.EventNote,
+                    Icons.Outlined.LocalShipping,
+                    Icons.Outlined.WbSunny,
                 ),
                 onButtonClick = { index -> actions.requestQuickAction(index) },
             )
@@ -273,35 +280,77 @@ private fun ErrorRetryBar(message: String, canRetry: Boolean, onRetry: () -> Uni
 
 @Composable
 private fun DefaultContent(uiState: HomeUiState, viewModel: ChatViewModel) {
-    Column(modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
-        Spacer(modifier = Modifier.height(16.dp))
+    Box(modifier = Modifier.fillMaxSize()) {
         Text(
             text = stringResource(R.string.smart_recommendations),
-            fontSize = 18.sp, color = TextBlack,
+            fontSize = 18.sp,
+            color = TextBlack,
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp),
+                .align(Alignment.TopStart)
+                .padding(start = 20.dp, top = 16.dp),
         )
-        Spacer(modifier = Modifier.height(16.dp))
-        SmartCardRow(
-            recommendations = uiState.recommendations,
-            onCardClick = { rec -> viewModel.sendRecommendation(rec) })
-        Spacer(modifier = Modifier.weight(1f))
-        Text(
-            text = stringResource(R.string.welcome_title),
-            fontSize = 24.sp,
-            fontWeight = FontWeight.Bold,
-            color = DarkPrimary,
-            textAlign = TextAlign.Center
-        )
-        Spacer(modifier = Modifier.height(10.dp))
-        Text(
-            text = stringResource(R.string.welcome_subtitle),
-            fontSize = 14.sp,
-            color = MutedText,
-            textAlign = TextAlign.Center
-        )
-        Spacer(modifier = Modifier.height(60.dp))
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopStart)
+        ) {
+            SmartCardRow(
+                recommendations = uiState.recommendations,
+                onCardClick = { rec -> viewModel.sendRecommendation(rec) },
+            )
+        }
+
+        Column(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = 242.dp)
+                .width(280.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                text = stringResource(R.string.welcome_title),
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Bold,
+                color = DarkPrimary,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = stringResource(R.string.welcome_subtitle),
+                fontSize = 14.sp,
+                color = MutedText,
+                textAlign = TextAlign.Center,
+            )
+        }
+
+        val promptTodayWeather = stringResource(R.string.prompt_today_weather)
+        val promptTodaySchedule = stringResource(R.string.prompt_today_schedule)
+        val promptTodayDelivery = stringResource(R.string.prompt_today_delivery)
+        val promptReadScreen = stringResource(R.string.prompt_read_screen)
+
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(start = 13.dp, top = 744.dp),
+        ) {
+            QuickChip(
+                label = stringResource(R.string.btn_today_weather),
+                onClick = { viewModel.sendQuickAction(promptTodayWeather) },
+            )
+            QuickChip(
+                label = stringResource(R.string.btn_today_schedule),
+                onClick = { viewModel.sendQuickAction(promptTodaySchedule) },
+            )
+            QuickChip(
+                label = stringResource(R.string.btn_today_delivery),
+                onClick = { viewModel.sendQuickAction(promptTodayDelivery) },
+            )
+            QuickChip(
+                label = stringResource(R.string.btn_read_screen),
+                onClick = { viewModel.sendQuickAction(promptReadScreen) },
+            )
+        }
     }
 }
 

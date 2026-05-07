@@ -7,11 +7,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.outlined.AttachFile
-import androidx.compose.material.icons.outlined.Mic
-import androidx.compose.material3.Icon
+import androidx.compose.foundation.Image
 import androidx.compose.material3.Text
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
@@ -19,9 +15,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.blueheartv.R
 import com.example.blueheartv.ui.theme.*
 
 @Composable
@@ -37,81 +35,72 @@ fun BottomInputBar(
     Column(modifier = modifier.fillMaxWidth()) {
         HorizontalDividerLine()
 
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 13.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+        Box(modifier = Modifier.fillMaxWidth()) {
             Box(
                 modifier = Modifier
-                    .weight(1f)
-                    .height(41.dp)
-                    .shadow(1.dp, RoundedCornerShape(16.dp))
+                    .padding(horizontal = 13.dp)
+                    .fillMaxWidth()
+                    .height(41.25.dp)
+                    .shadow(2.dp, RoundedCornerShape(16.dp))
                     .background(SurfaceWhite, RoundedCornerShape(16.dp))
                     .border(0.5.dp, StrokeMuted, RoundedCornerShape(16.dp)),
             ) {
+                Image(
+                    painter = painterResource(R.drawable.ic_attachment),
+                    contentDescription = "Attach file",
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .padding(start = 13.dp)
+                        .size(19.dp)
+                        .clickable { onAttachClick() },
+                )
+
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .padding(start = 44.dp, end = 80.dp)
+                        .fillMaxWidth(),
+                ) {
+                    if (value.isEmpty()) {
+                        Text(
+                            text = "发消息...",
+                            fontSize = 14.sp,
+                            color = GrayText,
+                        )
+                    }
+                    BasicTextField(
+                        value = value,
+                        onValueChange = { if (it.length <= 2000) onValueChange(it) },
+                        modifier = Modifier.fillMaxWidth(),
+                        textStyle = TextStyle(
+                            fontSize = 14.sp,
+                            color = TextBlack,
+                        ),
+                        singleLine = true,
+                    )
+                }
+
                 Row(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 8.dp),
+                        .align(Alignment.CenterEnd)
+                        .padding(end = 13.dp),
                     verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
-                    IconButton24(
-                        onClick = onAttachClick,
-                        contentDescription = "Attach file",
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.AttachFile,
-                            contentDescription = null,
-                            modifier = Modifier.size(24.dp),
-                            tint = IconGray,
-                        )
-                    }
-
-                    Box(modifier = Modifier.weight(1f)) {
-                        if (value.isEmpty()) {
-                            Text(
-                                text = "发消息...",
-                                fontSize = 14.sp,
-                                color = GrayText,
-                            )
-                        }
-                        BasicTextField(
-                            value = value,
-                            onValueChange = { if (it.length <= 2000) onValueChange(it) },
-                            modifier = Modifier.fillMaxWidth(),
-                            textStyle = TextStyle(
-                                fontSize = 14.sp,
-                                color = TextBlack,
-                            ),
-                            singleLine = true,
-                        )
-                    }
-
-                    IconButton24(
-                        onClick = onMicClick,
+                    Image(
+                        painter = painterResource(R.drawable.ic_mic),
                         contentDescription = "Voice input",
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Mic,
-                            contentDescription = null,
-                            modifier = Modifier.size(24.dp),
-                            tint = IconGray,
-                        )
-                    }
-
-                    IconButton24(
-                        onClick = { if (sendEnabled) onSend() },
+                        modifier = Modifier
+                            .size(width = 9.dp, height = 13.dp)
+                            .clickable { onMicClick() },
+                    )
+                    Image(
+                        painter = painterResource(R.drawable.ic_send_arrow),
                         contentDescription = "Send",
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.Send,
-                            contentDescription = null,
-                            modifier = Modifier.size(24.dp),
-                            tint = if (sendEnabled) BlueAccent else IconGray,
-                        )
-                    }
+                        modifier = Modifier
+                            .size(15.dp)
+                            .clickable { if (sendEnabled) onSend() },
+                    )
                 }
             }
         }

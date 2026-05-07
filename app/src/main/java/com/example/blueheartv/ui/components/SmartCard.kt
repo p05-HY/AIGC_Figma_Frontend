@@ -1,55 +1,51 @@
 package com.example.blueheartv.ui.components
 
-import android.os.Build
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.FastOutLinearInEasing
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
-import androidx.compose.material3.ripple
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import com.example.blueheartv.R
 import com.example.blueheartv.model.SmartRecommendation
-import com.example.blueheartv.ui.theme.*
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import kotlin.math.abs
-import kotlin.time.Duration.Companion.milliseconds
-
-private const val AUTO_SCROLL_INTERVAL_MS = 3000L
-private const val RESUME_DELAY_MS = 3000L
-private const val SWITCH_ANIM_MS = 300
-private const val SNAP_ANIM_MS = 200
-private const val SWIPE_THRESHOLD_FRACTION = 0.3f
-private const val VELOCITY_THRESHOLD_DP_S = 500f
-private const val OVERSCROLL_DAMPING = 0.3f
+import com.example.blueheartv.ui.theme.BlueAccent
+import com.example.blueheartv.ui.theme.GlassFill
+import com.example.blueheartv.ui.theme.GlassUpperHighlight
+import com.example.blueheartv.ui.theme.GradientWhite00
+import com.example.blueheartv.ui.theme.GradientWhite40
+import com.example.blueheartv.ui.theme.IconGray
+import com.example.blueheartv.ui.theme.Slate700Stroke
+import com.example.blueheartv.ui.theme.SurfaceWhite
+import com.example.blueheartv.ui.theme.TextBlack
+import com.example.blueheartv.ui.theme.MutedText
 
 @Composable
 fun SmartCardRow(
@@ -59,245 +55,63 @@ fun SmartCardRow(
 ) {
     if (recommendations.isEmpty()) return
 
-    val count = recommendations.size
-    var currentIndex by remember { mutableIntStateOf(0) }
-    val dragOffset = remember { Animatable(0f) }
+    val cards = recommendations.take(3)
+    val backToFront = cards.asReversed()
 
-    val density = LocalDensity.current
-    val screenWidthDp = with(density) { LocalWindowInfo.current.containerSize.width.toDp() }
-    val cardWidthDp = screenWidthDp - 46.dp
-    val cardWidthPx = with(density) { cardWidthDp.toPx() }
-    val velocityThresholdPx = with(density) { VELOCITY_THRESHOLD_DP_S.dp.toPx() }
-
-    val scope = rememberCoroutineScope()
-
-    // Track user interaction to pause auto-scroll
-    var userInteracting by remember { mutableStateOf(false) }
-    var lastInteractionTime by remember { mutableLongStateOf(0L) }
-
-    // Animate to a target index
-    suspend fun animateToIndex(targetIndex: Int, durationMs: Int = SWITCH_ANIM_MS) {
-        val clamped = targetIndex.coerceIn(0, count - 1)
-        val delta = (clamped - currentIndex) * cardWidthPx
-        val targetOffset = dragOffset.value - delta
-        dragOffset.animateTo(
-            targetValue = 0f,
-            animationSpec = tween(
-                durationMillis = durationMs,
-                easing = if (durationMs == SWITCH_ANIM_MS) FastOutSlowInEasing else FastOutLinearInEasing,
-            ),
-            initialVelocity = (targetOffset - dragOffset.value) * 5f,
-        )
-        currentIndex = clamped
-    }
-
-    // Snap back to current position
-    suspend fun snapBack() {
-        dragOffset.animateTo(
-            targetValue = 0f,
-            animationSpec = tween(SNAP_ANIM_MS, easing = FastOutLinearInEasing),
-        )
-    }
-
-    // Auto-scroll
-    LaunchedEffect(count) {
-        if (count <= 1) return@LaunchedEffect
-        while (true) {
-            delay(AUTO_SCROLL_INTERVAL_MS.milliseconds)
-            if (!userInteracting && System.currentTimeMillis() - lastInteractionTime > RESUME_DELAY_MS) {
-                val next = (currentIndex + 1) % count
-                val delta = if (next == 0) {
-                    -(count - 1).toFloat() * cardWidthPx
-                } else {
-                    -cardWidthPx
-                }
-                dragOffset.snapTo(delta)
-                currentIndex = next
-                dragOffset.animateTo(
-                    targetValue = 0f,
-                    animationSpec = tween(SWITCH_ANIM_MS, easing = FastOutSlowInEasing),
-                )
-            }
-        }
-    }
-
-    Column(
-        modifier = modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.CenterHorizontally,
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(360.dp),
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(146.dp)
-                .pointerInput(count) {
-                    if (count <= 1) return@pointerInput
-
-                    val velocityTracker = VelocityTracker()
-
-                    awaitPointerEventScope {
-                        while (true) {
-                            val down = awaitPointerEvent().changes.firstOrNull() ?: continue
-                            if (!down.pressed) continue
-
-                            userInteracting = true
-                            velocityTracker.resetTracking()
-
-                            var totalDragX = 0f
-                            var totalDragY = 0f
-                            var horizontalClaimed = false
-
-                            try {
-                                while (true) {
-                                    val event = awaitPointerEvent()
-                                    val change = event.changes.firstOrNull() ?: break
-                                    if (!change.pressed) break
-
-                                    val dx = change.position.x - change.previousPosition.x
-                                    val dy = change.position.y - change.previousPosition.y
-                                    totalDragX += dx
-                                    totalDragY += dy
-
-                                    if (!horizontalClaimed && (abs(totalDragX) > 10f || abs(totalDragY) > 10f)) {
-                                        horizontalClaimed = abs(totalDragX) > abs(totalDragY)
-                                        if (!horizontalClaimed) break
-                                    }
-
-                                    if (horizontalClaimed) {
-                                        change.consume()
-                                        velocityTracker.addPosition(
-                                            change.uptimeMillis,
-                                            change.position,
-                                        )
-
-                                        var appliedDx = dx
-                                        val atStart = currentIndex == 0 && dragOffset.value + dx > 0
-                                        val atEnd = currentIndex == count - 1 && dragOffset.value + dx < 0
-                                        if (atStart || atEnd) {
-                                            appliedDx *= OVERSCROLL_DAMPING
-                                        }
-
-                                        scope.launch {
-                                            dragOffset.snapTo(dragOffset.value + appliedDx)
-                                        }
-                                    }
-                                }
-                            } finally {
-                                userInteracting = false
-                                lastInteractionTime = System.currentTimeMillis()
-                            }
-
-                            if (!horizontalClaimed) continue
-
-                            val velocity = velocityTracker.calculateVelocity().x
-                            val offset = dragOffset.value
-
-                            scope.launch {
-                                val swipedEnough = abs(offset) > cardWidthPx * SWIPE_THRESHOLD_FRACTION
-                                val flung = abs(velocity) > velocityThresholdPx
-
-                                when {
-                                    (swipedEnough || flung) && offset < 0 && currentIndex < count - 1 -> {
-                                        val target = currentIndex + 1
-                                        val remaining = -cardWidthPx - offset
-                                        dragOffset.animateTo(
-                                            targetValue = -cardWidthPx,
-                                            animationSpec = tween(SNAP_ANIM_MS, easing = FastOutLinearInEasing),
-                                        )
-                                        currentIndex = target
-                                        dragOffset.snapTo(0f)
-                                    }
-
-                                    (swipedEnough || flung) && offset > 0 && currentIndex > 0 -> {
-                                        val target = currentIndex - 1
-                                        dragOffset.animateTo(
-                                            targetValue = cardWidthPx,
-                                            animationSpec = tween(SNAP_ANIM_MS, easing = FastOutLinearInEasing),
-                                        )
-                                        currentIndex = target
-                                        dragOffset.snapTo(0f)
-                                    }
-
-                                    else -> snapBack()
-                                }
-                            }
-                        }
-                    }
-                },
-        ) {
-            // Render stacked cards (back to front)
-            val visibleRange = maxOf(0, currentIndex - 1)..minOf(count - 1, currentIndex + 2)
-            for (i in visibleRange.reversed()) {
-                val relativeIndex = i - currentIndex
-                val normalizedOffset = dragOffset.value / cardWidthPx
-
-                val effectiveRelative = relativeIndex - normalizedOffset
-                val absEffective = effectiveRelative.coerceAtLeast(0f)
-
-                val scale = (1f - absEffective * 0.08f).coerceIn(0.76f, 1f)
-                val alpha = (1f - absEffective * 0.3f).coerceIn(0.1f, 1f)
-                val xOffsetDp = absEffective * 16f
-                val elevation = (8f - absEffective * 3f).coerceAtLeast(0f)
-
-                val zOrder = (10f - absEffective).coerceAtLeast(0f)
-
-                SmartCard(
-                    recommendation = recommendations[i],
-                    onClick = {
-                        if (i == currentIndex) onCardClick(recommendations[i])
-                    },
-                    cardWidth = cardWidthDp,
-                    modifier = Modifier
-                        .align(Alignment.Center)
-                        .zIndex(zOrder)
-                        .graphicsLayer {
-                            scaleX = scale
-                            scaleY = scale
-                            this.alpha = alpha
-                            translationX = with(density) { xOffsetDp.dp.toPx() }
-                        },
-                    elevation = elevation.dp,
-                )
+        backToFront.forEachIndexed { drawIndex, recommendation ->
+            val sourceIndex = cards.lastIndex - drawIndex
+            val startOffset = when (sourceIndex) {
+                0 -> 23.dp
+                1 -> 69.87.dp
+                else -> 107.56.dp
             }
+            val topOffset = when (sourceIndex) {
+                0 -> 88.dp
+                1 -> 72.dp
+                else -> 56.dp
+            }
+            val cardAlpha = when (sourceIndex) {
+                0 -> 1f
+                1 -> 0.92f
+                else -> 0.85f
+            }
+
+            SmartCard(
+                recommendation = recommendation,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .offset(x = startOffset, y = topOffset)
+                    .alpha(cardAlpha)
+                    .zIndex(drawIndex.toFloat()),
+                onClick = if (sourceIndex == 0) {
+                    { onCardClick(recommendation) }
+                } else {
+                    {}
+                },
+                withFaceImage = sourceIndex == 0,
+                contentAlpha = if (sourceIndex == 0) 1f else 0.85f,
+            )
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // Indicator dots
-        if (count > 1) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                repeat(count) { index ->
-                    val isActive = index == currentIndex
-                    Box(
-                        modifier = Modifier
-                            .size(if (isActive) 8.dp else 6.dp)
-                            .clip(CircleShape)
-                            .background(if (isActive) BlueAccent else IconGray.copy(alpha = 0.4f))
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = ripple(bounded = false, radius = 12.dp),
-                            ) {
-                                if (index != currentIndex) {
-                                    userInteracting = false
-                                    lastInteractionTime = System.currentTimeMillis()
-                                    val delta = (index - currentIndex).toFloat() * -cardWidthPx
-                                    scope.launch {
-                                        dragOffset.snapTo(delta)
-                                        currentIndex = index
-                                        dragOffset.animateTo(
-                                            targetValue = 0f,
-                                            animationSpec = tween(
-                                                SNAP_ANIM_MS,
-                                                easing = FastOutLinearInEasing
-                                            ),
-                                        )
-                                    }
-                                }
-                            },
-                    )
-                }
+        Column(
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(start = 386.dp, top = 246.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            repeat(3) { index ->
+                Box(
+                    modifier = Modifier
+                        .size(if (index == 1) 6.dp else 4.dp)
+                        .clip(CircleShape)
+                        .background(if (index == 1) BlueAccent else IconGray.copy(alpha = 0.35f)),
+                )
             }
         }
     }
@@ -308,107 +122,127 @@ private fun SmartCard(
     recommendation: SmartRecommendation,
     modifier: Modifier = Modifier,
     onClick: () -> Unit = {},
-    cardWidth: Dp = 270.dp,
-    elevation: Dp = 4.dp,
+    withFaceImage: Boolean = false,
+    contentAlpha: Float = 1f,
 ) {
-    val cardShape = RoundedCornerShape(16.dp)
+    val shape = RoundedCornerShape(12.dp)
 
     Box(
         modifier = modifier
-            .width(cardWidth)
-            .height(146.dp)
+            .size(width = 269.dp, height = 146.dp)
+            .clip(shape)
             .clickable { onClick() },
     ) {
-        // Blurred background effect
         Box(
-            modifier = Modifier
-                .matchParentSize()
-                .clip(cardShape)
-        ) {
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .background(
-                        Brush.linearGradient(
-                            colors = listOf(
-                                Color.White.copy(alpha = 0.4f),
-                                Color.White.copy(alpha = 0f),
-                            )
-                        ),
-                        cardShape,
-                    )
-                    .border(
-                        3.5.dp,
-                        Brush.radialGradient(
-                            colors = listOf(
-                                Color.White.copy(alpha = 0.66f),
-                                Color.White.copy(alpha = 0f),
-                            ),
-                        ),
-                        cardShape,
-                    )
-                    .then(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) Modifier.blur(42.dp) else Modifier)
-            )
-        }
-
-        // Glass overlay
-        Box(
-            modifier = Modifier
-                .matchParentSize()
-                .shadow(elevation, cardShape)
-                .background(
-                    Brush.linearGradient(
-                        colors = listOf(
-                            Color.White.copy(alpha = 0.4f),
-                            Color.White.copy(alpha = 0f),
-                        )
-                    ),
-                    cardShape,
-                )
-                .border(1.dp, Color.White.copy(alpha = 0.3f), cardShape),
-        )
-
-        // Content
-        Row(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(20.dp),
-            verticalAlignment = Alignment.Top,
-        ) {
-            Box(
+                .background(GlassFill, shape),
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(listOf(GradientWhite00, SurfaceWhite)),
+                    shape,
+                ),
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .blur(21.dp)
+                .background(
+                    Brush.horizontalGradient(
+                        colorStops = arrayOf(
+                            0f to GradientWhite40,
+                            1f to GradientWhite00,
+                        ),
+                    ),
+                    shape,
+                ),
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .border(1.dp, Slate700Stroke, shape),
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .border(1.dp, GlassUpperHighlight, shape),
+        )
+
+        if (withFaceImage) {
+            Column(
                 modifier = Modifier
-                    .size(42.dp)
-                    .shadow(10.dp, CircleShape, spotColor = BlueAccent)
-                    .background(SurfaceWhite, CircleShape),
-                contentAlignment = Alignment.Center,
+                    .fillMaxSize()
+                    .padding(top = 12.dp, start = 16.dp, end = 16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Image(
-                    painter = painterResource(R.drawable.robot_mascot),
+                    painter = painterResource(R.drawable.ic_echo_face),
                     contentDescription = null,
-                    modifier = Modifier.size(24.dp, 36.dp),
                     contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .shadow(20.dp, RoundedCornerShape(24.dp)),
                 )
-            }
-
-            Spacer(modifier = Modifier.width(12.dp))
-
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(22.dp))
                 Text(
                     text = recommendation.title,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     color = TextBlack,
                     lineHeight = 20.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.alpha(contentAlpha),
                 )
+                Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = recommendation.subtitle,
                     fontSize = 12.sp,
                     color = MutedText,
                     lineHeight = 18.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.alpha(contentAlpha),
+                )
+            }
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(start = 20.dp, end = 12.dp, top = 20.dp),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(width = 42.7.dp, height = 42.dp)
+                        .shadow(10.dp, RoundedCornerShape(12.dp))
+                        .background(SurfaceWhite, RoundedCornerShape(12.dp)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Image(
+                        painter = painterResource(R.drawable.ic_echo_face),
+                        contentDescription = null,
+                        modifier = Modifier.size(width = 24.dp, height = 36.dp),
+                    )
+                }
+                Spacer(modifier = Modifier.height(22.dp))
+                Text(
+                    text = recommendation.title,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextBlack,
+                    lineHeight = 20.sp,
+                    textAlign = TextAlign.Start,
+                    modifier = Modifier.alpha(contentAlpha),
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = recommendation.subtitle,
+                    fontSize = 12.sp,
+                    color = MutedText,
+                    lineHeight = 18.sp,
+                    textAlign = TextAlign.Start,
+                    modifier = Modifier.alpha(contentAlpha),
                 )
             }
         }

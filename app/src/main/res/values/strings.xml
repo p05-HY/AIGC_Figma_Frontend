@@ -4,7 +4,7 @@
 
     <!-- HomeScreen -->
     <string name="smart_recommendations">智能推荐</string>
-    <string name="welcome_title">您好！我是超级蓝心小V~</string>
+    <string name="welcome_title">您好！我是Echo~</string>
     <string name="welcome_subtitle">有什么我可以帮助您的吗？</string>
     <string name="btn_read_screen">读取屏幕</string>
     <string name="btn_today_schedule">今日行程</string>

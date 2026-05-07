@@ -2,17 +2,21 @@ package com.example.blueheartv.ui.components
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material3.Icon
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.blueheartv.R
@@ -24,38 +28,46 @@ fun AppTopBar(
     onMenuClick: () -> Unit,
     onAddClick: () -> Unit = {},
 ) {
-    Row(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .height(48.dp),
     ) {
-        Image(
-            painter = painterResource(R.drawable.ic_menu_hamburger),
-            contentDescription = "Menu",
+        Box(
             modifier = Modifier
+                .align(Alignment.CenterStart)
+                .padding(start = 16.dp)
                 .size(25.dp)
+                .clip(CircleShape)
                 .clickable { onMenuClick() },
-        )
+            contentAlignment = Alignment.Center,
+        ) {
+            Image(
+                painter = painterResource(R.drawable.ic_menu_hamburger),
+                contentDescription = "Menu",
+                modifier = Modifier.size(25.dp),
+            )
+        }
 
         Text(
-            text = "超级蓝心小V",
-            fontSize = 18.sp,
+            text = "Echo",
+            fontSize = 16.sp,
             fontWeight = FontWeight.Medium,
             color = DarkPrimary,
-            textAlign = TextAlign.Center,
-            letterSpacing = (-0.5).sp,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.align(Alignment.Center),
         )
 
-        Icon(
-            imageVector = Icons.Default.Add,
+        Image(
+            painter = painterResource(R.drawable.ic_avatar_brand),
             contentDescription = "New Chat",
             modifier = Modifier
-                .size(25.dp)
+                .align(Alignment.CenterEnd)
+                .padding(end = 16.dp)
+                .size(26.dp)
+                .clip(CircleShape)
                 .clickable { onAddClick() },
-            tint = TextBlack,
+            contentScale = ContentScale.Crop,
         )
     }
 }

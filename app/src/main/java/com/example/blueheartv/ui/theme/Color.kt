@@ -31,3 +31,13 @@ val GradientBlueStart = Color(0xFFD0E4FF) // rgba(208,228,255,1)
 val GradientBlueEnd = Color(0xFFFFFFFF)
 
 val ButtonBorderDark = Color(0x6647515A) // rgba(71,81,90,0.4)
+
+// Glassmorphism & Echo-style tokens (from echo_figma design)
+val GlassFill = Color(0xFFF8FAFC)
+val GlassFillTranslucent = Color(0x99F8FAFC)
+val GlassUpperHighlight = Color(0x8FFFFFFF)
+val GradientWhite00 = Color(0x00FFFFFF) // Fully transparent white
+val GradientWhite40 = Color(0x66FFFFFF) // 40% opacity white
+val Slate700Stroke = Color(0x6647515A) // 40% opacity dark slate (for outer border)
+val ChipFill = Color(0x99F8FAFC) // Chip background (60% opacity)
+val ChipStroke = Color(0x333F85FF) // Chip border (20% opacity blue)
