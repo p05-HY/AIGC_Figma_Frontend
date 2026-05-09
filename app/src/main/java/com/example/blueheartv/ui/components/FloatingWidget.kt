@@ -70,9 +70,9 @@ fun FloatingWidget(
                     ),
             ) {
                 Image(
-                    painter = painterResource(R.drawable.robot_mascot),
+                    painter = painterResource(R.drawable.ic_echo_face),
                     contentDescription = "AI Assistant",
-                    modifier = Modifier.size(28.dp, 42.dp),
+                    modifier = Modifier.size(28.dp),
                     contentScale = ContentScale.Fit,
                 )
             }

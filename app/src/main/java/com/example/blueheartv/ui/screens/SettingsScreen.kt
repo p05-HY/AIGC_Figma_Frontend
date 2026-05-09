@@ -107,8 +107,6 @@ fun SettingsScreen(
                 Column {
                     SettingsItem(Icons.Outlined.Language, "语言设置") { onNavigateToDetail("language") }
                     SettingsDivider()
-                    SettingsItem(Icons.Outlined.DarkMode, "主题外观") { onNavigateToDetail("theme") }
-                    SettingsDivider()
                     SettingsItem(Icons.Outlined.Cloud, "Agent 服务") { onNavigateToDetail("agent_server") }
                     SettingsDivider()
                     SettingsItem(Icons.Outlined.Storage, "存储管理") { onNavigateToDetail("storage") }

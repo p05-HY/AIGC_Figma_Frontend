@@ -42,9 +42,9 @@ class FloatingBallView(
 
     private val ballView: FrameLayout = FrameLayout(context).apply {
         val imageView = ImageView(context).apply {
-            setImageResource(R.drawable.robot_mascot)
-            scaleType = ImageView.ScaleType.CENTER_INSIDE
-            val pad = (8 * density).toInt()
+            setImageResource(R.drawable.ic_echo_face)
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            val pad = (6 * density).toInt()
             setPadding(pad, pad, pad, pad)
         }
         addView(imageView, FrameLayout.LayoutParams(ballSizePx, ballSizePx))

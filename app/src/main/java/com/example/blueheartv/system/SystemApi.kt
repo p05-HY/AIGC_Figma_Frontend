@@ -26,6 +26,7 @@ class SystemApi(
     private val context: Context
 ) {
     private val appContext = context.applicationContext
+    private val networkStatusProvider = NetworkStatusProvider(appContext)
 
     @SuppressLint("QueryAllPackagesPermission")
     fun listApps(type: String): JSONObject {
@@ -152,6 +153,10 @@ class SystemApi(
             put("accuracy", location.accuracy)
             put("timestamp", location.time)
         }
+    }
+
+    fun getNetworkStatus(): JSONObject {
+        return networkStatusProvider.getStatus().toJson()
     }
 
     private fun firstWritableCalendarId(): Long {

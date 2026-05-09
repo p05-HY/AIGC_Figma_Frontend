@@ -9,6 +9,7 @@ import android.content.Intent
 import android.os.Build
 import android.os.IBinder
 import android.util.DisplayMetrics
+import android.util.Log
 import android.view.WindowManager
 import androidx.core.app.NotificationCompat
 import com.example.blueheartv.R
@@ -29,6 +30,9 @@ class AdbWebSocketService : Service() {
 
     private var webSocket: WebSocket? = null
     private var closedByClient = false
+    private var isConnecting = false
+    private var connectSent = false
+    private var heartbeatJob: Job? = null
     private val incomingBuffer = StringBuilder()
     private lateinit var executor: ShizukuAdbExecutor
     private lateinit var collector: AdbSnapshotCollector
@@ -50,6 +54,8 @@ class AdbWebSocketService : Service() {
 
     override fun onDestroy() {
         closedByClient = true
+        heartbeatJob?.cancel()
+        heartbeatJob = null
         webSocket?.close(1000, "client stop")
         webSocket = null
         overlay.hide()
@@ -69,6 +75,11 @@ class AdbWebSocketService : Service() {
             return
         }
 
+        if (isConnecting) {
+            Log.d(TAG, "connect() skipped: already connecting")
+            return
+        }
+
         val url = runCatching {
             AgentServerClient(configProvider = { AgentServerConfigStore.snapshot() }).adbWebSocketUrl()
         }.getOrElse {
@@ -77,19 +88,30 @@ class AdbWebSocketService : Service() {
         }
 
         closedByClient = false
+        isConnecting = true
+        connectSent = false
+        heartbeatJob?.cancel()
+        heartbeatJob = null
         webSocket?.close(1000, "reconnect")
         val request = Request.Builder().url(url).build()
+        Log.d(TAG, "connect() opening websocket: $url")
         updateNotification("ADB 连接中: $url")
         webSocket = client.newWebSocket(request, listener)
     }
 
     private val listener = object : WebSocketListener() {
         override fun onOpen(webSocket: WebSocket, response: Response) {
+            isConnecting = false
+            Log.d(TAG, "onOpen: websocket connected")
             updateNotification("ADB 已连接")
             overlay.show()
             overlay.update("ADB 已连接", "等待 Agent 指令")
             serviceScope.launch {
-                sendConnect()
+                if (!connectSent) {
+                    connectSent = true
+                    Log.d(TAG, "sendConnect()")
+                    sendConnect()
+                }
                 startHeartbeat()
             }
         }
@@ -107,12 +129,22 @@ class AdbWebSocketService : Service() {
         }
 
         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+            isConnecting = false
+            connectSent = false
+            heartbeatJob?.cancel()
+            heartbeatJob = null
+            Log.d(TAG, "onClosed: code=$code reason=$reason")
             updateNotification("ADB 连接关闭: $code $reason")
             overlay.update("ADB 连接关闭", "$code $reason")
             reconnectLater()
         }
 
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+            isConnecting = false
+            connectSent = false
+            heartbeatJob?.cancel()
+            heartbeatJob = null
+            Log.d(TAG, "onFailure: ${t.message}")
             updateNotification("ADB 连接异常: ${t.message}")
             overlay.show()
             overlay.update("ADB 连接异常", t.message)
@@ -135,9 +167,12 @@ class AdbWebSocketService : Service() {
     }
 
     private suspend fun startHeartbeat() {
-        while (!closedByClient) {
-            delay(20_000.milliseconds)
-            send(JSONObject().put("type", "request").put("message", "ping").put("data", JSONObject.NULL))
+        heartbeatJob?.cancel()
+        heartbeatJob = serviceScope.launch {
+            while (!closedByClient) {
+                delay(20_000.milliseconds)
+                send(JSONObject().put("type", "request").put("message", "ping").put("data", JSONObject.NULL))
+            }
         }
     }
 
@@ -261,6 +296,7 @@ class AdbWebSocketService : Service() {
         if (closedByClient) return
         serviceScope.launch {
             delay(3_000.milliseconds)
+            Log.d(TAG, "reconnectLater()")
             connect()
         }
     }
@@ -305,6 +341,7 @@ class AdbWebSocketService : Service() {
     companion object {
         private const val NOTIFICATION_ID = 3001
         private const val NOTIFICATION_CHANNEL_ID = "adb_tool_connection"
+        private const val TAG = "AdbWebSocketService"
 
         fun start(context: Context) {
             context.startForegroundService(Intent(context, AdbWebSocketService::class.java))

@@ -296,9 +296,9 @@ fun AiBubble(
             contentAlignment = Alignment.Center,
         ) {
             Image(
-                painter = painterResource(R.drawable.robot_mascot),
+                painter = painterResource(R.drawable.ic_echo_face),
                 contentDescription = null,
-                modifier = Modifier.size(24.dp, 36.dp),
+                modifier = Modifier.size(28.dp),
                 contentScale = ContentScale.Fit,
             )
         }

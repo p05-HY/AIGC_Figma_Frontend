@@ -99,7 +99,6 @@ private fun resolveDetail(
     "notifications" -> "通知设置" to { NotificationsDetailContent() }
     "privacy" -> "隐私与安全" to { PrivacyDetailContent(onClearHistory, onLogout) }
     "language" -> "语言设置" to { LanguageDetailContent() }
-    "theme" -> "主题外观" to { ThemeDetailContent() }
     "agent_server" -> "Agent 服务" to { AgentServerDetailContent() }
     "storage" -> "存储管理" to { StorageDetailContent() }
     "help" -> "帮助与反馈" to { HelpDetailContent() }
@@ -265,56 +264,6 @@ private fun LanguageDetailContent() {
                     }
                 }
                 if (index < languages.lastIndex) DetailDivider()
-            }
-        }
-    }
-}
-
-// ── Theme ─────────────────────────────────────────────────────────────────────
-
-@Composable
-private fun ThemeDetailContent() {
-    val themes = listOf("跟随系统", "浅色模式", "深色模式")
-    val themePreference by ThemeRepository.preference.collectAsState()
-    val selected = when (themePreference) {
-        ThemePreference.SYSTEM -> "跟随系统"
-        ThemePreference.LIGHT -> "浅色模式"
-        ThemePreference.DARK -> "深色模式"
-    }
-
-    Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-        DetailCard {
-            themes.forEachIndexed { index, theme ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable {
-                            val pref = when (theme) {
-                                "浅色模式" -> ThemePreference.LIGHT
-                                "深色模式" -> ThemePreference.DARK
-                                else -> ThemePreference.SYSTEM
-                            }
-                            ThemeRepository.setPreference(pref)
-                        }
-                        .padding(horizontal = 20.dp, vertical = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = theme,
-                        fontSize = 16.sp,
-                        color = DarkPrimary,
-                        modifier = Modifier.weight(1f),
-                    )
-                    if (theme == selected) {
-                        Icon(
-                            imageVector = Icons.Outlined.Check,
-                            contentDescription = null,
-                            modifier = Modifier.size(20.dp),
-                            tint = GradientBlueStart,
-                        )
-                    }
-                }
-                if (index < themes.lastIndex) DetailDivider()
             }
         }
     }

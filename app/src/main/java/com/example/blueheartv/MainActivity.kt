@@ -12,7 +12,6 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
@@ -27,7 +26,6 @@ import com.example.blueheartv.floating.FloatingBallService
 import com.example.blueheartv.navigation.AppNavGraph
 import com.example.blueheartv.system.SystemService
 import com.example.blueheartv.ui.theme.BlueHeartVTheme
-import com.example.blueheartv.ui.theme.ThemeRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -94,7 +92,6 @@ class MainActivity : ComponentActivity() {
             defaultApiKey = BuildConfig.AGENT_SERVER_API_KEY,
         )
         AppContextHolder.install(applicationContext)
-        ThemeRepository.init(applicationContext)
         if (AgentServerConfigStore.snapshot().isConfigured) {
             AdbWebSocketService.start(applicationContext)
             SystemService.start(applicationContext, AgentServerConfigStore.snapshot().baseUrl)
@@ -105,8 +102,7 @@ class MainActivity : ComponentActivity() {
 
         enableEdgeToEdge()
         setContent {
-            val themePreference by ThemeRepository.preference.collectAsState()
-            BlueHeartVTheme(themePreference = themePreference) {
+            BlueHeartVTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background,

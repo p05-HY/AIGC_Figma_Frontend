@@ -152,10 +152,10 @@ fun AuthScreen(
                 contentAlignment = Alignment.Center,
             ) {
                 Image(
-                    painter = painterResource(R.drawable.robot_mascot),
+                    painter = painterResource(R.drawable.ic_echo_face),
                     contentDescription = "Mascot",
-                    modifier = Modifier.size(53.dp, 79.dp),
-                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.size(64.dp),
+                    contentScale = ContentScale.Crop,
                 )
             }
 
