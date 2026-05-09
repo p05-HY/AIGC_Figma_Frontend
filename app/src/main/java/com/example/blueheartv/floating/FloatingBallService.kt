@@ -3,8 +3,11 @@ package com.example.blueheartv.floating
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.view.WindowManager
+import androidx.annotation.MainThread
 import androidx.core.app.NotificationCompat
 import com.example.blueheartv.BlueHeartVApplication
 import com.example.blueheartv.MainActivity
@@ -16,7 +19,12 @@ class FloatingBallService : Service() {
         private const val NOTIFICATION_ID = 1001
         const val EXTRA_SESSION_ID = "extra_session_id"
 
+        @Volatile
+        var isRunning = false
+            private set
+
         fun start(context: Context) {
+            if (isRunning) return
             val intent = Intent(context, FloatingBallService::class.java)
             context.startForegroundService(intent)
         }
@@ -26,12 +34,14 @@ class FloatingBallService : Service() {
         }
     }
 
+    private val mainHandler = Handler(Looper.getMainLooper())
     private var ballView: FloatingBallView? = null
     private var chatWindow: FloatingChatWindow? = null
     private lateinit var windowManager: WindowManager
 
     override fun onCreate() {
         super.onCreate()
+        isRunning = true
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
 
         startForeground(NOTIFICATION_ID, buildNotification())
@@ -49,15 +59,19 @@ class FloatingBallService : Service() {
     }
 
     override fun onDestroy() {
-        chatWindow?.dismiss()
-        chatWindow = null
-        ballView?.detach()
-        ballView = null
+        isRunning = false
+        mainHandler.post {
+            chatWindow?.dismiss()
+            chatWindow = null
+            ballView?.detach()
+            ballView = null
+        }
         super.onDestroy()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    @MainThread
     private fun toggleChatWindow() {
         if (chatWindow?.isShowing == true) {
             chatWindow?.dismiss()
@@ -88,9 +102,9 @@ class FloatingBallService : Service() {
 
     private fun buildNotification() =
         NotificationCompat.Builder(this, BlueHeartVApplication.CHANNEL_FLOATING)
-            .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle("超级蓝心小V")
-            .setContentText("悬浮球运行中")
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(getString(R.string.app_name))
+            .setContentText(getString(R.string.floating_ball_running))
             .setOngoing(true)
             .setSilent(true)
             .build()

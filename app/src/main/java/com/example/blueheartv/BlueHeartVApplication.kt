@@ -43,10 +43,10 @@ class BlueHeartVApplication : Application() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_FLOATING,
-                "悬浮球服务",
+                getString(R.string.floating_channel_name),
                 NotificationManager.IMPORTANCE_LOW,
             ).apply {
-                description = "保持悬浮球在桌面运行"
+                description = getString(R.string.floating_channel_desc)
                 setShowBadge(false)
             }
             getSystemService(NotificationManager::class.java)

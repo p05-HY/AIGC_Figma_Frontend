@@ -27,6 +27,7 @@ class SystemApi(
 ) {
     private val appContext = context.applicationContext
     private val networkStatusProvider = NetworkStatusProvider(appContext)
+    private val runtimeModeProvider = RuntimeModeProvider(appContext)
 
     @SuppressLint("QueryAllPackagesPermission")
     fun listApps(type: String): JSONObject {
@@ -155,8 +156,12 @@ class SystemApi(
         }
     }
 
-    fun getNetworkStatus(): JSONObject {
+    fun getConnectionStatus(): JSONObject {
         return networkStatusProvider.getStatus().toJson()
+    }
+
+    fun getRuntimeStatus(): JSONObject {
+        return runtimeModeProvider.getStatus().toJson()
     }
 
     private fun firstWritableCalendarId(): Long {

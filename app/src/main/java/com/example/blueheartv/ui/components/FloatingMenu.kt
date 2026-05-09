@@ -4,8 +4,6 @@ import androidx.compose.animation.*
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
@@ -31,8 +29,8 @@ data class FloatingMenuItem(
 fun FloatingMenu(
     visible: Boolean,
     onDismiss: () -> Unit,
+    items: List<FloatingMenuItem>,
     modifier: Modifier = Modifier,
-    items: List<FloatingMenuItem> = defaultMenuItems(),
 ) {
     AnimatedVisibility(
         visible = visible,
@@ -85,11 +83,3 @@ fun FloatingMenu(
         }
     }
 }
-
-private fun defaultMenuItems() = listOf(
-    FloatingMenuItem(Icons.Outlined.ChatBubbleOutline, "新对话"),
-    FloatingMenuItem(Icons.Outlined.Screenshot, "截图识别"),
-    FloatingMenuItem(Icons.Outlined.Translate, "快速翻译"),
-    FloatingMenuItem(Icons.Outlined.Summarize, "内容总结"),
-    FloatingMenuItem(Icons.Outlined.Settings, "设置"),
-)

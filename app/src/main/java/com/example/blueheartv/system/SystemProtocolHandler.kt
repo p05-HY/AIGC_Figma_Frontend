@@ -58,7 +58,8 @@ class SystemProtocolHandler(
                     response(message, requestId, null)
                 }
 
-                "getNetworkStatus" -> response(message, requestId, api.getNetworkStatus())
+                "getConnectionStatus" -> response(message, requestId, api.getConnectionStatus())
+                "getRuntimeStatus" -> response(message, requestId, api.getRuntimeStatus())
                 "getLocation" -> response(message, requestId, api.getLocation())
                 else -> error("未知消息类型: $message")
             }

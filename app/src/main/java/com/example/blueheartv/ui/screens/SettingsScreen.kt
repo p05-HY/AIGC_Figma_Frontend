@@ -1,5 +1,7 @@
 package com.example.blueheartv.ui.screens
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -21,9 +23,11 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.blueheartv.R
 import com.example.blueheartv.floating.FloatingServiceLauncher
 import com.example.blueheartv.ui.theme.*
 
@@ -33,6 +37,13 @@ fun SettingsScreen(
     onNavigateToDetail: (String) -> Unit = {},
 ) {
     val context = LocalContext.current
+    val overlayPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        if (FloatingServiceLauncher.isOverlayGranted(context)) {
+            FloatingServiceLauncher.launch(context)
+        }
+    }
     val gradientBrush = Brush.radialGradient(
         colors = listOf(GradientBlueStart, GradientBlueEnd),
         center = Offset(0.5f, 0.5f),
@@ -124,8 +135,8 @@ fun SettingsScreen(
                 shadowElevation = 2.dp,
             ) {
                 Column {
-                    SettingsItem(Icons.Outlined.ChatBubble, "开启悬浮球") {
-                        FloatingServiceLauncher.launch(context)
+                    SettingsItem(Icons.Outlined.ChatBubble, stringResource(R.string.floating_open_ball)) {
+                        FloatingServiceLauncher.launch(context, overlayPermissionLauncher)
                     }
                 }
             }

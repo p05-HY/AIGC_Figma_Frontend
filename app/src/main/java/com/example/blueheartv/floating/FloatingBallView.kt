@@ -6,12 +6,14 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.graphics.PixelFormat
 import android.os.Build
+import android.util.Log
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.WindowManager
 import android.view.animation.OvershootInterpolator
 import android.widget.FrameLayout
 import android.widget.ImageView
+import androidx.core.content.ContextCompat
 import androidx.core.content.edit
 import com.example.blueheartv.R
 import kotlin.math.abs
@@ -22,6 +24,7 @@ class FloatingBallView(
     private val onClick: () -> Unit,
 ) {
     companion object {
+        private const val TAG = "FloatingBallView"
         private const val PREFS_NAME = "floating_ball_prefs"
         private const val KEY_X = "ball_x"
         private const val KEY_Y = "ball_y"
@@ -41,14 +44,15 @@ class FloatingBallView(
         get() = context.resources.displayMetrics.heightPixels
 
     private val ballView: FrameLayout = FrameLayout(context).apply {
+        contentDescription = context.getString(R.string.floating_ball_desc)
         val imageView = ImageView(context).apply {
             setImageResource(R.drawable.ic_echo_face)
             scaleType = ImageView.ScaleType.CENTER_CROP
+            importantForAccessibility = android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO
             val pad = (6 * density).toInt()
             setPadding(pad, pad, pad, pad)
         }
         addView(imageView, FrameLayout.LayoutParams(ballSizePx, ballSizePx))
-        setBackgroundResource(android.R.drawable.dialog_holo_light_frame)
         background = createBallDrawable()
     }
 
@@ -98,6 +102,7 @@ class FloatingBallView(
                     totalMovement = maxOf(totalMovement, abs(dx) + abs(dy))
                     layoutParams.x = (startParamX + dx).toInt()
                     layoutParams.y = (startParamY + dy).toInt()
+                        .coerceIn(0, screenHeight - ballSizePx)
                     windowManager.updateViewLayout(ballView, layoutParams)
                     true
                 }
@@ -121,7 +126,11 @@ class FloatingBallView(
 
     fun detach() {
         if (!isAdded) return
-        runCatching { windowManager.removeView(ballView) }
+        try {
+            windowManager.removeView(ballView)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to remove ball view", e)
+        }
         isAdded = false
     }
 
@@ -132,28 +141,34 @@ class FloatingBallView(
     private fun snapToEdge() {
         val centerX = layoutParams.x + ballSizePx / 2
         val targetX = if (centerX < screenWidth / 2) 0 else screenWidth - ballSizePx
+        val clampedY = layoutParams.y.coerceIn(0, screenHeight - ballSizePx)
+        layoutParams.y = clampedY
 
         ValueAnimator.ofInt(layoutParams.x, targetX).apply {
             duration = 300
             interpolator = OvershootInterpolator(1.2f)
             addUpdateListener { anim ->
                 layoutParams.x = anim.animatedValue as Int
-                runCatching { windowManager.updateViewLayout(ballView, layoutParams) }
+                try {
+                    windowManager.updateViewLayout(ballView, layoutParams)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to update layout during snap", e)
+                }
             }
             start()
         }
 
         prefs.edit {
             putInt(KEY_X, targetX)
-                .putInt(KEY_Y, layoutParams.y)
+                .putInt(KEY_Y, clampedY)
         }
     }
 
     private fun createBallDrawable(): android.graphics.drawable.Drawable {
         return android.graphics.drawable.GradientDrawable().apply {
             shape = android.graphics.drawable.GradientDrawable.OVAL
-            setColor(0xFFFFFFFF.toInt())
-            setStroke((1 * density).toInt(), 0xFFE2E8F0.toInt())
+            setColor(ContextCompat.getColor(context, R.color.surface_white))
+            setStroke((1 * density).toInt(), ContextCompat.getColor(context, R.color.divider))
         }
     }
 }

@@ -8,7 +8,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
-private val LightColorScheme = lightColorScheme(
+val AppLightColorScheme = lightColorScheme(
     primary = BlueAccent,
     onPrimary = SurfaceWhite,
     secondary = MutedText,
@@ -35,7 +35,7 @@ fun BlueHeartVTheme(content: @Composable () -> Unit) {
     }
 
     MaterialTheme(
-        colorScheme = LightColorScheme,
+        colorScheme = AppLightColorScheme,
         typography = AppTypography,
         content = content,
     )
