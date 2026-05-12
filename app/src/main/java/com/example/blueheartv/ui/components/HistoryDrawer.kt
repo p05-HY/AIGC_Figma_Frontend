@@ -62,7 +62,8 @@ fun HistoryDrawer(
             Surface(
                 modifier = Modifier
                     .fillMaxHeight()
-                    .width(319.dp),
+                    .fillMaxWidth(0.82f)
+                    .widthIn(min = 260.dp, max = 360.dp),
                 shape = RoundedCornerShape(topEnd = 40.dp, bottomEnd = 0.dp),
                 color = SurfaceWhite,
             ) {

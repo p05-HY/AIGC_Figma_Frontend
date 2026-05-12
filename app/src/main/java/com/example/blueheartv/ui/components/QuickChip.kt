@@ -4,8 +4,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -30,19 +31,20 @@ fun QuickChip(
     val shape = RoundedCornerShape(10.dp)
     Box(
         modifier = modifier
-            .size(width = 88.dp, height = 34.dp)
+            .heightIn(min = 34.dp)
+            .widthIn(min = 64.dp)
             .clip(shape)
             .clickable { onClick() },
         contentAlignment = Alignment.Center,
     ) {
         Box(
             modifier = Modifier
-                .fillMaxSize()
+                .matchParentSize()
                 .background(ChipFill, shape),
         )
         Box(
             modifier = Modifier
-                .fillMaxSize()
+                .matchParentSize()
                 .background(
                     Brush.verticalGradient(listOf(GradientWhite00, SurfaceWhite)),
                     shape,
@@ -50,7 +52,7 @@ fun QuickChip(
         )
         Box(
             modifier = Modifier
-                .fillMaxSize()
+                .matchParentSize()
                 .border(1.dp, ChipStroke, shape),
         )
         Text(
@@ -58,6 +60,7 @@ fun QuickChip(
             fontSize = 12.sp,
             color = MutedText,
             maxLines = 1,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
         )
     }
 }

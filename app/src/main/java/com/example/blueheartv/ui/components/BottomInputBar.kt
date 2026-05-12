@@ -35,73 +35,75 @@ fun BottomInputBar(
     Column(modifier = modifier.fillMaxWidth()) {
         HorizontalDividerLine()
 
-        Box(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .padding(horizontal = 13.dp)
+                .fillMaxWidth()
+                .heightIn(min = 48.dp)
+                .shadow(2.dp, RoundedCornerShape(16.dp))
+                .background(SurfaceWhite, RoundedCornerShape(16.dp))
+                .border(0.5.dp, StrokeMuted, RoundedCornerShape(16.dp)),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Box(
                 modifier = Modifier
-                    .padding(horizontal = 13.dp)
-                    .fillMaxWidth()
-                    .height(41.25.dp)
-                    .shadow(2.dp, RoundedCornerShape(16.dp))
-                    .background(SurfaceWhite, RoundedCornerShape(16.dp))
-                    .border(0.5.dp, StrokeMuted, RoundedCornerShape(16.dp)),
+                    .size(48.dp)
+                    .clickable { onAttachClick() },
+                contentAlignment = Alignment.Center,
             ) {
                 Image(
                     painter = painterResource(R.drawable.ic_attachment),
                     contentDescription = "Attach file",
-                    modifier = Modifier
-                        .align(Alignment.CenterStart)
-                        .padding(start = 13.dp)
-                        .size(19.dp)
-                        .clickable { onAttachClick() },
+                    modifier = Modifier.size(24.dp),
                 )
+            }
 
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.CenterStart)
-                        .padding(start = 44.dp, end = 80.dp)
-                        .fillMaxWidth(),
-                ) {
-                    if (value.isEmpty()) {
-                        Text(
-                            text = "发消息...",
-                            fontSize = 14.sp,
-                            color = GrayText,
-                        )
-                    }
-                    BasicTextField(
-                        value = value,
-                        onValueChange = { if (it.length <= 2000) onValueChange(it) },
-                        modifier = Modifier.fillMaxWidth(),
-                        textStyle = TextStyle(
-                            fontSize = 14.sp,
-                            color = TextBlack,
-                        ),
-                        singleLine = true,
+            Box(
+                modifier = Modifier.weight(1f),
+            ) {
+                if (value.isEmpty()) {
+                    Text(
+                        text = "发消息...",
+                        fontSize = 14.sp,
+                        color = GrayText,
                     )
                 }
+                BasicTextField(
+                    value = value,
+                    onValueChange = { if (it.length <= 2000) onValueChange(it) },
+                    modifier = Modifier.fillMaxWidth(),
+                    textStyle = TextStyle(
+                        fontSize = 14.sp,
+                        color = TextBlack,
+                    ),
+                    singleLine = true,
+                )
+            }
 
-                Row(
-                    modifier = Modifier
-                        .align(Alignment.CenterEnd)
-                        .padding(end = 13.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(14.dp),
-                ) {
-                    Image(
-                        painter = painterResource(R.drawable.ic_mic),
-                        contentDescription = "Voice input",
-                        modifier = Modifier
-                            .size(width = 9.dp, height = 13.dp)
-                            .clickable { onMicClick() },
-                    )
-                    Image(
-                        painter = painterResource(R.drawable.ic_send_arrow),
-                        contentDescription = "Send",
-                        modifier = Modifier
-                            .size(15.dp)
-                            .clickable { if (sendEnabled) onSend() },
-                    )
-                }
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clickable { onMicClick() },
+                contentAlignment = Alignment.Center,
+            ) {
+                Image(
+                    painter = painterResource(R.drawable.ic_mic),
+                    contentDescription = "Voice input",
+                    modifier = Modifier.size(24.dp),
+                )
+            }
+
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clickable { if (sendEnabled) onSend() },
+                contentAlignment = Alignment.Center,
+            ) {
+                Image(
+                    painter = painterResource(R.drawable.ic_send_arrow),
+                    contentDescription = "Send",
+                    modifier = Modifier.size(24.dp),
+                )
             }
         }
     }

@@ -380,7 +380,14 @@ class ChatViewModel(
                         rawStreamContent.remove(assistantMessageId)
                         streamInvocationIds.remove(assistantMessageId)
                         val chatState = if (hasToolCalling) ChatState.CHAT_TOOL_CALLING else ChatState.CHAT_SIMPLE
-                        onStreamError(threadId, assistantMessageId, event.message, event.retryable, chatState)
+                        onStreamError(
+                            threadId,
+                            assistantMessageId,
+                            event.message,
+                            event.retryable,
+                            chatState,
+                            toolCallStatus.toToolCallListOrNull(),
+                        )
                     }
                 }
             }
@@ -393,7 +400,14 @@ class ChatViewModel(
                 error,
             )
             val chatState = if (hasToolCalling) ChatState.CHAT_TOOL_CALLING else ChatState.CHAT_SIMPLE
-            onStreamError(threadId, assistantMessageId, error.message ?: "请求失败，请稍后重试", true, chatState)
+            onStreamError(
+                threadId,
+                assistantMessageId,
+                error.message ?: "请求失败，请稍后重试",
+                true,
+                chatState,
+                toolCallStatus.toToolCallListOrNull(),
+            )
         }
     }
 
@@ -414,11 +428,13 @@ class ChatViewModel(
         reason: String,
         retryable: Boolean,
         chatState: ChatState,
+        toolCalls: List<ToolCall>?,
     ) {
         updateAssistantMessage(assistantMessageId, chatState, ChatSessionState.ERROR) { msg ->
             msg.copy(
                 content = msg.content.ifBlank { "抱歉，这次响应失败了。" },
                 deliveryState = MessageDeliveryState.FAILED,
+                toolCalls = toolCalls,
                 errorMessage = reason,
             )
         }
@@ -478,6 +494,29 @@ class ChatViewModel(
         historyJob?.cancel()
         val previousActive = repo.activeSessionId
         historyJob = viewModelScope.launch {
+            val localResult = runCatching { repo.restoreFromStore() }.getOrNull()
+            if (localResult != null) {
+                if (!makeLatestActive) {
+                    if (previousActive != null) {
+                        repo.switchActive(previousActive) ?: repo.clearActiveSession()
+                    } else {
+                        repo.clearActiveSession()
+                    }
+                }
+                val active = repo.getActiveSession()
+                _uiState.update { state ->
+                    state.copy(
+                        chatState = deriveChatState(active?.messages.orEmpty()),
+                        sessionState = ChatSessionState.IDLE,
+                        messages = active?.messages?.toList().orEmpty(),
+                        histories = repo.buildHistories(),
+                        lastError = null,
+                        canRetry = false,
+                        retryPrompt = null,
+                    )
+                }
+            }
+
             val result = runCatching {
                 val threads = chatProvider.loadThreads()
                 repo.restore(threads)

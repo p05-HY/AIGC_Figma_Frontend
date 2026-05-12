@@ -6,12 +6,14 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -31,6 +33,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
@@ -58,23 +61,20 @@ fun SmartCardRow(
     val cards = recommendations.take(3)
     val backToFront = cards.asReversed()
 
-    Box(
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
-            .height(360.dp),
+            .heightIn(min = 200.dp, max = 320.dp),
     ) {
+        val cardWidth = (maxWidth * 0.67f).coerceIn(200.dp, 320.dp)
+        val cardHeight = (cardWidth * 0.54f).coerceIn(120.dp, 180.dp)
+        val cardOffsets = listOf(0.06f, 0.17f, 0.27f)
+        val cardTops = listOf(0.22f, 0.18f, 0.14f)
+
         backToFront.forEachIndexed { drawIndex, recommendation ->
             val sourceIndex = cards.lastIndex - drawIndex
-            val startOffset = when (sourceIndex) {
-                0 -> 23.dp
-                1 -> 69.87.dp
-                else -> 107.56.dp
-            }
-            val topOffset = when (sourceIndex) {
-                0 -> 88.dp
-                1 -> 72.dp
-                else -> 56.dp
-            }
+            val startOffset = maxWidth * cardOffsets.getOrElse(sourceIndex) { 0.27f }
+            val topOffset = maxHeight * cardTops.getOrElse(sourceIndex) { 0.14f }
             val cardAlpha = when (sourceIndex) {
                 0 -> 1f
                 1 -> 0.92f
@@ -83,6 +83,8 @@ fun SmartCardRow(
 
             SmartCard(
                 recommendation = recommendation,
+                cardWidth = cardWidth,
+                cardHeight = cardHeight,
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .offset(x = startOffset, y = topOffset)
@@ -101,7 +103,7 @@ fun SmartCardRow(
         Column(
             modifier = Modifier
                 .align(Alignment.TopStart)
-                .padding(start = 386.dp, top = 246.dp),
+                .padding(start = maxWidth * 0.85f, top = maxHeight * 0.68f),
             verticalArrangement = Arrangement.spacedBy(6.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -120,6 +122,8 @@ fun SmartCardRow(
 @Composable
 private fun SmartCard(
     recommendation: SmartRecommendation,
+    cardWidth: Dp,
+    cardHeight: Dp,
     modifier: Modifier = Modifier,
     onClick: () -> Unit = {},
     withFaceImage: Boolean = false,
@@ -129,7 +133,7 @@ private fun SmartCard(
 
     Box(
         modifier = modifier
-            .size(width = 269.dp, height = 146.dp)
+            .size(width = cardWidth, height = cardHeight)
             .clip(shape)
             .clickable { onClick() },
     ) {

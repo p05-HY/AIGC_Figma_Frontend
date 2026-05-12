@@ -4,6 +4,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
@@ -16,7 +17,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -29,52 +29,56 @@ fun FloatingWidget(
     modifier: Modifier = Modifier,
     onClick: () -> Unit = {},
 ) {
-    val windowInfo = LocalWindowInfo.current
     val density = LocalDensity.current
-    val screenWidthPx = windowInfo.containerSize.width.toFloat()
-    val screenHeightPx = windowInfo.containerSize.height.toFloat()
     val widgetSizePx = with(density) { 56.dp.toPx() }
     val marginPx = with(density) { 16.dp.toPx() }
 
-    var offset by remember(screenWidthPx, screenHeightPx) {
-        mutableStateOf(Offset(screenWidthPx - widgetSizePx - marginPx, screenHeightPx * 0.7f))
-    }
+    BoxWithConstraints(modifier = modifier) {
+        val containerWidthPx = with(density) { maxWidth.toPx() }
+        val containerHeightPx = with(density) { maxHeight.toPx() }
 
-    Box(
-        modifier = modifier
-            .offset { IntOffset(offset.x.roundToInt(), offset.y.roundToInt()) }
-            .pointerInput(Unit) {
-                detectDragGestures { change, dragAmount ->
-                    change.consume()
-                    offset = Offset(
-                        x = (offset.x + dragAmount.x).coerceIn(0f, screenWidthPx - widgetSizePx),
-                        y = (offset.y + dragAmount.y).coerceIn(0f, screenHeightPx - widgetSizePx),
+        var offset by remember(containerWidthPx, containerHeightPx) {
+            mutableStateOf(
+                Offset(
+                    x = (containerWidthPx - widgetSizePx - marginPx).coerceAtLeast(0f),
+                    y = (containerHeightPx * 0.7f).coerceIn(marginPx, (containerHeightPx - widgetSizePx - marginPx).coerceAtLeast(0f)),
+                )
+            )
+        }
+
+        Box(
+            modifier = Modifier
+                .offset { IntOffset(offset.x.roundToInt(), offset.y.roundToInt()) }
+                .pointerInput(containerWidthPx, containerHeightPx) {
+                    detectDragGestures { change, dragAmount ->
+                        change.consume()
+                        offset = Offset(
+                            x = (offset.x + dragAmount.x).coerceIn(0f, (containerWidthPx - widgetSizePx).coerceAtLeast(0f)),
+                            y = (offset.y + dragAmount.y).coerceIn(0f, (containerHeightPx - widgetSizePx).coerceAtLeast(0f)),
+                        )
+                    }
+                },
+        ) {
+            Surface(
+                modifier = Modifier.size(56.dp),
+                shape = CircleShape,
+                color = SurfaceWhite,
+                shadowElevation = 8.dp,
+                onClick = onClick,
+            ) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(SurfaceWhite, CircleShape),
+                ) {
+                    Image(
+                        painter = painterResource(R.drawable.ic_echo_face),
+                        contentDescription = "AI Assistant",
+                        modifier = Modifier.size(28.dp),
+                        contentScale = ContentScale.Fit,
                     )
                 }
-            },
-    ) {
-        Surface(
-            modifier = Modifier.size(56.dp),
-            shape = CircleShape,
-            color = SurfaceWhite,
-            shadowElevation = 8.dp,
-            onClick = onClick,
-        ) {
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        SurfaceWhite,
-                        CircleShape,
-                    ),
-            ) {
-                Image(
-                    painter = painterResource(R.drawable.ic_echo_face),
-                    contentDescription = "AI Assistant",
-                    modifier = Modifier.size(28.dp),
-                    contentScale = ContentScale.Fit,
-                )
             }
         }
     }

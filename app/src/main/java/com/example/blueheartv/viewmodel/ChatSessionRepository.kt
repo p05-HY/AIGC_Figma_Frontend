@@ -3,35 +3,50 @@ package com.example.blueheartv.viewmodel
 import com.example.blueheartv.chat.RemoteChatThread
 import com.example.blueheartv.model.ChatHistory
 import com.example.blueheartv.model.Message
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
 
 internal const val DEFAULT_SESSION_TITLE = "当前对话"
 private const val MAX_SESSIONS = 20
 
-internal data class ConversationSession(
-    val id: String,
-    var title: String,
-    var updatedAtMillis: Long,
-    var isPinned: Boolean = false,
-    val messages: MutableList<Message>,
-)
-
 class ChatSessionRepository(
     private val timeProvider: () -> Long = { System.currentTimeMillis() },
     private val idProvider: () -> String = { UUID.randomUUID().toString() },
+    private val store: ChatSessionStore? = null,
+    private val persistScope: CoroutineScope? = null,
 ) {
     internal val sessions = mutableListOf<ConversationSession>()
     internal var activeSessionId: String? = null
         private set
 
     internal fun restore(remoteThreads: List<RemoteChatThread>): SessionRestoreResult {
+        val pinnedById = sessions.associate { it.id to it.isPinned }
         sessions.clear()
         sessions.addAll(
             remoteThreads
                 .take(MAX_SESSIONS)
-                .map { it.toConversationSession() },
+                .map {
+                    val session = it.toConversationSession()
+                    session.isPinned = pinnedById[session.id] ?: session.isPinned
+                    session
+                },
         )
+        activeSessionId = sessions.maxByOrNull { it.updatedAtMillis }?.id
+        return SessionRestoreResult(
+            activeSession = getActiveSession(),
+            histories = buildHistories(),
+        )
+    }
+
+    internal suspend fun restoreFromStore(): SessionRestoreResult? {
+        val store = store ?: return null
+        val loaded = store.loadSessions(MAX_SESSIONS)
+        if (loaded.isEmpty()) return null
+        sessions.clear()
+        sessions.addAll(loaded)
         activeSessionId = sessions.maxByOrNull { it.updatedAtMillis }?.id
         return SessionRestoreResult(
             activeSession = getActiveSession(),
@@ -68,6 +83,8 @@ class ChatSessionRepository(
         sessions.add(session)
         activeSessionId = session.id
         trimSessions()
+        persistSession(session)
+        persistMessages(session)
         return session
     }
 
@@ -81,12 +98,14 @@ class ChatSessionRepository(
         val session = sessions.firstOrNull { it.id == sessionId } ?: return false
         session.title = truncateTitle(newTitle)
         session.updatedAtMillis = timeProvider()
+        persistSession(session)
         return true
     }
 
     fun togglePin(sessionId: String): Boolean {
         val session = sessions.firstOrNull { it.id == sessionId } ?: return false
         session.isPinned = !session.isPinned
+        persistSession(session)
         return true
     }
 
@@ -95,11 +114,13 @@ class ChatSessionRepository(
         if (activeSessionId == sessionId) {
             activeSessionId = sessions.maxByOrNull { it.updatedAtMillis }?.id
         }
+        persistDeleteSession(sessionId)
     }
 
     fun clearAll() {
         sessions.clear()
         activeSessionId = null
+        persistDeleteAll()
     }
 
     fun getShareText(sessionId: String): String {
@@ -126,6 +147,8 @@ class ChatSessionRepository(
         }
         active.messages.removeAll { it.id in toRemove }
         active.updatedAtMillis = timeProvider()
+        persistSession(active)
+        persistMessages(active)
         return active
     }
 
@@ -133,6 +156,8 @@ class ChatSessionRepository(
         val active = getActiveSession() ?: return null
         active.messages.removeAll { it.id == messageId }
         active.updatedAtMillis = timeProvider()
+        persistSession(active)
+        persistMessages(active)
         return active
     }
 
@@ -147,6 +172,8 @@ class ChatSessionRepository(
         }
         active.messages.removeAll { it.id in toRemove }
         active.updatedAtMillis = timeProvider()
+        persistSession(active)
+        persistMessages(active)
         return active
     }
 
@@ -166,6 +193,8 @@ class ChatSessionRepository(
         if (titleHint != null && active.title == DEFAULT_SESSION_TITLE) {
             active.title = truncateTitle(titleHint)
         }
+        persistSession(active)
+        persistMessages(active)
         return active
     }
 
@@ -176,8 +205,15 @@ class ChatSessionRepository(
         val active = getActiveSession() ?: return null
         val idx = active.messages.indexOfFirst { it.id == messageId }
         if (idx < 0) return null
-        active.messages[idx] = transform(active.messages[idx])
+        val updated = transform(active.messages[idx])
+        active.messages[idx] = updated
         active.updatedAtMillis = timeProvider()
+        if (updated.deliveryState != com.example.blueheartv.model.MessageDeliveryState.STREAMING &&
+            updated.deliveryState != com.example.blueheartv.model.MessageDeliveryState.SENDING
+        ) {
+            persistSession(active)
+            persistMessages(active)
+        }
         return active
     }
 
@@ -217,6 +253,36 @@ class ChatSessionRepository(
         sessions.removeAll { it.id in excess }
         if (activeSessionId in excess) {
             activeSessionId = sessions.maxByOrNull { it.updatedAtMillis }?.id
+        }
+        persistDeleteSessions(excess)
+    }
+
+    private fun persistSession(session: ConversationSession) {
+        persist { it.upsertSession(session) }
+    }
+
+    private fun persistMessages(session: ConversationSession) {
+        persist { it.replaceMessages(session) }
+    }
+
+    private fun persistDeleteSession(sessionId: String) {
+        persist { it.deleteSession(sessionId) }
+    }
+
+    private fun persistDeleteSessions(sessionIds: Set<String>) {
+        if (sessionIds.isEmpty()) return
+        persist { it.deleteSessions(sessionIds) }
+    }
+
+    private fun persistDeleteAll() {
+        persist { it.deleteAll() }
+    }
+
+    private fun persist(action: suspend (ChatSessionStore) -> Unit) {
+        val store = store ?: return
+        val scope = persistScope ?: return
+        scope.launch(Dispatchers.IO) {
+            action(store)
         }
     }
 

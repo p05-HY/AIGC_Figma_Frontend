@@ -117,10 +117,12 @@ fun UserBubble(
             .padding(horizontal = 24.dp, vertical = 4.dp),
         horizontalArrangement = Arrangement.End,
     ) {
-        Box {
-            Box(
-                modifier = Modifier
-                    .widthIn(max = 260.dp)
+        BoxWithConstraints {
+            val bubbleMaxWidth = (maxWidth * 0.78f).coerceIn(200.dp, 480.dp)
+            Box {
+                Box(
+                    modifier = Modifier
+                        .widthIn(max = bubbleMaxWidth)
                     .border(1.dp, BorderGray, bubbleShape)
                     .background(SurfaceWhite, bubbleShape)
                     .combinedClickable(
@@ -240,6 +242,7 @@ fun UserBubble(
                     },
                 )
             }
+            }
         }
     }
 }
@@ -305,11 +308,13 @@ fun AiBubble(
 
         Spacer(modifier = Modifier.width(8.dp))
 
-        Column {
-            Box {
-                Box(
-                    modifier = Modifier
-                        .widthIn(max = 300.dp)
+        BoxWithConstraints {
+            val bubbleMaxWidth = (maxWidth * 0.85f).coerceIn(220.dp, 560.dp)
+            Column {
+                Box {
+                    Box(
+                        modifier = Modifier
+                            .widthIn(max = bubbleMaxWidth)
                         .shadow(2.dp, bubbleShape)
                         .background(LightGray, bubbleShape)
                         .combinedClickable(
@@ -390,6 +395,7 @@ fun AiBubble(
                         },
                     )
                 }
+            }
             }
         }
     }

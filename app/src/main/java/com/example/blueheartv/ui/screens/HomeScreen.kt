@@ -7,6 +7,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.SnackbarHost
@@ -70,8 +72,7 @@ fun HomeScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .navigationBarsPadding()
-                .imePadding()
-                .padding(bottom = 24.dp),
+                .imePadding(),
         ) {
             AppTopBar(
                 onMenuClick = { viewModel.toggleDrawer() },
@@ -140,6 +141,8 @@ fun HomeScreen(
                 onAttachClick = { actions.requestAttach() },
                 onMicClick = { actions.requestMic() },
             )
+
+            Spacer(modifier = Modifier.height(8.dp))
         }
 
         HistoryDrawer(
@@ -167,7 +170,9 @@ fun HomeScreen(
             },
         )
 
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.BottomEnd) {
+        BoxWithConstraints(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.BottomEnd) {
+            val menuEndPadding = maxWidth * 0.08f
+            val menuBottomPadding = maxHeight * 0.12f
             FloatingMenu(
                 visible = showFloatingMenu,
                 onDismiss = { showFloatingMenu = false },
@@ -188,7 +193,7 @@ fun HomeScreen(
                         ToastUtil.show(summarizeInDevText, ToastType.INFO)
                     },
                 ),
-                modifier = Modifier.padding(end = 72.dp, bottom = 120.dp),
+                modifier = Modifier.padding(end = menuEndPadding, bottom = menuBottomPadding),
             )
 
             FloatingWidget { showFloatingMenu = !showFloatingMenu }
@@ -280,31 +285,27 @@ private fun ErrorRetryBar(message: String, canRetry: Boolean, onRetry: () -> Uni
 
 @Composable
 private fun DefaultContent(uiState: HomeUiState, viewModel: ChatViewModel) {
-    Box(modifier = Modifier.fillMaxSize()) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState()),
+    ) {
         Text(
             text = stringResource(R.string.smart_recommendations),
             fontSize = 18.sp,
             color = TextBlack,
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(start = 20.dp, top = 16.dp),
+            modifier = Modifier.padding(start = 20.dp, top = 16.dp),
         )
 
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopStart)
-        ) {
-            SmartCardRow(
-                recommendations = uiState.recommendations,
-                onCardClick = { rec -> viewModel.sendRecommendation(rec) },
-            )
-        }
+        SmartCardRow(
+            recommendations = uiState.recommendations,
+            onCardClick = { rec -> viewModel.sendRecommendation(rec) },
+        )
 
         Column(
             modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = 242.dp)
-                .width(280.dp),
+                .fillMaxWidth()
+                .padding(horizontal = 40.dp, vertical = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
@@ -320,35 +321,6 @@ private fun DefaultContent(uiState: HomeUiState, viewModel: ChatViewModel) {
                 fontSize = 14.sp,
                 color = MutedText,
                 textAlign = TextAlign.Center,
-            )
-        }
-
-        val promptTodayWeather = stringResource(R.string.prompt_today_weather)
-        val promptTodaySchedule = stringResource(R.string.prompt_today_schedule)
-        val promptTodayDelivery = stringResource(R.string.prompt_today_delivery)
-        val promptReadScreen = stringResource(R.string.prompt_read_screen)
-
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(start = 13.dp, top = 744.dp),
-        ) {
-            QuickChip(
-                label = stringResource(R.string.btn_today_weather),
-                onClick = { viewModel.sendQuickAction(promptTodayWeather) },
-            )
-            QuickChip(
-                label = stringResource(R.string.btn_today_schedule),
-                onClick = { viewModel.sendQuickAction(promptTodaySchedule) },
-            )
-            QuickChip(
-                label = stringResource(R.string.btn_today_delivery),
-                onClick = { viewModel.sendQuickAction(promptTodayDelivery) },
-            )
-            QuickChip(
-                label = stringResource(R.string.btn_read_screen),
-                onClick = { viewModel.sendQuickAction(promptReadScreen) },
             )
         }
     }

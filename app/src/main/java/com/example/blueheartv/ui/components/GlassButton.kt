@@ -35,7 +35,7 @@ fun GlassButton(
 
     Box(
         modifier = modifier
-            .height(34.dp)
+            .heightIn(min = 34.dp)
             .clip(shape)
             .clickable { onClick() },
         contentAlignment = Alignment.Center,

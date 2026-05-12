@@ -1,5 +1,6 @@
 package com.example.blueheartv.chat
 
+import android.util.Log
 import com.example.blueheartv.model.Message
 import com.example.blueheartv.model.MessageDeliveryState
 import com.example.blueheartv.viewmodel.DEFAULT_SESSION_TITLE
@@ -147,17 +148,33 @@ class AgentServerClient(
         var eventName: String? = null
         val data = StringBuilder()
         val activeNodes = linkedSetOf<String>()
+        var parseErrorCount = 0
+        var shouldStop = false
 
         fun flush() {
+            if (shouldStop) return
             val payload = data.toString().trim()
             if (payload.isNotEmpty() && payload != "[DONE]") {
-                handleSseEvent(eventName.orEmpty(), payload, activeNodes, onEvent)
+                val ok = handleSseEvent(eventName.orEmpty(), payload, activeNodes, onEvent)
+                if (!ok) {
+                    parseErrorCount += 1
+                    Log.w(TAG, "SSE parse error count=$parseErrorCount event=$eventName")
+                    if (parseErrorCount >= MAX_SSE_PARSE_ERRORS) {
+                        onEvent(
+                            ChatStreamEvent.Error(
+                                "SSE 解析失败次数过多，请重试。",
+                                retryable = true,
+                            )
+                        )
+                        shouldStop = true
+                    }
+                }
             }
             eventName = null
             data.clear()
         }
 
-        while (!source.exhausted()) {
+        while (!source.exhausted() && !shouldStop) {
             val line = source.readUtf8Line() ?: break
             when {
                 line.isEmpty() -> flush()
@@ -169,7 +186,9 @@ class AgentServerClient(
             }
         }
         flush()
-        onEvent(ChatStreamEvent.Completed)
+        if (!shouldStop) {
+            onEvent(ChatStreamEvent.Completed)
+        }
     }
 
     private fun handleSseEvent(
@@ -177,8 +196,9 @@ class AgentServerClient(
         payload: String,
         activeNodes: MutableSet<String>,
         onEvent: (ChatStreamEvent) -> Unit,
-    ) {
-        val json = runCatching { parseJson(payload) }.getOrNull() ?: return
+    ): Boolean {
+        if (eventName.isBlank()) return true
+        val json = runCatching { parseJson(payload) }.getOrNull() ?: return false
         when {
             eventName.contains("messages", ignoreCase = true) -> {
                 extractMessageDelta(json)?.takeIf { it.chunk.isNotEmpty() }?.let {
@@ -188,17 +208,18 @@ class AgentServerClient(
             }
 
             eventName.contains("tasks", ignoreCase = true) -> {
-                val node = extractNodeName(json) ?: return
+                val node = extractNodeName(json) ?: return true
                 val completed = payload.contains("\"result\"") || payload.contains("\"error\"")
                 if (completed) {
-                    if (activeNodes.remove(node)) onEvent(ChatStreamEvent.ToolCallCompleted(node))
+                    activeNodes.remove(node)
+                    onEvent(ChatStreamEvent.ToolCallCompleted(node))
                 } else {
                     markNodeActive(node, activeNodes, onEvent)
                 }
             }
 
             eventName.contains("updates", ignoreCase = true) -> {
-                val obj = json as? JSONObject ?: return
+                val obj = json as? JSONObject ?: return true
                 for (key in obj.keys()) {
                     if (key !in activeNodes) onEvent(ChatStreamEvent.ToolCallStarted(key))
                     activeNodes.remove(key)
@@ -207,8 +228,8 @@ class AgentServerClient(
             }
 
             eventName.contains("custom", ignoreCase = true) -> {
-                val obj = json as? JSONObject ?: return
-                val label = obj.optString("label").ifBlank { obj.optString("node") }.ifBlank { return }
+                val obj = json as? JSONObject ?: return true
+                val label = obj.optString("label").ifBlank { obj.optString("node") }.ifBlank { return true }
                 when (obj.optString("status")) {
                     "completed", "done", "end" -> {
                         activeNodes.remove(label)
@@ -219,6 +240,7 @@ class AgentServerClient(
                 }
             }
         }
+        return true
     }
 
     private fun markNodeActive(
@@ -511,6 +533,8 @@ class AgentServerClient(
     companion object {
         private val JSON = "application/json; charset=utf-8".toMediaType()
         private const val MAX_ERROR_BODY = 500
+        private const val MAX_SSE_PARSE_ERRORS = 3
+        private const val TAG = "AgentServerClient"
 
         private val sharedClient = OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)
