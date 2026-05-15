@@ -1,6 +1,6 @@
 # AIGC_Figma_Frontend
 
-超级蓝心小V（BlueHeartV）是一款 Android AI 智能体前端客户端。
+Echo 是一款 Android AI 智能体前端客户端。
 
 当前版本不再在 App 内直接接入模型供应商，而是连接 Python 侧部署的 LangGraph Agent Server。用户在 Android 端发送文本或图片消息，服务端负责会话状态、工具调用和流式响应，App 负责界面展示、移动端权限能力和 ADB 工具执行。
 

@@ -376,14 +376,14 @@ private fun AboutDetailContent() {
         Spacer(modifier = Modifier.height(12.dp))
 
         Text(
-            text = "超级蓝心小V",
+            text = "Echo",
             fontSize = 18.sp,
             fontWeight = FontWeight.Bold,
             color = DarkPrimary,
             modifier = Modifier.align(Alignment.CenterHorizontally),
         )
         Text(
-            text = "BlueHeartV",
+            text = "Echo",
             fontSize = 13.sp,
             color = MutedText,
             modifier = Modifier.align(Alignment.CenterHorizontally),

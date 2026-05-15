@@ -41,7 +41,7 @@
             android:name=".BlueHeartVApplication"
             android:allowBackup="true"
             android:icon="@mipmap/ic_launcher"
-            android:label="超级蓝心小V"
+            android:label="Echo"
             android:roundIcon="@mipmap/ic_launcher_round"
             android:supportsRtl="true"
             android:usesCleartextTraffic="true"

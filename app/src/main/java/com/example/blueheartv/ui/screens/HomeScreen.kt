@@ -28,6 +28,7 @@ import com.example.blueheartv.R
 import com.example.blueheartv.model.ChatAttachment
 import com.example.blueheartv.ui.components.*
 import com.example.blueheartv.ui.theme.*
+import com.example.blueheartv.util.AINotificationManager
 import com.example.blueheartv.util.AppGlobalUiHost
 import com.example.blueheartv.util.ToastType
 import com.example.blueheartv.util.ToastUtil
@@ -50,6 +51,14 @@ fun HomeScreen(
     val screenshotInDevText = stringResource(R.string.feature_in_dev_screenshot)
     val translateInDevText = stringResource(R.string.feature_in_dev_translate)
     val summarizeInDevText = stringResource(R.string.feature_in_dev_summarize)
+
+    // TODO: 测试通知横幅，验证后删除
+    LaunchedEffect(Unit) {
+        AINotificationManager.showNotification(
+            context = context,
+            message = "欢迎使用echo！我是你的智能小助手~",
+        )
+    }
 
     val shouldAutoScroll by remember(uiState.messages.size, uiState.sessionState) {
         derivedStateOf {
@@ -294,17 +303,19 @@ private fun DefaultContent(uiState: HomeUiState, viewModel: ChatViewModel) {
             text = stringResource(R.string.smart_recommendations),
             fontSize = 18.sp,
             color = TextBlack,
-            modifier = Modifier.padding(start = 20.dp, top = 16.dp),
+            modifier = Modifier.padding(start = 20.dp, top = 16.dp, bottom = 8.dp),
         )
 
-        SmartCardRow(
+        SmartCardCarousel(
             recommendations = uiState.recommendations,
             onCardClick = { rec -> viewModel.sendRecommendation(rec) },
+            modifier = Modifier.offset(y = (-40).dp),
         )
 
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .offset(y = (-40).dp)
                 .padding(horizontal = 40.dp, vertical = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {

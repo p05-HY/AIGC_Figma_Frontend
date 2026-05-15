@@ -7,6 +7,7 @@ import android.os.Build
 import com.example.blueheartv.chat.AppContextHolder
 import com.example.blueheartv.di.appModule
 import com.example.blueheartv.telemetry.AppEventLogger
+import com.example.blueheartv.util.AINotificationManager
 import org.koin.android.ext.koin.androidContext
 import org.koin.core.context.startKoin
 
@@ -52,5 +53,7 @@ class BlueHeartVApplication : Application() {
             getSystemService(NotificationManager::class.java)
                 ?.createNotificationChannel(channel)
         }
+
+        AINotificationManager.createChannel(this)
     }
 }

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">超级蓝心小V</string>
+    <string name="app_name">Echo</string>
 
     <!-- HomeScreen -->
     <string name="smart_recommendations">智能推荐</string>
@@ -46,7 +46,7 @@
     <string name="rec_delivery_subtitle">需要我帮您查看物流详情吗？</string>
 
     <!-- AuthScreen -->
-    <string name="auth_title">超级蓝心小V</string>
+    <string name="auth_title">Echo</string>
     <string name="auth_subtitle">系统级AI智能体</string>
     <string name="auth_description">为了给您提供最佳的AI助理体验，\n需要您授权以下权限：</string>
     <string name="auth_button">一键授权，开始使用</string>

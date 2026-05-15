@@ -321,7 +321,7 @@ class AdbWebSocketService : Service() {
     private fun buildNotification(content: String): Notification {
         return NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle("超级蓝心小V ADB")
+            .setContentTitle("Echo ADB")
             .setContentText(content)
             .setOngoing(true)
             .setSilent(true)

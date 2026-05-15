@@ -163,7 +163,7 @@ fun AuthScreen(
 
             // Title
             Text(
-                text = "欢迎使用超级蓝心小V",
+                text = "欢迎使用Echo",
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Bold,
                 color = DarkPrimary,
