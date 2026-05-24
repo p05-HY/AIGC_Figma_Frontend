@@ -35,6 +35,9 @@
 
     <queries>
         <package android:name="com.termux"/>
+        <intent>
+            <action android:name="android.speech.RecognizerIntent"/>
+        </intent>
     </queries>
 
     <application
@@ -62,6 +65,13 @@
                 android:name=".floating.FloatingBallService"
                 android:exported="false"
                 android:foregroundServiceType="specialUse"/>
+
+        <activity
+                android:name=".floating.FloatingHelperActivity"
+                android:exported="false"
+                android:theme="@android:style/Theme.Translucent.NoTitleBar"
+                android:excludeFromRecents="true"
+                android:taskAffinity=""/>
 
         <service
             android:name=".system.SystemService"

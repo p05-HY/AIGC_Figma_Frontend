@@ -8,6 +8,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.Image
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Keyboard
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
@@ -21,6 +24,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.blueheartv.R
 import com.example.blueheartv.ui.theme.*
+import com.example.blueheartv.voice.InputMode
+import com.example.blueheartv.voice.VoiceRecordingState
 
 @Composable
 fun BottomInputBar(
@@ -31,6 +36,14 @@ fun BottomInputBar(
     sendEnabled: Boolean = true,
     onAttachClick: () -> Unit = {},
     onMicClick: () -> Unit = {},
+    inputMode: InputMode = InputMode.TEXT,
+    voiceRecordingState: VoiceRecordingState = VoiceRecordingState.IDLE,
+    onVoiceStart: () -> Unit = {},
+    onVoiceEnd: () -> Unit = {},
+    onVoiceCancel: () -> Unit = {},
+    onVoiceModeTap: () -> Unit = {},
+    onSwipeToCancelling: () -> Unit = {},
+    onSwipeBackToRecording: () -> Unit = {},
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
         HorizontalDividerLine()
@@ -58,26 +71,39 @@ fun BottomInputBar(
                 )
             }
 
-            Box(
-                modifier = Modifier.weight(1f),
-            ) {
-                if (value.isEmpty()) {
-                    Text(
-                        text = "发消息...",
-                        fontSize = 14.sp,
-                        color = GrayText,
+            when (inputMode) {
+                InputMode.TEXT -> {
+                    Box(modifier = Modifier.weight(1f)) {
+                        if (value.isEmpty()) {
+                            Text(
+                                text = "发消息...",
+                                fontSize = 14.sp,
+                                color = GrayText,
+                            )
+                        }
+                        BasicTextField(
+                            value = value,
+                            onValueChange = { if (it.length <= 2000) onValueChange(it) },
+                            modifier = Modifier.fillMaxWidth(),
+                            textStyle = TextStyle(fontSize = 14.sp, color = TextBlack),
+                            singleLine = true,
+                        )
+                    }
+                }
+
+                InputMode.VOICE -> {
+                    HoldToSpeakButton(
+                        recordingState = voiceRecordingState,
+                        onTap = onVoiceModeTap,
+                        onLongPressStart = onVoiceStart,
+                        onSwipeToCancelling = onSwipeToCancelling,
+                        onSwipeBackToRecording = onSwipeBackToRecording,
+                        onRelease = { cancelled ->
+                            if (cancelled) onVoiceCancel() else onVoiceEnd()
+                        },
+                        modifier = Modifier.weight(1f),
                     )
                 }
-                BasicTextField(
-                    value = value,
-                    onValueChange = { if (it.length <= 2000) onValueChange(it) },
-                    modifier = Modifier.fillMaxWidth(),
-                    textStyle = TextStyle(
-                        fontSize = 14.sp,
-                        color = TextBlack,
-                    ),
-                    singleLine = true,
-                )
             }
 
             Box(
@@ -86,11 +112,23 @@ fun BottomInputBar(
                     .clickable { onMicClick() },
                 contentAlignment = Alignment.Center,
             ) {
-                Image(
-                    painter = painterResource(R.drawable.ic_mic),
-                    contentDescription = "Voice input",
-                    modifier = Modifier.size(24.dp),
-                )
+                when (inputMode) {
+                    InputMode.TEXT -> {
+                        Image(
+                            painter = painterResource(R.drawable.ic_mic),
+                            contentDescription = "Voice input",
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                    InputMode.VOICE -> {
+                        Icon(
+                            imageVector = Icons.Outlined.Keyboard,
+                            contentDescription = "Keyboard",
+                            tint = GrayText,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                }
             }
 
             Box(

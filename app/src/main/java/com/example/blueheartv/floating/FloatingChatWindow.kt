@@ -77,6 +77,8 @@ class FloatingChatWindow(
     private val windowManager: WindowManager,
     private val onClose: () -> Unit,
     private val onExpandToFull: (sessionId: String?) -> Unit,
+    private val onAttachClick: (() -> Unit)? = null,
+    private val onMicClick: (() -> Unit)? = null,
 ) {
     companion object {
         private const val TAG = "FloatingChatWindow"
@@ -89,7 +91,7 @@ class FloatingChatWindow(
     private val windowWidth = (screenWidth * 0.68f).toInt()
     private val windowHeight = (windowWidth * (375f / 245f)).toInt()
 
-    private var composeView: ComposeView? = null
+    private var composeView: android.view.View? = null
     private var lifecycleOwner: WindowLifecycleOwner? = null
     private var isAdded = false
     private var currentAnimator: android.animation.ValueAnimator? = null
@@ -127,7 +129,18 @@ class FloatingChatWindow(
             onExpandToFull(sessionId)
         }
 
-        val view = ComposeView(context).apply {
+        val wrapper = object : android.widget.FrameLayout(context) {
+            override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+                if (super.dispatchKeyEvent(event)) return true
+                if (event.keyCode == android.view.KeyEvent.KEYCODE_BACK && event.action == android.view.KeyEvent.ACTION_UP) {
+                    dismiss()
+                    return true
+                }
+                return false
+            }
+        }
+
+        val composeContent = ComposeView(context).apply {
             setViewTreeLifecycleOwner(owner)
             setViewTreeViewModelStoreOwner(owner)
             setViewTreeSavedStateRegistryOwner(owner)
@@ -138,10 +151,19 @@ class FloatingChatWindow(
                         viewModel = chatViewModel,
                         onClose = { dismiss() },
                         onExpand = { expandToFullScreen() },
+                        onAttachClick = { onAttachClick?.invoke() },
+                        onMicClick = { onMicClick?.invoke() },
                     )
                 }
             }
         }
+
+        wrapper.addView(composeContent, android.widget.FrameLayout.LayoutParams(
+            android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+            android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+        ))
+
+        val view = wrapper
 
         val gestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
             override fun onFling(e1: MotionEvent?, e2: MotionEvent, velocityX: Float, velocityY: Float): Boolean {
@@ -276,6 +298,8 @@ private fun FloatingChatContent(
     viewModel: ChatViewModel,
     onClose: () -> Unit,
     onExpand: () -> Unit,
+    onAttachClick: () -> Unit = {},
+    onMicClick: () -> Unit = {},
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val listState = rememberLazyListState()
@@ -300,13 +324,14 @@ private fun FloatingChatContent(
                     .fillMaxWidth()
                     .padding(top = 16.dp, bottom = 8.dp, start = 21.dp, end = 16.dp),
             ) {
-                // 左侧菜单图标 (Figma node-id=462:481, 16dp)
+                // 左侧全屏展开按钮 (Figma node-id=462:481, 16dp)
                 Icon(
-                    painter = painterResource(R.drawable.ic_menu_hamburger),
-                    contentDescription = null,
+                    painter = painterResource(R.drawable.ic_arrow_right),
+                    contentDescription = stringResource(R.string.floating_expand),
                     modifier = Modifier
                         .size(16.dp)
-                        .align(Alignment.CenterStart),
+                        .align(Alignment.CenterStart)
+                        .clickable { onExpand() },
                     tint = DarkPrimary,
                 )
                 // 居中标题 "Echo" (Figma node-id=462:488, 16sp Medium #80A3E5)
@@ -379,6 +404,8 @@ private fun FloatingChatContent(
                 onValueChange = { viewModel.onInputChanged(it) },
                 onSend = { viewModel.sendMessage() },
                 onExpand = onExpand,
+                onAttachClick = onAttachClick,
+                onMicClick = onMicClick,
                 sendEnabled = uiState.sessionState != ChatSessionState.RESPONDING
                         && uiState.inputText.isNotBlank(),
             )
@@ -393,6 +420,8 @@ private fun GlassInputBar(
     onValueChange: (String) -> Unit,
     onSend: () -> Unit,
     onExpand: () -> Unit,
+    onAttachClick: () -> Unit = {},
+    onMicClick: () -> Unit = {},
     sendEnabled: Boolean,
 ) {
     Box(
@@ -425,7 +454,9 @@ private fun GlassInputBar(
                 Icon(
                     painter = painterResource(R.drawable.ic_attachment),
                     contentDescription = null,
-                    modifier = Modifier.size(14.dp),
+                    modifier = Modifier
+                        .size(14.dp)
+                        .clickable { onAttachClick() },
                     tint = MutedText,
                 )
                 Spacer(modifier = Modifier.width(8.dp))
@@ -446,6 +477,16 @@ private fun GlassInputBar(
                         singleLine = true,
                     )
                 }
+                Spacer(modifier = Modifier.width(8.dp))
+                // 麦克风图标
+                Icon(
+                    painter = painterResource(R.drawable.ic_mic),
+                    contentDescription = "Voice input",
+                    modifier = Modifier
+                        .size(14.dp)
+                        .clickable { onMicClick() },
+                    tint = MutedText,
+                )
                 Spacer(modifier = Modifier.width(8.dp))
                 // 右侧发送/AI头像 (Figma node-id=462:503, 27dp 圆形)
                 Image(

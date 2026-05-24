@@ -18,8 +18,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
+import androidx.lifecycle.lifecycleScope
 import com.example.blueheartv.chat.AgentServerConfigStore
 import com.example.blueheartv.chat.AppContextHolder
+import com.example.blueheartv.control.AccessibilityAutoEnabler
 import com.example.blueheartv.control.AdbAccessibilityService
 import com.example.blueheartv.control.AdbWebSocketService
 import com.example.blueheartv.floating.FloatingBallService
@@ -29,6 +31,7 @@ import com.example.blueheartv.ui.theme.BlueHeartVTheme
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import rikka.shizuku.Shizuku
 
 class MainActivity : ComponentActivity() {
@@ -99,6 +102,12 @@ class MainActivity : ComponentActivity() {
 
         handleSessionIdIntent(intent)
         Shizuku.addRequestPermissionResultListener(shizukuPermissionListener)
+
+        lifecycleScope.launch {
+            if (AccessibilityAutoEnabler.tryAutoEnable(applicationContext)) {
+                permissionCheckTrigger.intValue++
+            }
+        }
 
         enableEdgeToEdge()
         setContent {

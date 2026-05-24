@@ -144,4 +144,5 @@
     <string name="floating_perm_confirm">去开启</string>
     <string name="floating_channel_name">悬浮球服务</string>
     <string name="floating_channel_desc">保持悬浮球在桌面运行</string>
+    <string name="floating_task_completed">任务已完成</string>
 </resources>

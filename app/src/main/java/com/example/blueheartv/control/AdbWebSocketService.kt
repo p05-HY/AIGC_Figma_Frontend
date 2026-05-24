@@ -3,6 +3,7 @@ package com.example.blueheartv.control
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -15,6 +16,8 @@ import androidx.core.app.NotificationCompat
 import com.example.blueheartv.R
 import com.example.blueheartv.chat.AgentServerClient
 import com.example.blueheartv.chat.AgentServerConfigStore
+import com.example.blueheartv.floating.FloatingBallService
+import com.example.blueheartv.system.SystemService
 import kotlinx.coroutines.*
 import okhttp3.*
 import org.json.JSONObject
@@ -48,6 +51,13 @@ class AdbWebSocketService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_STOP_ALL) {
+            FloatingBallService.stop(this)
+            startService(SystemService.createStopIntent(this))
+            overlay.hide()
+            stopSelf()
+            return START_NOT_STICKY
+        }
         connect()
         return START_STICKY
     }
@@ -104,8 +114,8 @@ class AdbWebSocketService : Service() {
             isConnecting = false
             Log.d(TAG, "onOpen: websocket connected")
             updateNotification("ADB 已连接")
-            overlay.show()
             overlay.update("ADB 已连接", "等待 Agent 指令")
+            overlay.showBriefly(3000)
             serviceScope.launch {
                 if (!connectSent) {
                     connectSent = true
@@ -136,6 +146,7 @@ class AdbWebSocketService : Service() {
             Log.d(TAG, "onClosed: code=$code reason=$reason")
             updateNotification("ADB 连接关闭: $code $reason")
             overlay.update("ADB 连接关闭", "$code $reason")
+            overlay.showBriefly(3000)
             reconnectLater()
         }
 
@@ -146,8 +157,8 @@ class AdbWebSocketService : Service() {
             heartbeatJob = null
             Log.d(TAG, "onFailure: ${t.message}")
             updateNotification("ADB 连接异常: ${t.message}")
-            overlay.show()
             overlay.update("ADB 连接异常", t.message)
+            overlay.showBriefly(3000)
             reconnectLater()
         }
     }
@@ -182,6 +193,7 @@ class AdbWebSocketService : Service() {
         val message = envelope.optString("message")
         if (type == "response" && message == "pong") {
             overlay.update("ADB 心跳正常")
+            overlay.showBriefly(3000)
             return
         }
         if (type != "request") return
@@ -192,8 +204,8 @@ class AdbWebSocketService : Service() {
             return
         }
 
-        overlay.show()
         overlay.update("执行 $message")
+        overlay.showBriefly(3000)
         runCatching {
             executeRequest(message, envelope.optJSONObject("data"))
             actionResult(requestId)
@@ -319,12 +331,20 @@ class AdbWebSocketService : Service() {
     }
 
     private fun buildNotification(content: String): Notification {
+        val stopIntent = Intent(this, AdbWebSocketService::class.java).apply {
+            action = ACTION_STOP_ALL
+        }
+        val stopPending = PendingIntent.getService(
+            this, 0, stopIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
         return NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle("Echo ADB")
             .setContentText(content)
             .setOngoing(true)
             .setSilent(true)
+            .addAction(0, "停止所有服务", stopPending)
             .build()
     }
 
@@ -341,6 +361,7 @@ class AdbWebSocketService : Service() {
     companion object {
         private const val NOTIFICATION_ID = 3001
         private const val NOTIFICATION_CHANNEL_ID = "adb_tool_connection"
+        private const val ACTION_STOP_ALL = "com.example.blueheartv.STOP_ALL_SERVICES"
         private const val TAG = "AdbWebSocketService"
 
         fun start(context: Context) {

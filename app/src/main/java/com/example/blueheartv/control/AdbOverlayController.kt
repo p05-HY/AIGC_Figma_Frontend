@@ -20,6 +20,7 @@ class AdbOverlayController(
     private val appContext = context.applicationContext
     private val windowManager = appContext.getSystemService(WindowManager::class.java)
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val autoHideRunnable = Runnable { hide() }
 
     private val container = LinearLayout(appContext).apply {
         orientation = LinearLayout.VERTICAL
@@ -60,6 +61,7 @@ class AdbOverlayController(
             WindowManager.LayoutParams.TYPE_PHONE
         },
         WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
         PixelFormat.TRANSLUCENT
     ).apply {
@@ -69,6 +71,7 @@ class AdbOverlayController(
     }
 
     private var attached = false
+    private var interactive = false
 
     init {
         container.addView(titleView)
@@ -95,6 +98,23 @@ class AdbOverlayController(
         return true
     }
 
+    fun showBriefly(durationMs: Long = 3000) {
+        if (!canShow()) return
+        runOnMain {
+            mainHandler.removeCallbacks(autoHideRunnable)
+            if (!attached) {
+                runCatching {
+                    windowManager.addView(container, params)
+                    attached = true
+                }.onFailure {
+                    attached = false
+                    return@runOnMain
+                }
+            }
+            mainHandler.postDelayed(autoHideRunnable, durationMs)
+        }
+    }
+
     fun update(status: String, detail: String? = null) {
         runOnMain {
             statusView.text = status
@@ -107,6 +127,8 @@ class AdbOverlayController(
 
     fun waitForInteraction(message: String?, onDone: () -> Unit) {
         runOnMain {
+            mainHandler.removeCallbacks(autoHideRunnable)
+            setInteractive(true)
             statusView.text = "等待用户交互"
             detailView.text = message.orEmpty()
             detailView.visibility = if (message.isNullOrBlank()) View.GONE else View.VISIBLE
@@ -114,16 +136,32 @@ class AdbOverlayController(
             interactionButton.setOnClickListener {
                 interactionButton.visibility = View.GONE
                 interactionButton.setOnClickListener(null)
+                setInteractive(false)
                 onDone()
+                showBriefly(3000)
             }
         }
     }
 
     fun hide() {
         runOnMain {
+            mainHandler.removeCallbacks(autoHideRunnable)
             if (!attached) return@runOnMain
             runCatching { windowManager.removeView(container) }
             attached = false
+        }
+    }
+
+    private fun setInteractive(enabled: Boolean) {
+        if (interactive == enabled) return
+        interactive = enabled
+        if (enabled) {
+            params.flags = params.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
+        } else {
+            params.flags = params.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+        }
+        if (attached) {
+            runCatching { windowManager.updateViewLayout(container, params) }
         }
     }
 

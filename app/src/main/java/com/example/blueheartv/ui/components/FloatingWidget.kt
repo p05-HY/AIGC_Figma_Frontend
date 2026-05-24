@@ -14,6 +14,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
@@ -33,15 +34,17 @@ fun FloatingWidget(
     val widgetSizePx = with(density) { 56.dp.toPx() }
     val marginPx = with(density) { 16.dp.toPx() }
 
-    BoxWithConstraints(modifier = modifier) {
+    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val containerWidthPx = with(density) { maxWidth.toPx() }
         val containerHeightPx = with(density) { maxHeight.toPx() }
 
         var offset by remember(containerWidthPx, containerHeightPx) {
+            val maxX = (containerWidthPx - widgetSizePx).coerceAtLeast(0f)
+            val maxY = (containerHeightPx - widgetSizePx).coerceAtLeast(0f)
             mutableStateOf(
                 Offset(
-                    x = (containerWidthPx - widgetSizePx - marginPx).coerceAtLeast(0f),
-                    y = (containerHeightPx * 0.7f).coerceIn(marginPx, (containerHeightPx - widgetSizePx - marginPx).coerceAtLeast(0f)),
+                    x = (maxX - marginPx).coerceIn(0f, maxX),
+                    y = (containerHeightPx * 0.7f).coerceIn(0f, maxY),
                 )
             )
         }
@@ -62,7 +65,7 @@ fun FloatingWidget(
             Surface(
                 modifier = Modifier.size(56.dp),
                 shape = CircleShape,
-                color = SurfaceWhite,
+                color = Color.Red, // 强制红色
                 shadowElevation = 8.dp,
                 onClick = onClick,
             ) {

@@ -8,10 +8,14 @@ import com.example.blueheartv.chat.ChatProvider
 import com.example.blueheartv.chat.ChatStreamEvent
 import com.example.blueheartv.model.*
 import com.example.blueheartv.telemetry.AppEventLogger
+import com.example.blueheartv.voice.InputMode
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -40,6 +44,7 @@ data class HomeUiState(
     val retryPrompt: String? = null,
     val histories: List<ChatHistory> = emptyList(),
     val recommendations: List<SmartRecommendation> = defaultRecommendations,
+    val inputMode: InputMode = InputMode.TEXT,
 )
 
 private const val SEND_DEBOUNCE_MS = 500L
@@ -54,6 +59,9 @@ class ChatViewModel(
 
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
+
+    private val _messageSentEvent = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    val messageSentEvent: SharedFlow<String> = _messageSentEvent.asSharedFlow()
 
     private var streamJob: Job? = null
     private var historyJob: Job? = null
@@ -70,6 +78,19 @@ class ChatViewModel(
 
     fun onInputChanged(text: String) {
         _uiState.update { it.copy(inputText = text) }
+    }
+
+    fun toggleInputMode() {
+        _uiState.update { state ->
+            val newMode = if (state.inputMode == InputMode.TEXT) InputMode.VOICE else InputMode.TEXT
+            state.copy(inputMode = newMode)
+        }
+    }
+
+    fun sendVoiceText(text: String) {
+        if (text.isBlank()) return
+        _uiState.update { it.copy(inputText = text) }
+        sendMessage()
     }
 
     fun addImageAttachment(attachment: ChatAttachment) {
@@ -148,7 +169,11 @@ class ChatViewModel(
             return
         }
         lastSendAtMillis = now
-        submitPrompt(_uiState.value.inputText.trim(), clearInput = true, resetConversation = false)
+        val userInput = _uiState.value.inputText.trim()
+        submitPrompt(userInput, clearInput = true, resetConversation = false)
+        if (userInput.isNotBlank()) {
+            _messageSentEvent.tryEmit(userInput)
+        }
     }
 
     fun retryLastMessage() {

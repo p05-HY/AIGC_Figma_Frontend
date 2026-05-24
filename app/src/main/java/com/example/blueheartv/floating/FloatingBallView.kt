@@ -6,9 +6,12 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.graphics.PixelFormat
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.view.Gravity
 import android.view.MotionEvent
+import android.view.ViewConfiguration
 import android.view.WindowManager
 import android.view.animation.OvershootInterpolator
 import android.widget.FrameLayout
@@ -22,6 +25,7 @@ class FloatingBallView(
     private val context: Context,
     private val windowManager: WindowManager,
     private val onClick: () -> Unit,
+    private val onLongPress: (() -> Unit)? = null,
 ) {
     companion object {
         private const val TAG = "FloatingBallView"
@@ -74,6 +78,8 @@ class FloatingBallView(
     }
 
     private var isAdded = false
+    private val longPressHandler = Handler(Looper.getMainLooper())
+    var onPositionChanged: ((x: Int, y: Int) -> Unit)? = null
 
     @SuppressLint("ClickableViewAccessibility")
     fun attach() {
@@ -84,6 +90,16 @@ class FloatingBallView(
         var startParamX = 0
         var startParamY = 0
         var totalMovement = 0f
+        var longPressTriggered = false
+        val longPressTimeout = ViewConfiguration.getLongPressTimeout().toLong()
+
+        val longPressRunnable = Runnable {
+            if (totalMovement < clickThresholdPx) {
+                longPressTriggered = true
+                ballView.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+                onLongPress?.invoke()
+            }
+        }
 
         ballView.setOnTouchListener { _, event ->
             when (event.action) {
@@ -93,6 +109,8 @@ class FloatingBallView(
                     startParamX = layoutParams.x
                     startParamY = layoutParams.y
                     totalMovement = 0f
+                    longPressTriggered = false
+                    longPressHandler.postDelayed(longPressRunnable, longPressTimeout)
                     true
                 }
 
@@ -100,19 +118,31 @@ class FloatingBallView(
                     val dx = event.rawX - startX
                     val dy = event.rawY - startY
                     totalMovement = maxOf(totalMovement, abs(dx) + abs(dy))
+                    if (totalMovement >= clickThresholdPx) {
+                        longPressHandler.removeCallbacks(longPressRunnable)
+                    }
                     layoutParams.x = (startParamX + dx).toInt()
                     layoutParams.y = (startParamY + dy).toInt()
                         .coerceIn(0, screenHeight - ballSizePx)
                     windowManager.updateViewLayout(ballView, layoutParams)
+                    onPositionChanged?.invoke(layoutParams.x, layoutParams.y)
                     true
                 }
 
                 MotionEvent.ACTION_UP -> {
-                    if (totalMovement < clickThresholdPx) {
+                    longPressHandler.removeCallbacks(longPressRunnable)
+                    if (longPressTriggered) {
+                        // already handled
+                    } else if (totalMovement < clickThresholdPx) {
                         onClick()
                     } else {
                         snapToEdge()
                     }
+                    true
+                }
+
+                MotionEvent.ACTION_CANCEL -> {
+                    longPressHandler.removeCallbacks(longPressRunnable)
                     true
                 }
 
@@ -138,6 +168,8 @@ class FloatingBallView(
         ballView.visibility = if (visible) FrameLayout.VISIBLE else FrameLayout.GONE
     }
 
+    fun getLayoutParams(): WindowManager.LayoutParams = layoutParams
+
     private fun snapToEdge() {
         val centerX = layoutParams.x + ballSizePx / 2
         val targetX = if (centerX < screenWidth / 2) 0 else screenWidth - ballSizePx
@@ -151,6 +183,7 @@ class FloatingBallView(
                 layoutParams.x = anim.animatedValue as Int
                 try {
                     windowManager.updateViewLayout(ballView, layoutParams)
+                    onPositionChanged?.invoke(layoutParams.x, layoutParams.y)
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to update layout during snap", e)
                 }

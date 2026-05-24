@@ -25,11 +25,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.blueheartv.chat.AgentServerConfigStore
+import com.example.blueheartv.control.AccessibilityAutoEnabler
 import com.example.blueheartv.control.AdbWebSocketService
 import com.example.blueheartv.system.SystemService
 import com.example.blueheartv.ui.theme.*
 import com.example.blueheartv.util.ToastType
 import com.example.blueheartv.util.ToastUtil
+import kotlinx.coroutines.launch
 
 @Composable
 fun SettingsDetailScreen(
@@ -101,6 +103,7 @@ private fun resolveDetail(
     "language" -> "语言设置" to { LanguageDetailContent() }
     "agent_server" -> "Agent 服务" to { AgentServerDetailContent() }
     "storage" -> "存储管理" to { StorageDetailContent() }
+    "accessibility" -> "无障碍设置" to { AccessibilityDetailContent() }
     "help" -> "帮助与反馈" to { HelpDetailContent() }
     "about" -> "关于" to { AboutDetailContent() }
     else -> "设置详情" to { DefaultDetailContent(key) }
@@ -408,6 +411,87 @@ private fun AboutDetailContent() {
             DetailDivider()
             DetailActionRow(label = "开源许可", icon = Icons.Outlined.Code)
         }
+    }
+}
+
+// ── Accessibility ────────────────────────────────────────────────────────────
+
+@Composable
+private fun AccessibilityDetailContent() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    var autoEnabled by remember {
+        mutableStateOf(AccessibilityAutoEnabler.isAutoEnableOn(context))
+    }
+    var serviceActive by remember {
+        mutableStateOf(AccessibilityAutoEnabler.isAccessibilityServiceEnabled(context))
+    }
+    var enabling by remember { mutableStateOf(false) }
+
+    Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+        DetailCard {
+            SwitchRow(
+                label = "自动开启无障碍服务",
+                checked = autoEnabled,
+            ) { checked ->
+                autoEnabled = checked
+                AccessibilityAutoEnabler.setAutoEnable(context, checked)
+                if (checked && !serviceActive) {
+                    enabling = true
+                    scope.launch {
+                        val success = AccessibilityAutoEnabler.enableAccessibilityService(context)
+                        enabling = false
+                        serviceActive = AccessibilityAutoEnabler.isAccessibilityServiceEnabled(context)
+                        if (success) {
+                            ToastUtil.show("无障碍服务已自动开启", ToastType.SUCCESS)
+                        } else {
+                            ToastUtil.show("自动开启失败，请确保 Shizuku 已授权", ToastType.ERROR)
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        DetailCard {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "无障碍服务状态",
+                    fontSize = 16.sp,
+                    color = DarkPrimary,
+                    modifier = Modifier.weight(1f),
+                )
+                if (enabling) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                        color = GradientBlueStart,
+                    )
+                } else {
+                    Text(
+                        text = if (serviceActive) "已开启" else "未开启",
+                        fontSize = 14.sp,
+                        color = if (serviceActive) GradientBlueStart else Color(0xFFE53935),
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Text(
+            text = "开启后，每次打开应用时将自动恢复无障碍服务，无需手动前往系统设置开启。需要 Shizuku 授权支持。",
+            fontSize = 13.sp,
+            color = MutedText,
+            modifier = Modifier.padding(horizontal = 4.dp),
+        )
     }
 }
 

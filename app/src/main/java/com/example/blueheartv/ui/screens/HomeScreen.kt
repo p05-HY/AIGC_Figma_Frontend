@@ -28,7 +28,6 @@ import com.example.blueheartv.R
 import com.example.blueheartv.model.ChatAttachment
 import com.example.blueheartv.ui.components.*
 import com.example.blueheartv.ui.theme.*
-import com.example.blueheartv.util.AINotificationManager
 import com.example.blueheartv.util.AppGlobalUiHost
 import com.example.blueheartv.util.ToastType
 import com.example.blueheartv.util.ToastUtil
@@ -36,6 +35,7 @@ import com.example.blueheartv.viewmodel.ChatSessionState
 import com.example.blueheartv.viewmodel.ChatState
 import com.example.blueheartv.viewmodel.ChatViewModel
 import com.example.blueheartv.viewmodel.HomeUiState
+import com.example.blueheartv.voice.VoiceRecordingState
 
 @Composable
 fun HomeScreen(
@@ -51,14 +51,6 @@ fun HomeScreen(
     val screenshotInDevText = stringResource(R.string.feature_in_dev_screenshot)
     val translateInDevText = stringResource(R.string.feature_in_dev_translate)
     val summarizeInDevText = stringResource(R.string.feature_in_dev_summarize)
-
-    // TODO: 测试通知横幅，验证后删除
-    LaunchedEffect(Unit) {
-        AINotificationManager.showNotification(
-            context = context,
-            message = "欢迎使用echo！我是你的智能小助手~",
-        )
-    }
 
     val shouldAutoScroll by remember(uiState.messages.size, uiState.sessionState) {
         derivedStateOf {
@@ -149,6 +141,14 @@ fun HomeScreen(
                 sendEnabled = uiState.sessionState != ChatSessionState.RESPONDING,
                 onAttachClick = { actions.requestAttach() },
                 onMicClick = { actions.requestMic() },
+                inputMode = uiState.inputMode,
+                voiceRecordingState = actions.voiceRecordingState.value,
+                onVoiceStart = { actions.startVoiceRecording() },
+                onVoiceEnd = { actions.stopVoiceRecording() },
+                onVoiceCancel = { actions.cancelVoiceRecording() },
+                onVoiceModeTap = { actions.requestMic() },
+                onSwipeToCancelling = { actions.setVoiceCancelling() },
+                onSwipeBackToRecording = { actions.setVoiceRecording() },
             )
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -207,6 +207,13 @@ fun HomeScreen(
 
             FloatingWidget { showFloatingMenu = !showFloatingMenu }
         }
+
+        VoiceRecordingOverlay(
+            visible = actions.voiceRecordingState.value != VoiceRecordingState.IDLE,
+            recordingState = actions.voiceRecordingState.value,
+            partialText = actions.partialText.value,
+            amplitudeDb = actions.amplitudeDb.value,
+        )
 
         SnackbarHost(
             hostState = snackbarHostState,

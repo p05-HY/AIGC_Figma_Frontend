@@ -4,9 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.net.Uri
-import android.provider.OpenableColumns
 import android.speech.tts.TextToSpeech
-import android.util.Base64
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.SnackbarHostState
@@ -14,9 +12,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import com.example.blueheartv.R
-import com.example.blueheartv.model.ChatAttachment
 import com.example.blueheartv.util.*
 import com.example.blueheartv.viewmodel.ChatViewModel
+import com.example.blueheartv.voice.SpeechRecognizerCallback
+import com.example.blueheartv.voice.SpeechRecognizerManager
+import com.example.blueheartv.voice.VoiceRecordingState
 import java.util.*
 
 class HomeScreenActions(
@@ -26,6 +26,14 @@ class HomeScreenActions(
     val requestAttach: () -> Unit,
     val requestMic: () -> Unit,
     val requestQuickAction: (index: Int) -> Unit,
+    val startVoiceRecording: () -> Unit,
+    val stopVoiceRecording: () -> Unit,
+    val cancelVoiceRecording: () -> Unit,
+    val setVoiceCancelling: () -> Unit,
+    val setVoiceRecording: () -> Unit,
+    val voiceRecordingState: State<VoiceRecordingState>,
+    val partialText: State<String>,
+    val amplitudeDb: State<Float>,
 )
 
 @Composable
@@ -34,7 +42,6 @@ fun rememberHomeScreenActions(
     snackbarHostState: SnackbarHostState,
 ): HomeScreenActions {
     val context = LocalContext.current
-    val voiceInputInDevText = stringResource(R.string.feature_in_dev_voice_input)
     val promptReadScreen = stringResource(R.string.prompt_read_screen)
     val promptTodaySchedule = stringResource(R.string.prompt_today_schedule)
     val promptTodayDelivery = stringResource(R.string.prompt_today_delivery)
@@ -72,12 +79,62 @@ fun rememberHomeScreenActions(
         }
     }
 
+    // Voice recording state
+    var voiceRecordingState by remember { mutableStateOf(VoiceRecordingState.IDLE) }
+    var partialText by remember { mutableStateOf("") }
+    var amplitudeDb by remember { mutableFloatStateOf(0f) }
+
+    val speechManager = remember { SpeechRecognizerManager(context.applicationContext) }
+
+    DisposableEffect(Unit) {
+        onDispose { speechManager.destroy() }
+    }
+
+    val speechCallback = remember {
+        object : SpeechRecognizerCallback {
+            override fun onReadyForSpeech() {
+                voiceRecordingState = VoiceRecordingState.RECORDING
+            }
+
+            override fun onPartialResult(text: String) {
+                partialText = text
+            }
+
+            override fun onFinalResult(text: String) {
+                voiceRecordingState = VoiceRecordingState.IDLE
+                partialText = ""
+                amplitudeDb = 0f
+                if (text.isNotBlank()) {
+                    viewModel.sendVoiceText(text)
+                }
+            }
+
+            override fun onError(errorCode: Int, message: String) {
+                voiceRecordingState = VoiceRecordingState.IDLE
+                partialText = ""
+                amplitudeDb = 0f
+                ToastUtil.show(message, ToastType.WARNING)
+            }
+
+            override fun onRmsChanged(rmsdB: Float) {
+                amplitudeDb = rmsdB
+            }
+        }
+    }
+
     // Permission handlers
     val attachPermissionHandler = rememberPermissionHandler(snackbarHostState) {
         filePickerLauncher.launch("image/*")
     }
-    val micPermissionHandler = rememberPermissionHandler(snackbarHostState) {
-        ToastUtil.show(voiceInputInDevText, ToastType.INFO)
+    val voicePermissionHandler = rememberPermissionHandler(snackbarHostState) {
+        if (!speechManager.isAvailable()) {
+            ToastUtil.show("设备不支持语音识别", ToastType.ERROR)
+            return@rememberPermissionHandler
+        }
+        speechManager.setCallback(speechCallback)
+        speechManager.startListening()
+        voiceRecordingState = VoiceRecordingState.RECORDING
+        partialText = ""
     }
     val calendarPermissionHandler = rememberPermissionHandler(snackbarHostState) {
         viewModel.sendQuickAction(promptTodaySchedule)
@@ -88,6 +145,10 @@ fun rememberHomeScreenActions(
     val notificationPermissionHandler = rememberPermissionHandler(snackbarHostState) {
         viewModel.sendQuickAction(promptTodayDelivery)
     }
+
+    val voiceRecordingStateState = rememberUpdatedState(voiceRecordingState)
+    val partialTextState = rememberUpdatedState(partialText)
+    val amplitudeDbState = rememberUpdatedState(amplitudeDb)
 
     return remember(viewModel, snackbarHostState) {
         HomeScreenActions(
@@ -110,12 +171,7 @@ fun rememberHomeScreenActions(
                 )
             },
             requestMic = {
-                micPermissionHandler(
-                    PermissionRequest(
-                        permissions = audioPermissions(),
-                        rationaleMessage = rationaleAudioInput,
-                    ),
-                )
+                viewModel.toggleInputMode()
             },
             requestQuickAction = { index ->
                 val prompts = listOf(
@@ -155,22 +211,32 @@ fun rememberHomeScreenActions(
                     )
                 }
             },
+            startVoiceRecording = {
+                voicePermissionHandler(
+                    PermissionRequest(
+                        permissions = audioPermissions(),
+                        rationaleMessage = rationaleAudioInput,
+                    ),
+                )
+            },
+            stopVoiceRecording = {
+                speechManager.stopListening()
+            },
+            cancelVoiceRecording = {
+                speechManager.cancel()
+                voiceRecordingState = VoiceRecordingState.IDLE
+                partialText = ""
+                amplitudeDb = 0f
+            },
+            setVoiceCancelling = {
+                voiceRecordingState = VoiceRecordingState.CANCELLING
+            },
+            setVoiceRecording = {
+                voiceRecordingState = VoiceRecordingState.RECORDING
+            },
+            voiceRecordingState = voiceRecordingStateState,
+            partialText = partialTextState,
+            amplitudeDb = amplitudeDbState,
         )
     }
-}
-
-private fun Uri.toImageAttachment(context: Context): ChatAttachment? {
-    val resolver = context.contentResolver
-    val mimeType = resolver.getType(this)?.takeIf { it.startsWith("image/") } ?: return null
-    val bytes = resolver.openInputStream(this)?.use { it.readBytes() } ?: return null
-    val displayName = resolver.query(this, null, null, null, null)?.use { cursor ->
-        val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-        if (index >= 0 && cursor.moveToFirst()) cursor.getString(index) else null
-    } ?: lastPathSegment ?: "image"
-    return ChatAttachment(
-        id = UUID.randomUUID().toString(),
-        displayName = displayName,
-        mimeType = mimeType,
-        base64Data = Base64.encodeToString(bytes, Base64.NO_WRAP),
-    )
 }

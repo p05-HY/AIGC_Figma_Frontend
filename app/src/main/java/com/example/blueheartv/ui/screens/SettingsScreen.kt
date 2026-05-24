@@ -138,6 +138,10 @@ fun SettingsScreen(
                     SettingsItem(Icons.Outlined.ChatBubble, stringResource(R.string.floating_open_ball)) {
                         FloatingServiceLauncher.launch(context, overlayPermissionLauncher)
                     }
+                    SettingsDivider()
+                    SettingsItem(Icons.Outlined.Accessibility, "无障碍设置") {
+                        onNavigateToDetail("accessibility")
+                    }
                 }
             }
 
