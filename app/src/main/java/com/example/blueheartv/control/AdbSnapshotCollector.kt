@@ -12,7 +12,6 @@ class AdbSnapshotCollector(
     context: Context,
     private val executor: ShizukuAdbExecutor,
 ) {
-    private val screenshotFile = File(context.cacheDir, SCREENSHOT_FILE_NAME)
 
     suspend fun collect(): AdbSnapshot {
         val screenshot = captureScreenshotBase64()
@@ -30,18 +29,28 @@ class AdbSnapshotCollector(
 
     private suspend fun captureScreenshotBase64(): String? {
         return runCatching {
-            screenshotFile.delete()
-            val path = screenshotFile.absolutePath
-            val result = executor.execute("screencap -p '$path'")
+            // shell 用户可写的临时目录
+            val tempFilePath = "/data/local/tmp/screenshot_${System.currentTimeMillis()}.png"
+            val result = executor.execute("screencap -p '$tempFilePath'")
+
             if (!result.isSuccess) {
                 Log.w(TAG, "screencap failed: ${result.stderr.ifBlank { result.stdout }}")
                 return null
             }
-            if (!screenshotFile.exists() || screenshotFile.length() <= 0L) {
+
+            // 读取文件内容
+            val file = File(tempFilePath)
+            if (!file.exists() || file.length() <= 0L) {
                 Log.w(TAG, "screencap produced empty file")
                 return null
             }
-            Base64.encodeToString(screenshotFile.readBytes(), Base64.NO_WRAP)
+
+            val base64 = Base64.encodeToString(file.readBytes(), Base64.NO_WRAP)
+
+            // 清理临时文件
+            file.delete()
+
+            base64
         }.onFailure { error ->
             Log.w(TAG, "capture screenshot failed: ${error.message}", error)
         }.getOrNull()
