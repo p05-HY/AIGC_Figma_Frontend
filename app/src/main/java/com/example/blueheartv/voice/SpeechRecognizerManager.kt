@@ -3,6 +3,8 @@ package com.example.blueheartv.voice
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
@@ -21,6 +23,22 @@ class SpeechRecognizerManager(private val context: Context) {
     private var recognizer: SpeechRecognizer? = null
     private var callback: SpeechRecognizerCallback? = null
     private var listening = false
+
+    private val handler = Handler(Looper.getMainLooper())
+
+    private val maxDurationRunnable = Runnable {
+        if (listening) {
+            stopListening()
+        }
+    }
+
+    private val stopSafetyRunnable = Runnable {
+        if (listening) {
+            val cb = callback
+            cancel()
+            cb?.onError(SpeechRecognizer.ERROR_SPEECH_TIMEOUT, errorCodeToMessage(SpeechRecognizer.ERROR_SPEECH_TIMEOUT))
+        }
+    }
 
     fun isAvailable(): Boolean = SpeechRecognizer.isRecognitionAvailable(context)
 
@@ -43,13 +61,18 @@ class SpeechRecognizerManager(private val context: Context) {
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
         }
         sr.startListening(intent)
+        handler.postDelayed(maxDurationRunnable, MAX_RECORDING_DURATION_MS)
     }
 
     fun stopListening() {
+        handler.removeCallbacks(maxDurationRunnable)
         recognizer?.stopListening()
+        handler.postDelayed(stopSafetyRunnable, STOP_SAFETY_TIMEOUT_MS)
     }
 
     fun cancel() {
+        handler.removeCallbacks(maxDurationRunnable)
+        handler.removeCallbacks(stopSafetyRunnable)
         listening = false
         recognizer?.cancel()
         recognizer?.destroy()
@@ -59,6 +82,11 @@ class SpeechRecognizerManager(private val context: Context) {
     fun destroy() {
         callback = null
         cancel()
+    }
+
+    private fun clearTimeouts() {
+        handler.removeCallbacks(maxDurationRunnable)
+        handler.removeCallbacks(stopSafetyRunnable)
     }
 
     private val listener = object : RecognitionListener {
@@ -77,6 +105,7 @@ class SpeechRecognizerManager(private val context: Context) {
         override fun onEndOfSpeech() {}
 
         override fun onError(error: Int) {
+            clearTimeouts()
             listening = false
             recognizer?.destroy()
             recognizer = null
@@ -84,6 +113,7 @@ class SpeechRecognizerManager(private val context: Context) {
         }
 
         override fun onResults(results: Bundle?) {
+            clearTimeouts()
             listening = false
             recognizer?.destroy()
             recognizer = null
@@ -108,6 +138,9 @@ class SpeechRecognizerManager(private val context: Context) {
     }
 
     companion object {
+        private const val MAX_RECORDING_DURATION_MS = 60_000L
+        private const val STOP_SAFETY_TIMEOUT_MS = 5_000L
+
         fun errorCodeToMessage(code: Int): String = when (code) {
             SpeechRecognizer.ERROR_NO_MATCH -> "未检测到语音"
             SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "未检测到语音"

@@ -180,7 +180,7 @@ private fun SmartCard(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(top = 12.dp, start = 16.dp, end = 16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
+                horizontalAlignment = Alignment.Start,
             ) {
                 Image(
                     painter = painterResource(R.drawable.ic_echo_face),
@@ -197,8 +197,10 @@ private fun SmartCard(
                     fontWeight = FontWeight.Bold,
                     color = TextBlack,
                     lineHeight = 20.sp,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.alpha(contentAlpha),
+                    textAlign = TextAlign.Start,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .alpha(contentAlpha),
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
@@ -206,8 +208,10 @@ private fun SmartCard(
                     fontSize = 12.sp,
                     color = MutedText,
                     lineHeight = 18.sp,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.alpha(contentAlpha),
+                    textAlign = TextAlign.Start,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .alpha(contentAlpha),
                 )
             }
         } else {
@@ -237,7 +241,9 @@ private fun SmartCard(
                     color = TextBlack,
                     lineHeight = 20.sp,
                     textAlign = TextAlign.Start,
-                    modifier = Modifier.alpha(contentAlpha),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .alpha(contentAlpha),
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
@@ -246,7 +252,9 @@ private fun SmartCard(
                     color = MutedText,
                     lineHeight = 18.sp,
                     textAlign = TextAlign.Start,
-                    modifier = Modifier.alpha(contentAlpha),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .alpha(contentAlpha),
                 )
             }
         }

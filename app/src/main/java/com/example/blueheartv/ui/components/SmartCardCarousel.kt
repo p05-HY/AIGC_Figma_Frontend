@@ -2,9 +2,9 @@ package com.example.blueheartv.ui.components
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -29,7 +29,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
@@ -40,17 +39,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
@@ -68,8 +66,6 @@ import com.example.blueheartv.ui.theme.SurfaceWhite
 import com.example.blueheartv.ui.theme.TextBlack
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlin.math.abs
-import kotlin.math.roundToInt
 
 /**
  * 智能推荐卡片轮播组件
@@ -82,9 +78,9 @@ import kotlin.math.roundToInt
  * - 保留原有卡片堆叠视觉效果
  *
  * 动画方案：
- * - 当前卡片：向右下方平移 + 旋转 + 透明度降为0（250ms）
- * - 下一张卡片：从后方平滑前移至顶层 + 放大到完整尺寸（250ms）
- * - 底层卡片：跟随微调位置
+ * - 当前卡片：沿平行层叠轨道退到后层，轻微缩小并降低透明度
+ * - 下一张卡片：同步前移至顶层，放大并淡入
+ * - 后方卡片：保持水平平行补位，动画期间保持卡片数量稳定
  */
 @Composable
 fun SmartCardCarousel(
@@ -155,25 +151,35 @@ private fun CarouselWithStackedCards(
     modifier: Modifier = Modifier,
 ) {
     var currentIndex by remember { mutableIntStateOf(0) }
-    var isAnimating by remember { mutableFloatStateOf(0f) }
+    var transitionDirection by remember { mutableIntStateOf(1) }
+    val transitionProgress = remember { Animatable(0f) }
     var lastInteractionTime by remember { mutableLongStateOf(0L) }
     val scope = rememberCoroutineScope()
+    val dragThresholdPx = with(LocalDensity.current) { 50.dp.toPx() }
+
+    suspend fun animateToIndex(targetIndex: Int, direction: Int) {
+        if (targetIndex == currentIndex || transitionProgress.isRunning) return
+
+        transitionDirection = direction
+        transitionProgress.snapTo(0f)
+        transitionProgress.animateTo(
+            targetValue = 1f,
+            animationSpec = tween(360, easing = FastOutSlowInEasing),
+        )
+        currentIndex = targetIndex
+        transitionProgress.snapTo(0f)
+    }
 
     // 自动播放逻辑
-    LaunchedEffect(cardCount, currentIndex) {
+    LaunchedEffect(cardCount) {
         while (true) {
+            delay(3000)
             val timeSinceInteraction = System.currentTimeMillis() - lastInteractionTime
-            if (timeSinceInteraction >= 10000 && isAnimating == 0f) {
-                delay(3000)
-                // 触发切换到下一张
-                scope.launch {
-                    isAnimating = 1f
-                    delay(250)
-                    currentIndex = (currentIndex + 1) % cardCount
-                    isAnimating = 0f
-                }
-            } else {
-                delay(1000)
+            if (timeSinceInteraction >= 10000 && !transitionProgress.isRunning) {
+                animateToIndex(
+                    targetIndex = (currentIndex + 1) % cardCount,
+                    direction = 1,
+                )
             }
         }
     }
@@ -186,141 +192,113 @@ private fun CarouselWithStackedCards(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = 200.dp, max = 320.dp)
-            .pointerInput(Unit) {
-                detectHorizontalDragGestures(
-                    onDragEnd = {
-                        // 手势结束后的处理
-                    },
-                    onHorizontalDrag = { change, dragAmount ->
-                        change.consume()
-                        lastInteractionTime = System.currentTimeMillis()
+                .pointerInput(cardCount, currentIndex, dragThresholdPx) {
+                    var accumulatedDrag = 0f
 
-                        // 向左滑动（dragAmount < 0）切换到下一张
-                        if (dragAmount < -50 && isAnimating == 0f) {
-                            scope.launch {
-                                isAnimating = 1f
-                                delay(250)
-                                currentIndex = (currentIndex + 1) % cardCount
-                                isAnimating = 0f
+                    detectHorizontalDragGestures(
+                        onDragStart = {
+                            accumulatedDrag = 0f
+                        },
+                        onDragEnd = {
+                            accumulatedDrag = 0f
+                        },
+                        onDragCancel = {
+                            accumulatedDrag = 0f
+                        },
+                        onHorizontalDrag = { change, dragAmount ->
+                            change.consume()
+                            lastInteractionTime = System.currentTimeMillis()
+
+                            if (!transitionProgress.isRunning) {
+                                accumulatedDrag += dragAmount
+
+                                when {
+                                    accumulatedDrag <= -dragThresholdPx -> {
+                                        accumulatedDrag = 0f
+                                        scope.launch {
+                                            animateToIndex(
+                                                targetIndex = (currentIndex + 1) % cardCount,
+                                                direction = 1,
+                                            )
+                                        }
+                                    }
+
+                                    accumulatedDrag >= dragThresholdPx -> {
+                                        accumulatedDrag = 0f
+                                        scope.launch {
+                                            animateToIndex(
+                                                targetIndex = (currentIndex - 1 + cardCount) % cardCount,
+                                                direction = -1,
+                                            )
+                                        }
+                                    }
+                                }
                             }
-                        }
-                        // 向右滑动（dragAmount > 0）切换到上一张
-                        else if (dragAmount > 50 && isAnimating == 0f) {
-                            scope.launch {
-                                isAnimating = 1f
-                                delay(250)
-                                currentIndex = (currentIndex - 1 + cardCount) % cardCount
-                                isAnimating = 0f
-                            }
-                        }
-                    }
+                        },
+                    )
+                },
+        ) {
+            val cardWidth = (maxWidth * 0.67f).coerceIn(200.dp, 320.dp)
+            val cardHeight = (cardWidth * 0.54f).coerceIn(120.dp, 180.dp)
+            val cardShape = RoundedCornerShape(12.dp)
+
+            cards.forEachIndexed { actualIndex, recommendation ->
+                val relativeIndex = floorMod(actualIndex - currentIndex, cardCount)
+                val transform = stackedCardTransform(
+                    relativeIndex = relativeIndex,
+                    direction = transitionDirection,
+                    progress = transitionProgress.value,
+                    cardCount = cardCount,
+                    maxWidth = maxWidth,
+                    maxHeight = maxHeight,
                 )
-            },
-    ) {
-        val cardWidth = (maxWidth * 0.67f).coerceIn(200.dp, 320.dp)
-        val cardHeight = (cardWidth * 0.54f).coerceIn(120.dp, 180.dp)
-        val cardOffsets = listOf(0.06f, 0.17f, 0.27f)
-        val cardTops = listOf(0.22f, 0.18f, 0.14f)
 
-        // 渲染卡片堆叠（从后到前）
-        val displayCards = List(cardCount) { index ->
-            val actualIndex = (currentIndex + index) % cardCount
-            cards[actualIndex]
-        }
-
-        displayCards.asReversed().forEachIndexed { drawIndex, recommendation ->
-            val sourceIndex = cardCount - 1 - drawIndex
-            val startOffset = maxWidth * cardOffsets.getOrElse(sourceIndex) { 0.27f }
-            val topOffset = maxHeight * cardTops.getOrElse(sourceIndex) { 0.14f }
-            val cardAlpha = when (sourceIndex) {
-                0 -> 1f
-                1 -> 0.92f
-                else -> 0.85f
-            }
-
-            // 动画效果
-            val animatedAlpha = if (sourceIndex == 0 && isAnimating > 0f) {
-                1f - isAnimating
-            } else if (sourceIndex == 1 && isAnimating > 0f) {
-                0.92f + (0.08f * isAnimating)
-            } else {
-                cardAlpha
-            }
-
-            val animatedOffsetX = if (sourceIndex == 0 && isAnimating > 0f) {
-                startOffset + (200.dp * isAnimating)
-            } else if (sourceIndex == 1 && isAnimating > 0f) {
-                startOffset - ((startOffset - maxWidth * 0.17f) * isAnimating)
-            } else {
-                startOffset
-            }
-
-            val animatedOffsetY = if (sourceIndex == 0 && isAnimating > 0f) {
-                topOffset + (100.dp * isAnimating)
-            } else if (sourceIndex == 1 && isAnimating > 0f) {
-                topOffset - ((topOffset - maxHeight * 0.18f) * isAnimating)
-            } else {
-                topOffset
-            }
-
-            val animatedRotation = if (sourceIndex == 0 && isAnimating > 0f) {
-                8f * isAnimating
-            } else {
-                0f
-            }
-
-            val animatedScale = if (sourceIndex == 1 && isAnimating > 0f) {
-                0.95f + (0.05f * isAnimating)
-            } else {
-                1f
-            }
-
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .offset(x = animatedOffsetX, y = animatedOffsetY)
-                    .graphicsLayer {
-                        scaleX = animatedScale
-                        scaleY = animatedScale
-                        rotationZ = animatedRotation
-                    }
-                    .alpha(animatedAlpha)
-                    .zIndex(drawIndex.toFloat()),
-            ) {
-                SmartCardContent(
-                    recommendation = recommendation,
-                    cardWidth = cardWidth,
-                    cardHeight = cardHeight,
-                    onClick = if (sourceIndex == 0) {
-                        { onCardClick(recommendation) }
-                    } else {
-                        {}
-                    },
-                    withFaceImage = true,
-                    contentAlpha = if (sourceIndex == 0) 1f else 0.85f,
-                )
-            }
-        }
-    }
-
-    // 水平指示器（放在卡片区域正下方）
-    Spacer(modifier = Modifier.height(12.dp))
-    HorizontalIndicator(
-        cardCount = cardCount,
-        currentIndex = currentIndex,
-        onDotClick = { index ->
-            if (index != currentIndex && isAnimating == 0f) {
-                lastInteractionTime = System.currentTimeMillis()
-                scope.launch {
-                    isAnimating = 1f
-                    delay(250)
-                    currentIndex = index
-                    isAnimating = 0f
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .offset(x = transform.offsetX, y = transform.offsetY)
+                        .graphicsLayer {
+                            scaleX = transform.scale
+                            scaleY = transform.scale
+                            alpha = transform.alpha
+                        }
+                        .shadow(transform.shadowElevation, cardShape, clip = false)
+                        .zIndex(transform.zIndex),
+                ) {
+                    SmartCardContent(
+                        recommendation = recommendation,
+                        cardWidth = cardWidth,
+                        cardHeight = cardHeight,
+                        onClick = if (relativeIndex == 0 && transitionProgress.value == 0f) {
+                            { onCardClick(recommendation) }
+                        } else {
+                            {}
+                        },
+                        withFaceImage = true,
+                        contentAlpha = transform.contentAlpha,
+                    )
                 }
             }
-        },
-    )
-  }
+        }
+
+        // 水平指示器（放在卡片区域正下方）
+        Spacer(modifier = Modifier.height(12.dp))
+        HorizontalIndicator(
+            cardCount = cardCount,
+            currentIndex = currentIndex,
+            onDotClick = { index ->
+                if (index != currentIndex && !transitionProgress.isRunning) {
+                    lastInteractionTime = System.currentTimeMillis()
+                    scope.launch {
+                        animateToIndex(
+                            targetIndex = index,
+                            direction = carouselDirection(currentIndex, index, cardCount),
+                        )
+                    }
+                }
+            },
+        )
+    }
 }
 
 @Composable
@@ -482,7 +460,7 @@ private fun SmartCardContent(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(top = 12.dp, start = 16.dp, end = 16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
+                horizontalAlignment = Alignment.Start,
             ) {
                 Image(
                     painter = painterResource(R.drawable.ic_echo_face),
@@ -499,8 +477,10 @@ private fun SmartCardContent(
                     fontWeight = FontWeight.Bold,
                     color = TextBlack,
                     lineHeight = 20.sp,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.alpha(contentAlpha),
+                    textAlign = TextAlign.Start,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .alpha(contentAlpha),
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
@@ -508,8 +488,10 @@ private fun SmartCardContent(
                     fontSize = 12.sp,
                     color = MutedText,
                     lineHeight = 18.sp,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.alpha(contentAlpha),
+                    textAlign = TextAlign.Start,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .alpha(contentAlpha),
                 )
             }
         } else {
@@ -539,7 +521,9 @@ private fun SmartCardContent(
                     color = TextBlack,
                     lineHeight = 20.sp,
                     textAlign = TextAlign.Start,
-                    modifier = Modifier.alpha(contentAlpha),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .alpha(contentAlpha),
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
@@ -548,9 +532,94 @@ private fun SmartCardContent(
                     color = MutedText,
                     lineHeight = 18.sp,
                     textAlign = TextAlign.Start,
-                    modifier = Modifier.alpha(contentAlpha),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .alpha(contentAlpha),
                 )
             }
         }
     }
+}
+
+private data class StackedCardTransform(
+    val offsetX: Dp,
+    val offsetY: Dp,
+    val scale: Float,
+    val alpha: Float,
+    val contentAlpha: Float,
+    val shadowElevation: Dp,
+    val zIndex: Float,
+)
+
+private fun stackedCardTransform(
+    relativeIndex: Int,
+    direction: Int,
+    progress: Float,
+    cardCount: Int,
+    maxWidth: Dp,
+    maxHeight: Dp,
+): StackedCardTransform {
+    val lastSlot = cardCount - 1
+    val fromSlot = relativeIndex.coerceIn(0, lastSlot)
+    val toSlot = if (direction > 0) {
+        if (fromSlot == 0) lastSlot else fromSlot - 1
+    } else {
+        if (fromSlot == lastSlot) 0 else fromSlot + 1
+    }
+
+    return lerp(
+        start = stackSlotTransform(fromSlot, cardCount, maxWidth, maxHeight),
+        stop = stackSlotTransform(toSlot, cardCount, maxWidth, maxHeight),
+        fraction = progress.coerceIn(0f, 1f),
+    )
+}
+
+private fun stackSlotTransform(
+    slotIndex: Int,
+    cardCount: Int,
+    maxWidth: Dp,
+    maxHeight: Dp,
+): StackedCardTransform {
+    val baseOffsetX = maxWidth * 0.06f
+    val baseOffsetY = maxHeight * 0.22f
+    val scales = listOf(1f, 0.98f, 0.96f)
+    val alphas = listOf(1f, 0.92f, 0.85f)
+    val contentAlphas = listOf(1f, 0.9f, 0.82f)
+    val shadowElevations = listOf(16.dp, 9.dp, 5.dp)
+
+    return StackedCardTransform(
+        offsetX = baseOffsetX + (35.dp * slotIndex),
+        offsetY = baseOffsetY - (16.dp * slotIndex),
+        scale = scales.getOrElse(slotIndex) { 0.96f },
+        alpha = alphas.getOrElse(slotIndex) { 0.85f },
+        contentAlpha = contentAlphas.getOrElse(slotIndex) { 0.82f },
+        shadowElevation = shadowElevations.getOrElse(slotIndex) { 5.dp },
+        zIndex = (cardCount - slotIndex).toFloat(),
+    )
+}
+
+private fun lerp(
+    start: StackedCardTransform,
+    stop: StackedCardTransform,
+    fraction: Float,
+): StackedCardTransform = StackedCardTransform(
+    offsetX = lerp(start.offsetX, stop.offsetX, fraction),
+    offsetY = lerp(start.offsetY, stop.offsetY, fraction),
+    scale = lerp(start.scale, stop.scale, fraction),
+    alpha = lerp(start.alpha, stop.alpha, fraction),
+    contentAlpha = lerp(start.contentAlpha, stop.contentAlpha, fraction),
+    shadowElevation = lerp(start.shadowElevation, stop.shadowElevation, fraction),
+    zIndex = lerp(start.zIndex, stop.zIndex, fraction),
+)
+
+private fun lerp(start: Dp, stop: Dp, fraction: Float): Dp = start + ((stop - start) * fraction)
+
+private fun lerp(start: Float, stop: Float, fraction: Float): Float = start + ((stop - start) * fraction)
+
+private fun floorMod(value: Int, modulo: Int): Int = ((value % modulo) + modulo) % modulo
+
+private fun carouselDirection(currentIndex: Int, targetIndex: Int, cardCount: Int): Int {
+    val forwardDistance = floorMod(targetIndex - currentIndex, cardCount)
+    val backwardDistance = floorMod(currentIndex - targetIndex, cardCount)
+    return if (forwardDistance <= backwardDistance) 1 else -1
 }

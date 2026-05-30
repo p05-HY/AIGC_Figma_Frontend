@@ -38,19 +38,19 @@ fun HoldToSpeakButton(
     val longPressTimeoutMs = LocalViewConfiguration.current.longPressTimeoutMillis
 
     val backgroundColor = when (recordingState) {
-        VoiceRecordingState.IDLE -> ChipFill
         VoiceRecordingState.RECORDING -> BlueAccent.copy(alpha = 0.12f)
         VoiceRecordingState.CANCELLING -> BlueAccentLight.copy(alpha = 0.12f)
+        else -> ChipFill
     }
     val text = when (recordingState) {
-        VoiceRecordingState.IDLE -> "按住 说话"
         VoiceRecordingState.RECORDING -> "松开 结束"
         VoiceRecordingState.CANCELLING -> "松开 取消"
+        else -> "按住 说话"
     }
     val textColor = when (recordingState) {
-        VoiceRecordingState.IDLE -> GrayText
         VoiceRecordingState.RECORDING -> BlueAccent
         VoiceRecordingState.CANCELLING -> BlueAccentLight
+        else -> GrayText
     }
 
     var isPressed by remember { mutableStateOf(false) }

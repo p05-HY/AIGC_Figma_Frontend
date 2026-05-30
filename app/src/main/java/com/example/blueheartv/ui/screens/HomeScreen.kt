@@ -31,6 +31,7 @@ import com.example.blueheartv.ui.theme.*
 import com.example.blueheartv.util.AppGlobalUiHost
 import com.example.blueheartv.util.ToastType
 import com.example.blueheartv.util.ToastUtil
+import com.example.blueheartv.chat.AgentServerConfigStore
 import com.example.blueheartv.viewmodel.ChatSessionState
 import com.example.blueheartv.viewmodel.ChatState
 import com.example.blueheartv.viewmodel.ChatViewModel
@@ -48,6 +49,11 @@ fun HomeScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
     val actions = rememberHomeScreenActions(viewModel, snackbarHostState)
+
+    LaunchedEffect(Unit) {
+        viewModel.navigateToSettings.collect { onNavigateToSettings() }
+    }
+
     val screenshotInDevText = stringResource(R.string.feature_in_dev_screenshot)
     val translateInDevText = stringResource(R.string.feature_in_dev_translate)
     val summarizeInDevText = stringResource(R.string.feature_in_dev_summarize)
@@ -104,10 +110,12 @@ fun HomeScreen(
 
             val lastError = uiState.lastError
             if (uiState.sessionState == ChatSessionState.ERROR && lastError != null) {
+                val isConfigError = !AgentServerConfigStore.snapshot().isConfigured
                 ErrorRetryBar(
                     message = lastError,
-                    canRetry = uiState.canRetry,
-                    onRetry = { viewModel.retryLastMessage() },
+                    actionText = if (isConfigError) "去设置" else "重试",
+                    canAction = if (isConfigError) true else uiState.canRetry,
+                    onAction = if (isConfigError) onNavigateToSettings else {{ viewModel.retryLastMessage() }},
                 )
             }
 
@@ -213,6 +221,8 @@ fun HomeScreen(
             recordingState = actions.voiceRecordingState.value,
             partialText = actions.partialText.value,
             amplitudeDb = actions.amplitudeDb.value,
+            resultText = actions.resultText.value,
+            onCancel = { actions.cancelVoiceRecording() },
         )
 
         SnackbarHost(
@@ -277,7 +287,12 @@ private fun AttachmentPreviewRow(
 }
 
 @Composable
-private fun ErrorRetryBar(message: String, canRetry: Boolean, onRetry: () -> Unit) {
+private fun ErrorRetryBar(
+    message: String,
+    actionText: String = "重试",
+    canAction: Boolean,
+    onAction: () -> Unit,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -285,14 +300,14 @@ private fun ErrorRetryBar(message: String, canRetry: Boolean, onRetry: () -> Uni
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(text = message, fontSize = 12.sp, color = BlueAccentLight, modifier = Modifier.weight(1f))
-        if (canRetry) {
+        if (canAction) {
             Text(
-                text = "重试",
+                text = actionText,
                 fontSize = 13.sp,
                 color = BlueAccent,
                 fontWeight = FontWeight.Medium,
                 modifier = Modifier
-                    .clickable { onRetry() }
+                    .clickable { onAction() }
                     .padding(horizontal = 8.dp, vertical = 4.dp),
             )
         }

@@ -1,20 +1,28 @@
 package com.example.blueheartv.floating
 
+import android.Manifest
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.view.WindowManager
 import androidx.annotation.MainThread
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.example.blueheartv.BlueHeartVApplication
 import com.example.blueheartv.MainActivity
 import com.example.blueheartv.R
+import com.example.blueheartv.util.ToastType
+import com.example.blueheartv.util.ToastUtil
 import com.example.blueheartv.util.toImageAttachment
 import com.example.blueheartv.viewmodel.ChatViewModel
+import com.example.blueheartv.voice.SpeechRecognizerCallback
+import com.example.blueheartv.voice.SpeechRecognizerManager
+import com.example.blueheartv.voice.VoiceRecordingState
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collectLatest
 import org.koin.java.KoinJavaComponent.get
@@ -59,6 +67,8 @@ class FloatingBallService : Service() {
 
     private var currentState: FloatingState = FloatingState.STATE0
     private var state2ListenerJob: Job? = null
+    private var speechManager: SpeechRecognizerManager? = null
+    private var isLongPressRecording = false
 
     override fun onCreate() {
         super.onCreate()
@@ -70,8 +80,12 @@ class FloatingBallService : Service() {
         ballView = FloatingBallView(
             context = this,
             windowManager = windowManager,
-            onClick = { handleBallClick() },
-            onLongPress = { stopSelf() },
+            onSingleClick = { handleBallClick() },
+            onDoubleClick = { handleBallDoubleClick() },
+            onTripleClick = { handleBallTripleClick() },
+            onLongPress = { handleBallLongPress() },
+            onLongPressRelease = { handleBallLongPressRelease() },
+            onLongPressDragCancel = { handleBallLongPressDragCancel() },
         )
         ballView?.onPositionChanged = { _, _ ->
             bubbleInput?.syncPosition()
@@ -92,6 +106,9 @@ class FloatingBallService : Service() {
 
     override fun onDestroy() {
         isRunning = false
+        speechManager?.destroy()
+        speechManager = null
+        isLongPressRecording = false
         serviceScope.cancel()
         mainHandler.post {
             bubbleInput?.dismiss()
@@ -118,6 +135,94 @@ class FloatingBallService : Service() {
         }
     }
 
+    @MainThread
+    private fun handleBallDoubleClick() {
+        when (currentState) {
+            FloatingState.STATE0 -> transitionToState2()
+            FloatingState.STATE1 -> transitionToState2()
+            FloatingState.STATE2 -> { /* ball hidden */ }
+            FloatingState.STATE3 -> return
+        }
+    }
+
+    @MainThread
+    private fun handleBallTripleClick() {
+        stopSelf()
+    }
+
+    @MainThread
+    private fun handleBallLongPress() {
+        if (currentState != FloatingState.STATE0) return
+
+        val granted = ContextCompat.checkSelfPermission(
+            this, Manifest.permission.RECORD_AUDIO,
+        ) == PackageManager.PERMISSION_GRANTED
+        if (!granted) {
+            ToastUtil.show("需要麦克风权限", ToastType.WARNING)
+            return
+        }
+
+        val manager = SpeechRecognizerManager(this)
+        speechManager = manager
+
+        if (!manager.isAvailable()) {
+            ToastUtil.show("语音识别服务不可用", ToastType.ERROR)
+            speechManager = null
+            return
+        }
+
+        manager.setCallback(longPressSpeechCallback)
+        isLongPressRecording = true
+        ballView?.setRecordingState(VoiceRecordingState.RECORDING)
+        manager.startListening()
+    }
+
+    @MainThread
+    private fun handleBallLongPressRelease() {
+        if (!isLongPressRecording) return
+        ballView?.setRecordingState(VoiceRecordingState.RECOGNIZING)
+        speechManager?.stopListening()
+    }
+
+    @MainThread
+    private fun handleBallLongPressDragCancel() {
+        if (!isLongPressRecording) return
+        isLongPressRecording = false
+        speechManager?.cancel()
+        speechManager?.destroy()
+        speechManager = null
+        ballView?.setRecordingState(VoiceRecordingState.IDLE)
+    }
+
+    private val longPressSpeechCallback = object : SpeechRecognizerCallback {
+        override fun onReadyForSpeech() {}
+
+        override fun onPartialResult(text: String) {}
+
+        override fun onFinalResult(text: String) {
+            isLongPressRecording = false
+            speechManager?.destroy()
+            speechManager = null
+            if (text.isBlank()) {
+                ballView?.setRecordingState(VoiceRecordingState.FAILED)
+                return
+            }
+            ballView?.setRecordingState(VoiceRecordingState.SUCCESS)
+            val chatViewModel: ChatViewModel = get(ChatViewModel::class.java)
+            chatViewModel.sendVoiceText(text)
+        }
+
+        override fun onError(errorCode: Int, message: String) {
+            isLongPressRecording = false
+            speechManager?.destroy()
+            speechManager = null
+            ballView?.setRecordingState(VoiceRecordingState.FAILED)
+            ToastUtil.show(message, ToastType.WARNING)
+        }
+
+        override fun onRmsChanged(rmsdB: Float) {}
+    }
+
     private fun transitionToState0() {
         state2ListenerJob?.cancel()
         state2ListenerJob = null
@@ -125,6 +230,7 @@ class FloatingBallService : Service() {
         bubbleInput = null
         bubbleNotification?.dismiss()
         bubbleNotification = null
+        ballView?.setVisible(true)
         currentState = FloatingState.STATE0
     }
 
@@ -138,8 +244,10 @@ class FloatingBallService : Service() {
             onBackPressed = { transitionToState0() },
             onAttachClick = { handleFloatingAttach() },
             onMicClick = { handleFloatingMic() },
+            onAvatarClick = { transitionToState0() },
         )
         bubbleInput?.show()
+        ballView?.setVisible(false)
         currentState = FloatingState.STATE1
     }
 
@@ -202,6 +310,7 @@ class FloatingBallService : Service() {
 
     private fun onMessageSent(input: String) {
         bubbleInput?.setInputEnabled(false)
+        bubbleInput?.setLoading(true)
 
         val chatViewModel: ChatViewModel = get(ChatViewModel::class.java)
         chatViewModel.onInputChanged(input)
@@ -211,6 +320,7 @@ class FloatingBallService : Service() {
             val type = classifyTask(input)
 
             mainHandler.post {
+                bubbleInput?.setLoading(false)
                 when (type) {
                     "simple" -> transitionToState2()
                     "complex" -> {

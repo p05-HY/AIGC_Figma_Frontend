@@ -3,9 +3,11 @@ package com.example.blueheartv.viewmodel
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.blueheartv.chat.AgentServerConfigStore
 import com.example.blueheartv.chat.ChatPrompt
 import com.example.blueheartv.chat.ChatProvider
 import com.example.blueheartv.chat.ChatStreamEvent
+import com.example.blueheartv.util.DialogUtil
 import com.example.blueheartv.model.*
 import com.example.blueheartv.telemetry.AppEventLogger
 import com.example.blueheartv.voice.InputMode
@@ -62,6 +64,9 @@ class ChatViewModel(
 
     private val _messageSentEvent = MutableSharedFlow<String>(extraBufferCapacity = 1)
     val messageSentEvent: SharedFlow<String> = _messageSentEvent.asSharedFlow()
+
+    private val _navigateToSettings = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val navigateToSettings: SharedFlow<Unit> = _navigateToSettings.asSharedFlow()
 
     private var streamJob: Job? = null
     private var historyJob: Job? = null
@@ -264,6 +269,16 @@ class ChatViewModel(
     }
 
     private fun submitPrompt(prompt: String, clearInput: Boolean, resetConversation: Boolean) {
+        if (!AgentServerConfigStore.snapshot().isConfigured) {
+            DialogUtil.showAlert(
+                title = "未配置服务",
+                message = "请先在设置中配置 Agent Server 地址",
+                confirmText = "去设置",
+                cancelText = "取消",
+                onConfirm = { _navigateToSettings.tryEmit(Unit) },
+            )
+            return
+        }
         val attachments = _uiState.value.imageAttachments
         if (prompt.isBlank() && attachments.isEmpty()) return
         if (_uiState.value.sessionState == ChatSessionState.RESPONDING) return

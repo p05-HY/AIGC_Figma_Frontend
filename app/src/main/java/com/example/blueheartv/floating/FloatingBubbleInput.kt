@@ -12,12 +12,17 @@ import android.text.TextWatcher
 import android.util.Log
 import android.view.Gravity
 import android.view.KeyEvent
+import android.view.View
+import android.view.ViewOutlineProvider
 import android.view.WindowManager
+import android.view.animation.CycleInterpolator
+import android.view.animation.TranslateAnimation
 import android.view.inputmethod.EditorInfo
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.ProgressBar
 import androidx.core.content.ContextCompat
 import com.example.blueheartv.R
 
@@ -29,23 +34,28 @@ class FloatingBubbleInput(
     private val onBackPressed: (() -> Unit)? = null,
     private val onAttachClick: (() -> Unit)? = null,
     private val onMicClick: (() -> Unit)? = null,
+    private val onAvatarClick: (() -> Unit)? = null,
 ) {
     companion object {
         private const val TAG = "FloatingBubbleInput"
-        private const val WIDTH_DP = 232
-        private const val HEIGHT_DP = 39
-        private const val CORNER_RADIUS_DP = 16
+        private const val WIDTH_DP = 280
+        private const val HEIGHT_DP = 44
+        private const val CORNER_RADIUS_DP = 22
+        private const val ICON_SIZE_DP = 20
         private const val MAX_INPUT_LENGTH = 2000
+        private const val ELEVATION_DP = 4f
     }
 
     private val density = context.resources.displayMetrics.density
     private val widthPx = (WIDTH_DP * density).toInt()
     private val heightPx = (HEIGHT_DP * density).toInt()
     private val ballSizePx = (52 * density).toInt()
+    private val iconSizePx = (ICON_SIZE_DP * density).toInt()
 
     private var containerView: FrameLayout? = null
     private var editText: EditText? = null
     private var sendButton: ImageView? = null
+    private var loadingView: ProgressBar? = null
     private var isAdded = false
     private var currentAnimator: ValueAnimator? = null
     private var inputEnabled = true
@@ -80,11 +90,14 @@ class FloatingBubbleInput(
             }
         }
         container.background = createGlassBackground()
+        container.outlineProvider = ViewOutlineProvider.BACKGROUND
+        container.clipToOutline = true
+        container.elevation = ELEVATION_DP * density
 
         val innerLayout = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            val hPad = (10 * density).toInt()
+            val hPad = (12 * density).toInt()
             setPadding(hPad, 0, hPad, 0)
         }
 
@@ -94,10 +107,9 @@ class FloatingBubbleInput(
             setColorFilter(0xFF6D6D6D.toInt())
             setOnClickListener { onAttachClick?.invoke() }
         }
-        val attachSize = (14 * density).toInt()
-        innerLayout.addView(attachIcon, LinearLayout.LayoutParams(attachSize, attachSize))
+        innerLayout.addView(attachIcon, LinearLayout.LayoutParams(iconSizePx, iconSizePx))
 
-        val spacer1 = android.view.View(context)
+        val spacer1 = View(context)
         innerLayout.addView(spacer1, LinearLayout.LayoutParams((8 * density).toInt(), 0))
 
         val input = EditText(context).apply {
@@ -123,13 +135,13 @@ class FloatingBubbleInput(
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
             override fun afterTextChanged(s: Editable?) {
-                updateSendButtonAlpha()
+                updateSendButtonState()
             }
         })
         editText = input
         innerLayout.addView(input, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
 
-        val spacer2 = android.view.View(context)
+        val spacer2 = View(context)
         innerLayout.addView(spacer2, LinearLayout.LayoutParams((8 * density).toInt(), 0))
 
         val micIcon = ImageView(context).apply {
@@ -138,11 +150,10 @@ class FloatingBubbleInput(
             setColorFilter(0xFF6D6D6D.toInt())
             setOnClickListener { onMicClick?.invoke() }
         }
-        val micSize = (14 * density).toInt()
-        innerLayout.addView(micIcon, LinearLayout.LayoutParams(micSize, micSize))
+        innerLayout.addView(micIcon, LinearLayout.LayoutParams(iconSizePx, iconSizePx))
 
-        val spacerMic = android.view.View(context)
-        innerLayout.addView(spacerMic, LinearLayout.LayoutParams((8 * density).toInt(), 0))
+        val spacer3 = View(context)
+        innerLayout.addView(spacer3, LinearLayout.LayoutParams((6 * density).toInt(), 0))
 
         val sendIcon = ImageView(context).apply {
             setImageResource(R.drawable.ic_send_arrow)
@@ -157,8 +168,32 @@ class FloatingBubbleInput(
             }
         }
         sendButton = sendIcon
-        val sendSize = (20 * density).toInt()
-        innerLayout.addView(sendIcon, LinearLayout.LayoutParams(sendSize, sendSize))
+        innerLayout.addView(sendIcon, LinearLayout.LayoutParams(iconSizePx, iconSizePx))
+
+        val loading = ProgressBar(context, null, android.R.attr.progressBarStyleSmall).apply {
+            visibility = View.GONE
+        }
+        loadingView = loading
+        innerLayout.addView(loading, LinearLayout.LayoutParams(iconSizePx, iconSizePx).apply {
+            marginStart = (6 * density).toInt()
+        })
+
+        val spacer4 = View(context)
+        innerLayout.addView(spacer4, LinearLayout.LayoutParams((6 * density).toInt(), 0))
+
+        val echoAvatar = ImageView(context).apply {
+            setImageResource(R.drawable.ic_echo_face)
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(ContextCompat.getColor(context, R.color.surface_white))
+                setStroke((1 * density).toInt(), ContextCompat.getColor(context, R.color.divider))
+            }
+            clipToOutline = true
+            outlineProvider = ViewOutlineProvider.BACKGROUND
+            setOnClickListener { onAvatarClick?.invoke() }
+        }
+        innerLayout.addView(echoAvatar, LinearLayout.LayoutParams(iconSizePx, iconSizePx))
 
         container.addView(innerLayout, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
@@ -230,7 +265,25 @@ class FloatingBubbleInput(
     fun setInputEnabled(enabled: Boolean) {
         inputEnabled = enabled
         editText?.isEnabled = enabled
-        updateSendButtonAlpha()
+        updateSendButtonState()
+    }
+
+    fun setLoading(loading: Boolean) {
+        if (loading) {
+            sendButton?.visibility = View.GONE
+            loadingView?.visibility = View.VISIBLE
+        } else {
+            sendButton?.visibility = View.VISIBLE
+            loadingView?.visibility = View.GONE
+        }
+    }
+
+    fun shakeOnError() {
+        val shake = TranslateAnimation(0f, 10f * density, 0f, 0f).apply {
+            duration = 300
+            interpolator = CycleInterpolator(3f)
+        }
+        containerView?.startAnimation(shake)
     }
 
     fun getInputText(): String = editText?.text?.toString()?.trim().orEmpty()
@@ -244,20 +297,22 @@ class FloatingBubbleInput(
         containerView = null
         editText = null
         sendButton = null
+        loadingView = null
         currentAnimator = null
     }
 
     private fun updatePosition() {
         val ballCenterY = ballLayoutParams.y + ballSizePx / 2
         layoutParams.y = ballCenterY - heightPx / 2
-        val gap = (8 * density).toInt()
-        layoutParams.x = ballLayoutParams.x - widthPx - gap
+
+        val ballRightEdge = ballLayoutParams.x + ballSizePx
+        layoutParams.x = ballRightEdge - widthPx
         if (layoutParams.x < 0) {
-            layoutParams.x = ballLayoutParams.x + ballSizePx + gap
+            layoutParams.x = ballLayoutParams.x
         }
     }
 
-    private fun updateSendButtonAlpha() {
+    private fun updateSendButtonState() {
         val hasText = editText?.text?.toString()?.trim()?.isNotEmpty() == true
         sendButton?.alpha = if (hasText && inputEnabled) 1f else 0.5f
     }

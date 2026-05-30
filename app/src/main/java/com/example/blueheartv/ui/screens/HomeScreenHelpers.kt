@@ -17,6 +17,7 @@ import com.example.blueheartv.viewmodel.ChatViewModel
 import com.example.blueheartv.voice.SpeechRecognizerCallback
 import com.example.blueheartv.voice.SpeechRecognizerManager
 import com.example.blueheartv.voice.VoiceRecordingState
+import kotlinx.coroutines.delay
 import java.util.*
 
 class HomeScreenActions(
@@ -34,6 +35,7 @@ class HomeScreenActions(
     val voiceRecordingState: State<VoiceRecordingState>,
     val partialText: State<String>,
     val amplitudeDb: State<Float>,
+    val resultText: State<String>,
 )
 
 @Composable
@@ -83,6 +85,7 @@ fun rememberHomeScreenActions(
     var voiceRecordingState by remember { mutableStateOf(VoiceRecordingState.IDLE) }
     var partialText by remember { mutableStateOf("") }
     var amplitudeDb by remember { mutableFloatStateOf(0f) }
+    var resultText by remember { mutableStateOf("") }
 
     val speechManager = remember { SpeechRecognizerManager(context.applicationContext) }
 
@@ -101,19 +104,21 @@ fun rememberHomeScreenActions(
             }
 
             override fun onFinalResult(text: String) {
-                voiceRecordingState = VoiceRecordingState.IDLE
-                partialText = ""
                 amplitudeDb = 0f
                 if (text.isNotBlank()) {
+                    resultText = text
+                    voiceRecordingState = VoiceRecordingState.SUCCESS
                     viewModel.sendVoiceText(text)
+                } else {
+                    voiceRecordingState = VoiceRecordingState.IDLE
+                    partialText = ""
                 }
             }
 
             override fun onError(errorCode: Int, message: String) {
-                voiceRecordingState = VoiceRecordingState.IDLE
-                partialText = ""
                 amplitudeDb = 0f
-                ToastUtil.show(message, ToastType.WARNING)
+                resultText = message
+                voiceRecordingState = VoiceRecordingState.FAILED
             }
 
             override fun onRmsChanged(rmsdB: Float) {
@@ -146,9 +151,28 @@ fun rememberHomeScreenActions(
         viewModel.sendQuickAction(promptTodayDelivery)
     }
 
+    LaunchedEffect(voiceRecordingState) {
+        when (voiceRecordingState) {
+            VoiceRecordingState.SUCCESS -> {
+                delay(1200)
+                voiceRecordingState = VoiceRecordingState.IDLE
+                partialText = ""
+                resultText = ""
+            }
+            VoiceRecordingState.FAILED -> {
+                delay(1500)
+                voiceRecordingState = VoiceRecordingState.IDLE
+                partialText = ""
+                resultText = ""
+            }
+            else -> {}
+        }
+    }
+
     val voiceRecordingStateState = rememberUpdatedState(voiceRecordingState)
     val partialTextState = rememberUpdatedState(partialText)
     val amplitudeDbState = rememberUpdatedState(amplitudeDb)
+    val resultTextState = rememberUpdatedState(resultText)
 
     return remember(viewModel, snackbarHostState) {
         HomeScreenActions(
@@ -221,6 +245,7 @@ fun rememberHomeScreenActions(
             },
             stopVoiceRecording = {
                 speechManager.stopListening()
+                voiceRecordingState = VoiceRecordingState.RECOGNIZING
             },
             cancelVoiceRecording = {
                 speechManager.cancel()
@@ -237,6 +262,7 @@ fun rememberHomeScreenActions(
             voiceRecordingState = voiceRecordingStateState,
             partialText = partialTextState,
             amplitudeDb = amplitudeDbState,
+            resultText = resultTextState,
         )
     }
 }

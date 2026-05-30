@@ -94,6 +94,11 @@ $RECYCLE.BIN/
 /CLAUDE.md
 /CLAUDE.md.xltd
 /CLAUDE.md.xltd.cfg
+/AGENTS.md
+/.github/copilot-instructions.md
+/.github/instructions/*.instructions.md
+/.github/prompts/*.prompt.md
+/.github/agents/*.agent.md
 
 ####################################
 # Misc generated files

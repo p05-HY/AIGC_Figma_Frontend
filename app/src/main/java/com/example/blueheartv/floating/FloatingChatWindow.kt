@@ -140,11 +140,11 @@ class FloatingChatWindow(
             }
         }
 
-        val composeContent = ComposeView(context).apply {
-            setViewTreeLifecycleOwner(owner)
-            setViewTreeViewModelStoreOwner(owner)
-            setViewTreeSavedStateRegistryOwner(owner)
+        wrapper.setViewTreeLifecycleOwner(owner)
+        wrapper.setViewTreeViewModelStoreOwner(owner)
+        wrapper.setViewTreeSavedStateRegistryOwner(owner)
 
+        val composeContent = ComposeView(context).apply {
             setContent {
                 MaterialTheme(colorScheme = AppLightColorScheme) {
                     FloatingChatContent(

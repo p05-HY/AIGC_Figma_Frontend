@@ -4,7 +4,9 @@ import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.SharedPreferences
+import android.graphics.Color as AndroidColor
 import android.graphics.PixelFormat
+import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -19,13 +21,18 @@ import android.widget.ImageView
 import androidx.core.content.ContextCompat
 import androidx.core.content.edit
 import com.example.blueheartv.R
+import com.example.blueheartv.voice.VoiceRecordingState
 import kotlin.math.abs
 
 class FloatingBallView(
     private val context: Context,
     private val windowManager: WindowManager,
-    private val onClick: () -> Unit,
+    private val onSingleClick: () -> Unit,
+    private val onDoubleClick: (() -> Unit)? = null,
+    private val onTripleClick: (() -> Unit)? = null,
     private val onLongPress: (() -> Unit)? = null,
+    private val onLongPressRelease: (() -> Unit)? = null,
+    private val onLongPressDragCancel: (() -> Unit)? = null,
 ) {
     companion object {
         private const val TAG = "FloatingBallView"
@@ -34,6 +41,9 @@ class FloatingBallView(
         private const val KEY_Y = "ball_y"
         private const val BALL_SIZE_DP = 52
         private const val CLICK_THRESHOLD_DP = 8
+        private const val MULTI_TAP_TIMEOUT_MS = 300L
+        private const val MAX_TAP_COUNT = 3
+        private const val VISUAL_RESET_DELAY_MS = 1200L
     }
 
     private val density = context.resources.displayMetrics.density
@@ -79,6 +89,11 @@ class FloatingBallView(
 
     private var isAdded = false
     private val longPressHandler = Handler(Looper.getMainLooper())
+    private val tapHandler = Handler(Looper.getMainLooper())
+    private var tapCount = 0
+    private var pendingTapRunnable: Runnable? = null
+    private var recordingAnimator: ValueAnimator? = null
+    private var visualResetRunnable: Runnable? = null
     var onPositionChanged: ((x: Int, y: Int) -> Unit)? = null
 
     @SuppressLint("ClickableViewAccessibility")
@@ -120,6 +135,11 @@ class FloatingBallView(
                     totalMovement = maxOf(totalMovement, abs(dx) + abs(dy))
                     if (totalMovement >= clickThresholdPx) {
                         longPressHandler.removeCallbacks(longPressRunnable)
+                        resetTaps()
+                        if (longPressTriggered) {
+                            longPressTriggered = false
+                            onLongPressDragCancel?.invoke()
+                        }
                     }
                     layoutParams.x = (startParamX + dx).toInt()
                     layoutParams.y = (startParamY + dy).toInt()
@@ -132,9 +152,9 @@ class FloatingBallView(
                 MotionEvent.ACTION_UP -> {
                     longPressHandler.removeCallbacks(longPressRunnable)
                     if (longPressTriggered) {
-                        // already handled
+                        onLongPressRelease?.invoke()
                     } else if (totalMovement < clickThresholdPx) {
-                        onClick()
+                        registerTap()
                     } else {
                         snapToEdge()
                     }
@@ -143,6 +163,7 @@ class FloatingBallView(
 
                 MotionEvent.ACTION_CANCEL -> {
                     longPressHandler.removeCallbacks(longPressRunnable)
+                    resetTaps()
                     true
                 }
 
@@ -156,6 +177,9 @@ class FloatingBallView(
 
     fun detach() {
         if (!isAdded) return
+        resetTaps()
+        resetBallVisual()
+        longPressHandler.removeCallbacksAndMessages(null)
         try {
             windowManager.removeView(ballView)
         } catch (e: Exception) {
@@ -169,6 +193,79 @@ class FloatingBallView(
     }
 
     fun getLayoutParams(): WindowManager.LayoutParams = layoutParams
+
+    fun setRecordingState(state: VoiceRecordingState) {
+        recordingAnimator?.cancel()
+        recordingAnimator = null
+        visualResetRunnable?.let { longPressHandler.removeCallbacks(it) }
+        visualResetRunnable = null
+
+        when (state) {
+            VoiceRecordingState.RECORDING -> {
+                val bg = ballView.background as? GradientDrawable ?: return
+                bg.setStroke(
+                    (2 * density).toInt(),
+                    ContextCompat.getColor(context, R.color.blue_accent),
+                )
+                recordingAnimator = ValueAnimator.ofFloat(1f, 1.15f).apply {
+                    duration = 600
+                    repeatCount = ValueAnimator.INFINITE
+                    repeatMode = ValueAnimator.REVERSE
+                    addUpdateListener { anim ->
+                        val scale = anim.animatedValue as Float
+                        ballView.scaleX = scale
+                        ballView.scaleY = scale
+                    }
+                    start()
+                }
+            }
+
+            VoiceRecordingState.RECOGNIZING -> {
+                ballView.scaleX = 1f
+                ballView.scaleY = 1f
+                val bg = ballView.background as? GradientDrawable ?: return
+                bg.setStroke(
+                    (2 * density).toInt(),
+                    ContextCompat.getColor(context, R.color.blue_accent),
+                )
+                bg.setColor(AndroidColor.parseColor("#F0F4FF"))
+            }
+
+            VoiceRecordingState.SUCCESS -> {
+                ballView.scaleX = 1f
+                ballView.scaleY = 1f
+                val bg = ballView.background as? GradientDrawable ?: return
+                bg.setStroke((2 * density).toInt(), AndroidColor.parseColor("#4CAF50"))
+                bg.setColor(ContextCompat.getColor(context, R.color.surface_white))
+                scheduleVisualReset()
+            }
+
+            VoiceRecordingState.FAILED -> {
+                ballView.scaleX = 1f
+                ballView.scaleY = 1f
+                val bg = ballView.background as? GradientDrawable ?: return
+                bg.setStroke((2 * density).toInt(), AndroidColor.parseColor("#FF6B6B"))
+                bg.setColor(ContextCompat.getColor(context, R.color.surface_white))
+                scheduleVisualReset()
+            }
+
+            else -> resetBallVisual()
+        }
+    }
+
+    private fun scheduleVisualReset() {
+        val runnable = Runnable { resetBallVisual() }
+        visualResetRunnable = runnable
+        longPressHandler.postDelayed(runnable, VISUAL_RESET_DELAY_MS)
+    }
+
+    private fun resetBallVisual() {
+        recordingAnimator?.cancel()
+        recordingAnimator = null
+        ballView.scaleX = 1f
+        ballView.scaleY = 1f
+        ballView.background = createBallDrawable()
+    }
 
     private fun snapToEdge() {
         val centerX = layoutParams.x + ballSizePx / 2
@@ -197,9 +294,39 @@ class FloatingBallView(
         }
     }
 
+    private fun registerTap() {
+        pendingTapRunnable?.let { tapHandler.removeCallbacks(it) }
+        pendingTapRunnable = null
+        tapCount++
+        if (tapCount >= MAX_TAP_COUNT) {
+            commitTaps()
+            return
+        }
+        val runnable = Runnable { commitTaps() }
+        pendingTapRunnable = runnable
+        tapHandler.postDelayed(runnable, MULTI_TAP_TIMEOUT_MS)
+    }
+
+    private fun commitTaps() {
+        val count = tapCount
+        tapCount = 0
+        pendingTapRunnable = null
+        when (count) {
+            1 -> onSingleClick()
+            2 -> onDoubleClick?.invoke() ?: onSingleClick()
+            3 -> onTripleClick?.invoke()
+        }
+    }
+
+    private fun resetTaps() {
+        pendingTapRunnable?.let { tapHandler.removeCallbacks(it) }
+        pendingTapRunnable = null
+        tapCount = 0
+    }
+
     private fun createBallDrawable(): android.graphics.drawable.Drawable {
-        return android.graphics.drawable.GradientDrawable().apply {
-            shape = android.graphics.drawable.GradientDrawable.OVAL
+        return GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
             setColor(ContextCompat.getColor(context, R.color.surface_white))
             setStroke((1 * density).toInt(), ContextCompat.getColor(context, R.color.divider))
         }
