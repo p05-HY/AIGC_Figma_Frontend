@@ -394,10 +394,35 @@ class FloatingBallService : Service() {
         serviceScope.launch {
             FloatingHelperActivity.speechResult.collect { text ->
                 if (!text.isNullOrBlank()) {
-                    val chatViewModel: ChatViewModel = get(ChatViewModel::class.java)
-                    val current = chatViewModel.uiState.value.inputText
-                    chatViewModel.onInputChanged(current + text)
+                    appendFloatingSpeechText(text)
                 }
+            }
+        }
+        serviceScope.launch {
+            FloatingHelperActivity.speechError.collect { message ->
+                if (currentState == FloatingState.STATE1) {
+                    bubbleInput?.shakeOnError()
+                }
+                ToastUtil.show(message, ToastType.WARNING)
+            }
+        }
+    }
+
+    private fun appendFloatingSpeechText(text: String) {
+        val recognized = text.trim()
+        if (recognized.isEmpty()) return
+        when (currentState) {
+            FloatingState.STATE1 -> bubbleInput?.appendInputText(recognized)
+            FloatingState.STATE2 -> {
+                val chatViewModel: ChatViewModel = get(ChatViewModel::class.java)
+                val current = chatViewModel.uiState.value.inputText
+                chatViewModel.onInputChanged((current + recognized).take(2000))
+            }
+            FloatingState.STATE0,
+            FloatingState.STATE3 -> {
+                val chatViewModel: ChatViewModel = get(ChatViewModel::class.java)
+                val current = chatViewModel.uiState.value.inputText
+                chatViewModel.onInputChanged((current + recognized).take(2000))
             }
         }
     }

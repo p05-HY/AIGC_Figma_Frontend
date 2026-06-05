@@ -14,19 +14,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.blueheartv.ui.theme.*
 import com.example.blueheartv.voice.VoiceRecordingState
-import kotlinx.coroutines.delay
 
 private val CANCEL_THRESHOLD_DP = 50.dp
 
 @Composable
 fun HoldToSpeakButton(
     recordingState: VoiceRecordingState,
-    onTap: () -> Unit,
     onLongPressStart: () -> Unit,
     onSwipeToCancelling: () -> Unit,
     onSwipeBackToRecording: () -> Unit,
@@ -35,7 +32,6 @@ fun HoldToSpeakButton(
 ) {
     val density = LocalDensity.current
     val cancelThresholdPx = with(density) { CANCEL_THRESHOLD_DP.toPx() }
-    val longPressTimeoutMs = LocalViewConfiguration.current.longPressTimeoutMillis
 
     val backgroundColor = when (recordingState) {
         VoiceRecordingState.RECORDING -> BlueAccent.copy(alpha = 0.12f)
@@ -56,14 +52,6 @@ fun HoldToSpeakButton(
     var isPressed by remember { mutableStateOf(false) }
     var longPressActive by remember { mutableStateOf(false) }
 
-    LaunchedEffect(isPressed) {
-        if (isPressed) {
-            delay(longPressTimeoutMs)
-            longPressActive = true
-            onLongPressStart()
-        }
-    }
-
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -75,7 +63,8 @@ fun HoldToSpeakButton(
                     val down = awaitFirstDown(requireUnconsumed = false)
                     val startY = down.position.y
                     isPressed = true
-                    longPressActive = false
+                    longPressActive = true
+                    onLongPressStart()
                     var cancelMode = false
 
                     do {
@@ -97,8 +86,6 @@ fun HoldToSpeakButton(
                     isPressed = false
                     if (longPressActive) {
                         onRelease(cancelMode)
-                    } else {
-                        onTap()
                     }
                     longPressActive = false
                 }

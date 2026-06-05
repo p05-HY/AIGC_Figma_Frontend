@@ -29,8 +29,12 @@ class AgentServerClient(
 ) {
     fun adbWebSocketUrl(): String {
         val base = normalizedBaseUrl()
+        // 协议：deviceId 作为 URL 路径段携带（ws://host/adb/{deviceId}），后端据此区分设备。
+        // 是否携带由 BuildConfig.DEVICE_ID_IN_PATH 开关控制；关闭或 deviceId 不可用时
+        // pathSegment() 返回空串，joinPath 自动过滤，URL 退化为无参 /adb。
+        val deviceId = DeviceIdStore.pathSegment()
         val builder = base.newBuilder()
-            .encodedPath(joinPath(base.encodedPath, "adb"))
+            .encodedPath(joinPath(base.encodedPath, ApiPaths.ADB_WS, deviceId))
         return builder.build().toString()
             .replaceFirst("https://", "wss://")
             .replaceFirst("http://", "ws://")
@@ -46,7 +50,7 @@ class AgentServerClient(
                 },
             )
         }
-        val json = postJson(url("threads"), body)
+        val json = postJson(url(ApiPaths.THREADS), body)
         val id = json.optString("thread_id")
             .ifBlank { json.optString("threadId") }
             .ifBlank { error("Agent Server 未返回 thread_id") }
@@ -63,7 +67,7 @@ class AgentServerClient(
             put("limit", limit)
             put("offset", 0)
         }
-        val raw = executeString(postRequest(url("threads", "search"), body))
+        val raw = executeString(postRequest(url(ApiPaths.THREADS, ApiPaths.SEARCH), body))
         val threads = parseThreadSearch(raw)
             .filter { thread ->
                 thread.metadata.optString("graph_id") in setOf(
@@ -99,11 +103,11 @@ class AgentServerClient(
         val body = JSONObject().apply {
             put("metadata", JSONObject().put("title", truncateTitle(title)))
         }
-        runCatching { patchJson(url("threads", threadId), body) }
+        runCatching { patchJson(url(ApiPaths.THREADS, threadId), body) }
     }
 
     fun deleteThread(threadId: String) {
-        runCatching { executeString(requestBuilder(url("threads", threadId)).delete().build()) }
+        runCatching { executeString(requestBuilder(url(ApiPaths.THREADS, threadId)).delete().build()) }
     }
 
     fun streamRun(
@@ -116,15 +120,11 @@ class AgentServerClient(
             put("input", JSONObject().put("messages", JSONArray().put(prompt.toHumanMessageJson())))
             put(
                 "stream_mode",
-                JSONArray()
-                    .put("messages-tuple")
-                    .put("updates")
-                    .put("tasks")
-                    .put("custom"),
+                JSONArray().apply { ApiPaths.STREAM_MODES.forEach { put(it) } },
             )
         }
 
-        val request = postRequest(url("threads", threadId, "runs", "stream"), body)
+        val request = postRequest(url(ApiPaths.THREADS, threadId, ApiPaths.RUNS, ApiPaths.STREAM), body)
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
                 val retryable = response.code == 408 || response.code == 429 || response.code in 500..599
@@ -142,7 +142,7 @@ class AgentServerClient(
         return parseMessages(state.optJSONObject("values")?.optJSONArray("messages"))
     }
 
-    private fun getThreadState(threadId: String): JSONObject = getJson(url("threads", threadId, "state"))
+    private fun getThreadState(threadId: String): JSONObject = getJson(url(ApiPaths.THREADS, threadId, ApiPaths.STATE))
 
     private fun parseSse(source: BufferedSource, onEvent: (ChatStreamEvent) -> Unit) {
         var eventName: String? = null
@@ -204,17 +204,43 @@ class AgentServerClient(
                 extractMessageDelta(json)?.takeIf { it.chunk.isNotEmpty() }?.let {
                     onEvent(ChatStreamEvent.TextDelta(it.chunk, it.invocationId))
                 }
+                // AIMessage 携带的工具调用（入参）
+                extractToolCalls(json).forEach { (name, args) ->
+                    activeNodes.add(name)
+                    onEvent(ChatStreamEvent.ToolCallStarted(name, args))
+                }
+                // ToolMessage 携带的工具执行结果（出参/错误）
+                extractToolResult(json)?.let { result ->
+                    activeNodes.remove(result.name)
+                    if (result.isError) {
+                        onEvent(ChatStreamEvent.ToolCallFailed(result.name, result.content))
+                    } else {
+                        onEvent(ChatStreamEvent.ToolCallCompleted(result.name, result.content))
+                    }
+                }
                 extractNodeName(json)?.let { markNodeActive(it, activeNodes, onEvent) }
             }
 
             eventName.contains("tasks", ignoreCase = true) -> {
                 val node = extractNodeName(json) ?: return true
-                val completed = payload.contains("\"result\"") || payload.contains("\"error\"")
-                if (completed) {
-                    activeNodes.remove(node)
-                    onEvent(ChatStreamEvent.ToolCallCompleted(node))
-                } else {
-                    markNodeActive(node, activeNodes, onEvent)
+                val taskResult = extractTaskOutcome(json)
+                when {
+                    taskResult?.isError == true -> {
+                        activeNodes.remove(node)
+                        onEvent(ChatStreamEvent.ToolCallFailed(node, taskResult.content))
+                    }
+
+                    taskResult != null -> {
+                        activeNodes.remove(node)
+                        onEvent(ChatStreamEvent.ToolCallCompleted(node, taskResult.content))
+                    }
+
+                    payload.contains("\"result\"") || payload.contains("\"error\"") -> {
+                        activeNodes.remove(node)
+                        onEvent(ChatStreamEvent.ToolCallCompleted(node))
+                    }
+
+                    else -> markNodeActive(node, activeNodes, onEvent)
                 }
             }
 
@@ -304,6 +330,95 @@ class AgentServerClient(
             .ifBlank { obj.optString("name") }
             .ifBlank { obj.optJSONObject("metadata")?.optString("langgraph_node").orEmpty() }
             .ifBlank { null }
+    }
+
+    private data class ToolResult(
+        val name: String,
+        val content: String?,
+        val isError: Boolean,
+    )
+
+    /** 取 messages-tuple 元组中的消息体（数组首元素或对象本身）。 */
+    private fun messageObject(json: Any): JSONObject? {
+        if (json is JSONArray) {
+            return json.optJSONObject(0) ?: json.opt(0) as? JSONObject
+        }
+        return json as? JSONObject
+    }
+
+    /** 从 AIMessage(chunk) 提取工具调用入参，返回 (工具名, 入参JSON文本) 列表。防御式多路径兜底。 */
+    private fun extractToolCalls(json: Any): List<Pair<String, String?>> {
+        val obj = messageObject(json) ?: return emptyList()
+        val kwargs = obj.optJSONObject("kwargs")
+        val calls = obj.optJSONArray("tool_calls")
+            ?: kwargs?.optJSONArray("tool_calls")
+            ?: obj.optJSONArray("tool_call_chunks")
+            ?: kwargs?.optJSONArray("tool_call_chunks")
+            ?: return emptyList()
+        return buildList {
+            for (i in 0 until calls.length()) {
+                val call = calls.optJSONObject(i) ?: continue
+                val name = call.optString("name").ifBlank { call.optString("function") }
+                if (name.isBlank()) continue
+                val argsText = when (val args = call.opt("args")) {
+                    null, JSONObject.NULL -> null
+                    is String -> args.ifBlank { null }
+                    else -> args.toString()
+                }
+                add(name to argsText)
+            }
+        }
+    }
+
+    /** 从 ToolMessage 提取工具执行结果（出参/错误）。仅当消息类型为 tool 时返回。 */
+    private fun extractToolResult(json: Any): ToolResult? {
+        val obj = messageObject(json) ?: return null
+        val kwargs = obj.optJSONObject("kwargs")
+        val type = obj.optString("type")
+            .ifBlank { obj.optString("role") }
+            .ifBlank { kwargs?.optString("type").orEmpty() }
+            .lowercase()
+        if (type != "tool" && !type.contains("toolmessage")) return null
+        val name = obj.optString("name")
+            .ifBlank { kwargs?.optString("name").orEmpty() }
+            .ifBlank { "tool" }
+        val content = contentToText(obj.opt("content") ?: kwargs?.opt("content"))?.ifBlank { null }
+        val status = obj.optString("status").ifBlank { kwargs?.optString("status").orEmpty() }
+        return ToolResult(name, content, status.equals("error", ignoreCase = true))
+    }
+
+    /** 从 tasks 流提取任务结果/错误内容。 */
+    private fun extractTaskOutcome(json: Any): ToolResult? {
+        fun jsonToText(value: Any?): String? = when (value) {
+            null, JSONObject.NULL -> null
+            is String -> value.ifBlank { null }
+            else -> contentToText(value)?.ifBlank { null } ?: value.toString()
+        }
+
+        fun scan(obj: JSONObject): ToolResult? {
+            val name = obj.optString("name")
+                .ifBlank { obj.optString("langgraph_node") }
+                .ifBlank { "task" }
+            if (obj.has("error") && !obj.isNull("error")) {
+                return ToolResult(name, jsonToText(obj.opt("error")), true)
+            }
+            if (obj.has("result") && !obj.isNull("result")) {
+                return ToolResult(name, jsonToText(obj.opt("result")), false)
+            }
+            return null
+        }
+
+        return when (json) {
+            is JSONObject -> scan(json)
+            is JSONArray -> {
+                for (i in 0 until json.length()) {
+                    (json.opt(i) as? JSONObject)?.let { scan(it)?.let { r -> return r } }
+                }
+                null
+            }
+
+            else -> null
+        }
     }
 
     private fun parseMessages(array: JSONArray?): List<Message> {
@@ -466,6 +581,8 @@ class AgentServerClient(
         configProvider().apiKey.takeIf { it.isNotBlank() }?.let {
             builder.addHeader("X-Api-Key", it)
         }
+        // 注意：deviceId 不再通过 HTTP 头携带。LangGraph 标准会话接口（/threads...）不读该头，
+        // 设备区分统一由 WebSocket 路径段 /adb/{deviceId}、/system/{deviceId} 承载。
         return builder
     }
 

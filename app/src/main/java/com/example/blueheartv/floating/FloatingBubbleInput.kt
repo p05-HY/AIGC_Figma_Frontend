@@ -16,6 +16,8 @@ import android.view.View
 import android.view.ViewOutlineProvider
 import android.view.WindowManager
 import android.view.animation.CycleInterpolator
+import android.view.animation.AccelerateInterpolator
+import android.view.animation.DecelerateInterpolator
 import android.view.animation.TranslateAnimation
 import android.view.inputmethod.EditorInfo
 import android.widget.EditText
@@ -49,7 +51,7 @@ class FloatingBubbleInput(
     private val density = context.resources.displayMetrics.density
     private val widthPx = (WIDTH_DP * density).toInt()
     private val heightPx = (HEIGHT_DP * density).toInt()
-    private val ballSizePx = (52 * density).toInt()
+    private val ballSizePx = (60 * density).toInt()
     private val iconSizePx = (ICON_SIZE_DP * density).toInt()
 
     private var containerView: FrameLayout? = null
@@ -212,11 +214,21 @@ class FloatingBubbleInput(
             return
         }
 
+        // 从悬浮球位置「展开」：缩放 + 淡入，轴心偏向左侧（球所在侧）
+        container.pivotX = heightPx / 2f
+        container.pivotY = heightPx / 2f
+        container.scaleX = 0.85f
+        container.scaleY = 0.85f
         currentAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = 200
+            duration = 220
+            interpolator = DecelerateInterpolator()
             addUpdateListener { anim ->
                 if (!isAdded) return@addUpdateListener
-                layoutParams.alpha = anim.animatedValue as Float
+                val f = anim.animatedValue as Float
+                layoutParams.alpha = f
+                val scale = 0.85f + 0.15f * f
+                container.scaleX = scale
+                container.scaleY = scale
                 try {
                     windowManager.updateViewLayout(container, layoutParams)
                 } catch (e: Exception) {
@@ -245,8 +257,13 @@ class FloatingBubbleInput(
         val view = containerView ?: return
         currentAnimator = ValueAnimator.ofFloat(layoutParams.alpha, 0f).apply {
             duration = 150
+            interpolator = AccelerateInterpolator()
             addUpdateListener { anim ->
-                layoutParams.alpha = anim.animatedValue as Float
+                val f = anim.animatedValue as Float
+                layoutParams.alpha = f
+                val scale = 0.85f + 0.15f * f
+                view.scaleX = scale
+                view.scaleY = scale
                 try {
                     windowManager.updateViewLayout(view, layoutParams)
                 } catch (e: Exception) {
@@ -287,6 +304,18 @@ class FloatingBubbleInput(
     }
 
     fun getInputText(): String = editText?.text?.toString()?.trim().orEmpty()
+
+    fun appendInputText(text: String) {
+        val input = editText ?: return
+        val incoming = text.trim()
+        if (incoming.isEmpty()) return
+        val current = input.text?.toString().orEmpty()
+        val next = if (current.isBlank()) incoming else current + incoming
+        val limited = next.take(MAX_INPUT_LENGTH)
+        input.setText(limited)
+        input.setSelection(limited.length)
+        updateSendButtonState()
+    }
 
     private fun removeView() {
         try {

@@ -34,7 +34,7 @@ class FloatingBubbleNotification(
     private val density = context.resources.displayMetrics.density
     private val widthPx = (WIDTH_DP * density).toInt()
     private val heightPx = (HEIGHT_DP * density).toInt()
-    private val ballSizePx = (52 * density).toInt()
+    private val ballSizePx = (60 * density).toInt()
     private val handler = Handler(Looper.getMainLooper())
 
     private var containerView: FrameLayout? = null

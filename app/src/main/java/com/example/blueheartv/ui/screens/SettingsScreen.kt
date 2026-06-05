@@ -35,6 +35,7 @@ import com.example.blueheartv.ui.theme.*
 fun SettingsScreen(
     onBack: () -> Unit,
     onNavigateToDetail: (String) -> Unit = {},
+    onNavigateToCalibration: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val overlayPermissionLauncher = rememberLauncherForActivityResult(
@@ -141,6 +142,10 @@ fun SettingsScreen(
                     SettingsDivider()
                     SettingsItem(Icons.Outlined.Accessibility, "无障碍设置") {
                         onNavigateToDetail("accessibility")
+                    }
+                    SettingsDivider()
+                    SettingsItem(Icons.Outlined.GpsFixed, "坐标校准") {
+                        onNavigateToCalibration()
                     }
                 }
             }

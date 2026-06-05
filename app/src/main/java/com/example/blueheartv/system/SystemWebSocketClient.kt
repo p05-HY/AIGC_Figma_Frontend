@@ -1,5 +1,6 @@
 package com.example.blueheartv.system
 
+import com.example.blueheartv.chat.DeviceIdStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -120,8 +121,12 @@ class SystemWebSocketClient(
             else -> "http://$base"
         }
         val httpUrl = normalizedBase.toHttpUrl()
+        // 协议：deviceId 作为 URL 路径段携带（ws://host/system/{deviceId}），后端据此区分设备。
+        // 是否携带由 BuildConfig.DEVICE_ID_IN_PATH 开关控制；关闭或 deviceId 不可用时退化为无参 /system。
+        val deviceId = DeviceIdStore.pathSegment()
+        val path = if (deviceId.isBlank()) PROTOCOL_PATH else "$PROTOCOL_PATH/$deviceId"
         return httpUrl.newBuilder()
-            .encodedPath(PROTOCOL_PATH)
+            .encodedPath(path)
             .build()
             .toString()
             .replaceFirst("https://", "wss://")

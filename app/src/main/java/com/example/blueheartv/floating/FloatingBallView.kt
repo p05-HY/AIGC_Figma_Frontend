@@ -15,6 +15,7 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.ViewConfiguration
 import android.view.WindowManager
+import android.view.animation.AccelerateInterpolator
 import android.view.animation.OvershootInterpolator
 import android.widget.FrameLayout
 import android.widget.ImageView
@@ -39,7 +40,7 @@ class FloatingBallView(
         private const val PREFS_NAME = "floating_ball_prefs"
         private const val KEY_X = "ball_x"
         private const val KEY_Y = "ball_y"
-        private const val BALL_SIZE_DP = 52
+        private const val BALL_SIZE_DP = 60
         private const val CLICK_THRESHOLD_DP = 8
         private const val MULTI_TAP_TIMEOUT_MS = 300L
         private const val MAX_TAP_COUNT = 3
@@ -63,8 +64,6 @@ class FloatingBallView(
             setImageResource(R.drawable.ic_echo_face)
             scaleType = ImageView.ScaleType.CENTER_CROP
             importantForAccessibility = android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO
-            val pad = (6 * density).toInt()
-            setPadding(pad, pad, pad, pad)
         }
         addView(imageView, FrameLayout.LayoutParams(ballSizePx, ballSizePx))
         background = createBallDrawable()
@@ -93,6 +92,7 @@ class FloatingBallView(
     private var tapCount = 0
     private var pendingTapRunnable: Runnable? = null
     private var recordingAnimator: ValueAnimator? = null
+    private var visibilityAnimator: ValueAnimator? = null
     private var visualResetRunnable: Runnable? = null
     var onPositionChanged: ((x: Int, y: Int) -> Unit)? = null
 
@@ -189,7 +189,49 @@ class FloatingBallView(
     }
 
     fun setVisible(visible: Boolean) {
-        ballView.visibility = if (visible) FrameLayout.VISIBLE else FrameLayout.GONE
+        visibilityAnimator?.cancel()
+        visibilityAnimator = null
+        // 录音中不介入，避免与 pulse 动画争抢 scale
+        if (recordingAnimator != null) {
+            ballView.visibility = if (visible) FrameLayout.VISIBLE else FrameLayout.GONE
+            return
+        }
+        if (visible) {
+            ballView.visibility = FrameLayout.VISIBLE
+            visibilityAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
+                duration = 200
+                interpolator = OvershootInterpolator(1.5f)
+                addUpdateListener { anim ->
+                    val f = anim.animatedValue as Float
+                    ballView.alpha = f.coerceIn(0f, 1f)
+                    val scale = 0.6f + 0.4f * f
+                    ballView.scaleX = scale
+                    ballView.scaleY = scale
+                }
+                start()
+            }
+        } else {
+            visibilityAnimator = ValueAnimator.ofFloat(1f, 0f).apply {
+                duration = 150
+                interpolator = AccelerateInterpolator()
+                addUpdateListener { anim ->
+                    val f = anim.animatedValue as Float
+                    ballView.alpha = f
+                    val scale = 0.6f + 0.4f * f
+                    ballView.scaleX = scale
+                    ballView.scaleY = scale
+                }
+                addListener(object : android.animation.AnimatorListenerAdapter() {
+                    override fun onAnimationEnd(animation: android.animation.Animator) {
+                        ballView.visibility = FrameLayout.GONE
+                        ballView.alpha = 1f
+                        ballView.scaleX = 1f
+                        ballView.scaleY = 1f
+                    }
+                })
+                start()
+            }
+        }
     }
 
     fun getLayoutParams(): WindowManager.LayoutParams = layoutParams
@@ -228,7 +270,7 @@ class FloatingBallView(
                     (2 * density).toInt(),
                     ContextCompat.getColor(context, R.color.blue_accent),
                 )
-                bg.setColor(AndroidColor.parseColor("#F0F4FF"))
+                bg.setColor(AndroidColor.TRANSPARENT)
             }
 
             VoiceRecordingState.SUCCESS -> {
@@ -236,7 +278,7 @@ class FloatingBallView(
                 ballView.scaleY = 1f
                 val bg = ballView.background as? GradientDrawable ?: return
                 bg.setStroke((2 * density).toInt(), AndroidColor.parseColor("#4CAF50"))
-                bg.setColor(ContextCompat.getColor(context, R.color.surface_white))
+                bg.setColor(AndroidColor.TRANSPARENT)
                 scheduleVisualReset()
             }
 
@@ -245,7 +287,7 @@ class FloatingBallView(
                 ballView.scaleY = 1f
                 val bg = ballView.background as? GradientDrawable ?: return
                 bg.setStroke((2 * density).toInt(), AndroidColor.parseColor("#FF6B6B"))
-                bg.setColor(ContextCompat.getColor(context, R.color.surface_white))
+                bg.setColor(AndroidColor.TRANSPARENT)
                 scheduleVisualReset()
             }
 
@@ -327,8 +369,8 @@ class FloatingBallView(
     private fun createBallDrawable(): android.graphics.drawable.Drawable {
         return GradientDrawable().apply {
             shape = GradientDrawable.OVAL
-            setColor(ContextCompat.getColor(context, R.color.surface_white))
-            setStroke((1 * density).toInt(), ContextCompat.getColor(context, R.color.divider))
+            setColor(AndroidColor.TRANSPARENT)
+            setStroke((1 * density).toInt(), AndroidColor.TRANSPARENT)
         }
     }
 }

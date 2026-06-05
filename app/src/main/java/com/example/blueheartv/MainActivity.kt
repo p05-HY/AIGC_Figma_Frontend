@@ -21,6 +21,7 @@ import androidx.core.net.toUri
 import androidx.lifecycle.lifecycleScope
 import com.example.blueheartv.chat.AgentServerConfigStore
 import com.example.blueheartv.chat.AppContextHolder
+import com.example.blueheartv.chat.DeviceIdStore
 import com.example.blueheartv.control.AccessibilityAutoEnabler
 import com.example.blueheartv.control.AdbAccessibilityService
 import com.example.blueheartv.control.AdbWebSocketService
@@ -95,6 +96,7 @@ class MainActivity : ComponentActivity() {
             defaultApiKey = BuildConfig.AGENT_SERVER_API_KEY,
         )
         AppContextHolder.install(applicationContext)
+        DeviceIdStore.deviceId(applicationContext)
         if (AgentServerConfigStore.snapshot().isConfigured) {
             AdbWebSocketService.start(applicationContext)
             SystemService.start(applicationContext, AgentServerConfigStore.snapshot().baseUrl)

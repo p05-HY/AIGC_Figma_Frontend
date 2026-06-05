@@ -3,6 +3,7 @@ package com.example.blueheartv.db
 import com.example.blueheartv.model.Message
 import com.example.blueheartv.model.MessageDeliveryState
 import com.example.blueheartv.model.ToolCall
+import com.example.blueheartv.model.ToolCallStatus
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -38,7 +39,18 @@ private fun parseToolCalls(json: String): List<ToolCall>? {
             for (i in 0 until array.length()) {
                 val obj = array.optJSONObject(i) ?: continue
                 val label = obj.optString("label").takeIf { it.isNotBlank() } ?: continue
-                add(ToolCall(label = label, isComplete = obj.optBoolean("isComplete")))
+                val status = obj.optString("status").takeIf { it.isNotBlank() }?.let {
+                    runCatching { ToolCallStatus.valueOf(it) }.getOrNull()
+                } ?: if (obj.optBoolean("isComplete")) ToolCallStatus.COMPLETED else ToolCallStatus.RUNNING
+                add(
+                    ToolCall(
+                        label = label,
+                        status = status,
+                        args = obj.optString("args").takeIf { it.isNotBlank() },
+                        result = obj.optString("result").takeIf { it.isNotBlank() },
+                        error = obj.optString("error").takeIf { it.isNotBlank() },
+                    ),
+                )
             }
         }.takeIf { it.isNotEmpty() }
     }.getOrNull()
@@ -49,7 +61,10 @@ private fun serializeToolCalls(toolCalls: List<ToolCall>): String {
         toolCalls.forEach { tc ->
             put(JSONObject().apply {
                 put("label", tc.label)
-                put("isComplete", tc.isComplete)
+                put("status", tc.status.name)
+                tc.args?.let { put("args", it) }
+                tc.result?.let { put("result", it) }
+                tc.error?.let { put("error", it) }
             })
         }
     }.toString()

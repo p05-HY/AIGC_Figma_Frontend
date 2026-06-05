@@ -1,5 +1,6 @@
 package com.example.blueheartv.viewmodel
 
+import com.example.blueheartv.chat.AgentServerConfigStore
 import com.example.blueheartv.chat.ChatPrompt
 import com.example.blueheartv.chat.ChatProvider
 import com.example.blueheartv.chat.ChatStreamEvent
@@ -12,6 +13,7 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 
@@ -20,6 +22,11 @@ class ChatViewModelTest {
 
     @get:Rule
     val mainDispatcherRule = MainDispatcherRule()
+
+    @Before
+    fun setUp() {
+        AgentServerConfigStore.setForTesting(baseUrl = "http://localhost:2024", apiKey = "test-key")
+    }
 
     @Test
     fun sendMessage_streamSuccess_updatesMessagesAndState() = runTest {

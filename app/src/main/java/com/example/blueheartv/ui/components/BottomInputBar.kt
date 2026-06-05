@@ -94,7 +94,6 @@ fun BottomInputBar(
                 InputMode.VOICE -> {
                     HoldToSpeakButton(
                         recordingState = voiceRecordingState,
-                        onTap = onVoiceModeTap,
                         onLongPressStart = onVoiceStart,
                         onSwipeToCancelling = onSwipeToCancelling,
                         onSwipeBackToRecording = onSwipeBackToRecording,

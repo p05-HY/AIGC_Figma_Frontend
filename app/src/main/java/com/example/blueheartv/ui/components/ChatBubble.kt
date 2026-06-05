@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.sp
 import com.example.blueheartv.R
 import com.example.blueheartv.model.Message
 import com.example.blueheartv.model.ToolCall
+import com.example.blueheartv.model.ToolCallStatus
 import com.example.blueheartv.ui.theme.*
 import com.example.blueheartv.util.ToastType
 import com.example.blueheartv.util.ToastUtil
@@ -293,15 +294,13 @@ fun AiBubble(
     ) {
         Box(
             modifier = Modifier
-                .size(42.dp)
-                .shadow(4.dp, CircleShape)
-                .background(SurfaceWhite, CircleShape),
+                .size(42.dp),
             contentAlignment = Alignment.Center,
         ) {
             Image(
                 painter = painterResource(R.drawable.ic_echo_face),
                 contentDescription = null,
-                modifier = Modifier.size(28.dp),
+                modifier = Modifier.size(42.dp),
                 contentScale = ContentScale.Fit,
             )
         }
@@ -331,6 +330,9 @@ fun AiBubble(
                         val isStreaming = message.deliveryState == com.example.blueheartv.model.MessageDeliveryState.STREAMING
                         val displayText = rememberTypewriterText(message.content, isStreaming)
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            message.thinking?.takeIf { it.isNotBlank() }?.let { thinking ->
+                                ThinkingCard(thinking = thinking, isStreaming = isStreaming)
+                            }
                             message.toolCalls?.takeIf { it.isNotEmpty() }?.let { toolCalls ->
                                 ToolCallCard(toolCalls = toolCalls)
                             }
@@ -402,6 +404,53 @@ fun AiBubble(
 }
 
 @Composable
+private fun ThinkingCard(thinking: String, isStreaming: Boolean) {
+    var expanded by remember { mutableStateOf(false) }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color(0xFFF3F4F6), RoundedCornerShape(10.dp))
+            .border(0.5.dp, DividerColor, RoundedCornerShape(10.dp))
+            .clickable { expanded = !expanded }
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.Psychology,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+                tint = MutedText,
+            )
+            Text(
+                text = if (isStreaming) "思考中…" else "思考过程",
+                fontSize = 13.sp,
+                color = MutedText,
+                modifier = Modifier.weight(1f),
+            )
+            Icon(
+                imageVector = if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                contentDescription = if (expanded) "收起" else "展开",
+                modifier = Modifier.size(18.dp),
+                tint = MutedText,
+            )
+        }
+        if (expanded) {
+            Text(
+                text = thinking,
+                fontSize = 12.sp,
+                color = TextDarkAlt,
+                lineHeight = 18.sp,
+            )
+        }
+    }
+}
+
+@Composable
 private fun ToolCallCard(toolCalls: List<ToolCall>) {
     Column(
         modifier = Modifier
@@ -412,25 +461,91 @@ private fun ToolCallCard(toolCalls: List<ToolCall>) {
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         toolCalls.forEach { toolCall ->
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(8.dp)
-                        .background(
-                            if (toolCall.isComplete) Color(0xFF22C55E) else BlueAccent,
-                            CircleShape,
-                        ),
-                )
-                Text(
-                    text = toolCall.label,
-                    fontSize = 13.sp,
-                    color = TextDarkAlt,
+            ToolCallRow(toolCall = toolCall)
+        }
+    }
+}
+
+@Composable
+private fun ToolCallRow(toolCall: ToolCall) {
+    val hasDetail = !toolCall.args.isNullOrBlank() ||
+        !toolCall.result.isNullOrBlank() ||
+        !toolCall.error.isNullOrBlank()
+    var expanded by remember { mutableStateOf(false) }
+
+    val (dotColor, statusText) = when (toolCall.status) {
+        ToolCallStatus.RUNNING -> BlueAccent to "执行中"
+        ToolCallStatus.COMPLETED -> Color(0xFF22C55E) to "成功"
+        ToolCallStatus.FAILED -> Color(0xFFEF4444) to "失败"
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(if (hasDetail) Modifier.clickable { expanded = !expanded } else Modifier),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .background(dotColor, CircleShape),
+            )
+            Text(
+                text = toolCall.label,
+                fontSize = 13.sp,
+                color = TextDarkAlt,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                text = statusText,
+                fontSize = 11.sp,
+                color = dotColor,
+            )
+            if (hasDetail) {
+                Icon(
+                    imageVector = if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                    contentDescription = if (expanded) "收起" else "展开",
+                    modifier = Modifier.size(16.dp),
+                    tint = MutedText,
                 )
             }
         }
+        if (expanded && hasDetail) {
+            Column(
+                modifier = Modifier.padding(start = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                toolCall.args?.takeIf { it.isNotBlank() }?.let {
+                    ToolDetailField(label = "入参", value = it, valueColor = TextDarkAlt)
+                }
+                toolCall.result?.takeIf { it.isNotBlank() }?.let {
+                    ToolDetailField(label = "出参", value = it, valueColor = TextDarkAlt)
+                }
+                toolCall.error?.takeIf { it.isNotBlank() }?.let {
+                    ToolDetailField(label = "错误", value = it, valueColor = Color(0xFFEF4444))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ToolDetailField(label: String, value: String, valueColor: Color) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(text = label, fontSize = 11.sp, color = MutedText)
+        Text(
+            text = value,
+            fontSize = 12.sp,
+            color = valueColor,
+            fontFamily = FontFamily.Monospace,
+            lineHeight = 16.sp,
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color(0xFFF7F8FA), RoundedCornerShape(6.dp))
+                .padding(horizontal = 8.dp, vertical = 6.dp),
+        )
     }
 }
 

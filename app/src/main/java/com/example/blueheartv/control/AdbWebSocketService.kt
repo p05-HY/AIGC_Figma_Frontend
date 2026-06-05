@@ -164,10 +164,19 @@ class AdbWebSocketService : Service() {
     }
 
     private suspend fun sendConnect() {
-        val display = displayInfo()
+        // 先采集快照（内部会降采样并更新 ScreenScaleState），再据此上报降采样后分辨率。
+        // 方案 A：connect 上报的分辨率必须与截图口径一致，模型坐标即基于该分辨率。
         val snapshot = snapshotJson()
-        snapshot.put("width", display.first)
-        snapshot.put("height", display.second)
+        val scale = ScreenScaleState.current()
+        if (scale != null) {
+            snapshot.put("width", scale.scaledWidth)
+            snapshot.put("height", scale.scaledHeight)
+        } else {
+            val display = displayInfo()
+            snapshot.put("width", display.first)
+            snapshot.put("height", display.second)
+        }
+        // deviceId 不再通过 connect.token 携带；设备区分由 WebSocket 路径段 /adb/{deviceId} 承载（见 adbWebSocketUrl）。
         send(
             JSONObject()
                 .put("type", "request")
@@ -220,25 +229,32 @@ class AdbWebSocketService : Service() {
         when (message) {
             "observe" -> Unit
             "launch" -> runShell("monkey -p ${data.requiredString("package")} -c android.intent.category.LAUNCHER 1")
-            "tap" -> runShell("input tap ${data.requiredInt("x")} ${data.requiredInt("y")}")
+            "tap" -> {
+                val x = ScreenScaleState.toRealX(data.requiredInt("x"))
+                val y = ScreenScaleState.toRealY(data.requiredInt("y"))
+                runShell("input tap $x $y")
+            }
             "type" -> typeText(data.requiredString("text"))
-            "swipe" -> runShell(
-                "input swipe ${data.requiredInt("startX")} ${data.requiredInt("startY")} " +
-                        "${data.requiredInt("endX")} ${data.requiredInt("endY")} 300",
-            )
+            "swipe" -> {
+                val startX = ScreenScaleState.toRealX(data.requiredInt("startX"))
+                val startY = ScreenScaleState.toRealY(data.requiredInt("startY"))
+                val endX = ScreenScaleState.toRealX(data.requiredInt("endX"))
+                val endY = ScreenScaleState.toRealY(data.requiredInt("endY"))
+                runShell("input swipe $startX $startY $endX $endY 300")
+            }
 
-            "longPress" -> runShell(
-                "input swipe ${data.requiredInt("x")} ${data.requiredInt("y")} ${data.requiredInt("x")} ${
-                    data.requiredInt(
-                        "y"
-                    )
-                } 700"
-            )
+            "longPress" -> {
+                val x = ScreenScaleState.toRealX(data.requiredInt("x"))
+                val y = ScreenScaleState.toRealY(data.requiredInt("y"))
+                runShell("input swipe $x $y $x $y 700")
+            }
 
             "doubleTap" -> {
-                runShell("input tap ${data.requiredInt("x")} ${data.requiredInt("y")}")
+                val x = ScreenScaleState.toRealX(data.requiredInt("x"))
+                val y = ScreenScaleState.toRealY(data.requiredInt("y"))
+                runShell("input tap $x $y")
                 delay(100.milliseconds)
-                runShell("input tap ${data.requiredInt("x")} ${data.requiredInt("y")}")
+                runShell("input tap $x $y")
             }
 
             "keyevent" -> runShell("input keyevent ${data.requiredInt("keyevent")}")
@@ -339,7 +355,7 @@ class AdbWebSocketService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         return NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_echo_face)
             .setContentTitle("Echo ADB")
             .setContentText(content)
             .setOngoing(true)

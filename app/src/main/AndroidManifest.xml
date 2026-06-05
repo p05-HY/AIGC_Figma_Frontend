@@ -36,7 +36,10 @@
     <queries>
         <package android:name="com.termux"/>
         <intent>
-            <action android:name="android.speech.RecognizerIntent"/>
+            <action android:name="android.speech.action.RECOGNIZE_SPEECH"/>
+        </intent>
+        <intent>
+            <action android:name="android.speech.RecognitionService"/>
         </intent>
     </queries>
 

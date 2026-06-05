@@ -51,4 +51,9 @@ object AgentServerConfigStore {
     }
 
     fun snapshot(): AgentServerConfig = _config.value
+
+    @androidx.annotation.VisibleForTesting
+    fun setForTesting(baseUrl: String, apiKey: String = "") {
+        _config.value = AgentServerConfig(baseUrl = baseUrl, apiKey = apiKey)
+    }
 }

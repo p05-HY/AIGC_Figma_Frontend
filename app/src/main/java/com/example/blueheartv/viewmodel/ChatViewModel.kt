@@ -76,6 +76,8 @@ class ChatViewModel(
     private val completeThinkTagRegex = Regex("<think>[\\s\\S]*?</think>", RegexOption.IGNORE_CASE)
     private val unclosedThinkTagRegex = Regex("<think>[\\s\\S]*$", RegexOption.IGNORE_CASE)
     private val danglingThinkCloseTagRegex = Regex("</think>", RegexOption.IGNORE_CASE)
+    private val thinkContentRegex = Regex("<think>([\\s\\S]*?)</think>", RegexOption.IGNORE_CASE)
+    private val unclosedThinkContentRegex = Regex("<think>([\\s\\S]*)$", RegexOption.IGNORE_CASE)
 
     init {
         restoreSessions()
@@ -343,7 +345,7 @@ class ChatViewModel(
         assistantMessageId: String,
         prompt: ChatPrompt,
     ) {
-        val toolCallStatus = linkedMapOf<String, Boolean>()
+        val toolCallStatus = linkedMapOf<String, ToolCall>()
         var hasToolCalling = false
 
         try {
@@ -351,7 +353,11 @@ class ChatViewModel(
                 when (event) {
                     is ChatStreamEvent.ToolCallStarted -> {
                         hasToolCalling = true
-                        toolCallStatus[event.label] = false
+                        val existing = toolCallStatus[event.label]
+                        toolCallStatus[event.label] = (existing ?: ToolCall(label = event.label)).copy(
+                            status = ToolCallStatus.RUNNING,
+                            args = event.args ?: existing?.args,
+                        )
                         updateAssistantMessage(
                             assistantMessageId,
                             ChatState.CHAT_TOOL_CALLING,
@@ -366,7 +372,30 @@ class ChatViewModel(
 
                     is ChatStreamEvent.ToolCallCompleted -> {
                         hasToolCalling = true
-                        toolCallStatus[event.label] = true
+                        val existing = toolCallStatus[event.label]
+                        toolCallStatus[event.label] = (existing ?: ToolCall(label = event.label)).copy(
+                            status = ToolCallStatus.COMPLETED,
+                            result = event.result ?: existing?.result,
+                        )
+                        updateAssistantMessage(
+                            assistantMessageId,
+                            ChatState.CHAT_TOOL_CALLING,
+                            ChatSessionState.RESPONDING,
+                        ) { msg ->
+                            msg.copy(
+                                deliveryState = MessageDeliveryState.STREAMING,
+                                toolCalls = toolCallStatus.toToolCallListOrNull(),
+                            )
+                        }
+                    }
+
+                    is ChatStreamEvent.ToolCallFailed -> {
+                        hasToolCalling = true
+                        val existing = toolCallStatus[event.label]
+                        toolCallStatus[event.label] = (existing ?: ToolCall(label = event.label)).copy(
+                            status = ToolCallStatus.FAILED,
+                            error = event.error ?: existing?.error,
+                        )
                         updateAssistantMessage(
                             assistantMessageId,
                             ChatState.CHAT_TOOL_CALLING,
@@ -395,6 +424,7 @@ class ChatViewModel(
                         ) { msg ->
                             msg.copy(
                                 content = stripThinkTags(raw),
+                                thinking = extractThinking(raw),
                                 deliveryState = MessageDeliveryState.STREAMING,
                                 toolCalls = toolCallStatus.toToolCallListOrNull(),
                             )
@@ -402,12 +432,15 @@ class ChatViewModel(
                     }
 
                     ChatStreamEvent.Completed -> {
-                        val finalContent = stripThinkTags(rawStreamContent.remove(assistantMessageId) ?: "")
+                        val raw = rawStreamContent.remove(assistantMessageId) ?: ""
+                        val finalContent = stripThinkTags(raw)
+                        val finalThinking = extractThinking(raw)
                         streamInvocationIds.remove(assistantMessageId)
                         val chatState = if (hasToolCalling) ChatState.CHAT_TOOL_CALLING else ChatState.CHAT_SIMPLE
                         updateAssistantMessage(assistantMessageId, chatState, ChatSessionState.IDLE) { msg ->
                             msg.copy(
                                 content = finalContent.ifBlank { "我已经收到你的问题，但暂时没有生成内容。请再试一次。" },
+                                thinking = finalThinking,
                                 deliveryState = MessageDeliveryState.COMPLETED,
                                 toolCalls = toolCallStatus.toToolCallListOrNull(),
                                 errorMessage = null,
@@ -605,8 +638,17 @@ class ChatViewModel(
         return result.trimStart()
     }
 
-    private fun LinkedHashMap<String, Boolean>.toToolCallListOrNull(): List<ToolCall>? {
+    /** 提取 <think>...</think> 内的思考过程文本（含流式未闭合段），无则返回 null。 */
+    private fun extractThinking(text: String): String? {
+        val parts = mutableListOf<String>()
+        thinkContentRegex.findAll(text).forEach { parts.add(it.groupValues[1].trim()) }
+        val withoutComplete = text.replace(completeThinkTagRegex, "")
+        unclosedThinkContentRegex.find(withoutComplete)?.let { parts.add(it.groupValues[1].trim()) }
+        return parts.filter { it.isNotBlank() }.joinToString("\n\n").ifBlank { null }
+    }
+
+    private fun LinkedHashMap<String, ToolCall>.toToolCallListOrNull(): List<ToolCall>? {
         if (isEmpty()) return null
-        return entries.map { (label, isComplete) -> ToolCall(label = label, isComplete = isComplete) }
+        return values.toList()
     }
 }

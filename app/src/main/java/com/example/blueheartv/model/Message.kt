@@ -13,6 +13,7 @@ data class Message(
     val isUser: Boolean,
     val deliveryState: MessageDeliveryState = MessageDeliveryState.COMPLETED,
     val toolCalls: List<ToolCall>? = null,
+    val thinking: String? = null,
     val errorMessage: String? = null,
 ) {
     val isLoading: Boolean
@@ -27,10 +28,22 @@ data class ChatAttachment(
     val base64Data: String,
 )
 
+enum class ToolCallStatus {
+    RUNNING,
+    COMPLETED,
+    FAILED,
+}
+
 data class ToolCall(
     val label: String,
-    val isComplete: Boolean = false,
-)
+    val status: ToolCallStatus = ToolCallStatus.RUNNING,
+    val args: String? = null,
+    val result: String? = null,
+    val error: String? = null,
+) {
+    val isComplete: Boolean
+        get() = status != ToolCallStatus.RUNNING
+}
 
 data class ChatHistory(
     val id: String,
