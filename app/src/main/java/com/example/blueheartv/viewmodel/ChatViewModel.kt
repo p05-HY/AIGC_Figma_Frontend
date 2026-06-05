@@ -34,6 +34,24 @@ enum class ChatSessionState {
     ERROR,
 }
 
+enum class TaskComplexityLevel {
+    SIMPLE,
+    COMPLEX,
+    UNKNOWN,
+}
+
+data class TaskComplexityEvent(
+    val complexity: TaskComplexityLevel,
+    val trackSteps: Boolean,
+    val reason: String,
+    val message: String? = null,
+)
+
+data class TaskCompletionEvent(
+    val complexity: TaskComplexityLevel,
+    val success: Boolean,
+)
+
 data class HomeUiState(
     val chatState: ChatState = ChatState.DEFAULT,
     val sessionState: ChatSessionState = ChatSessionState.IDLE,
@@ -64,6 +82,12 @@ class ChatViewModel(
 
     private val _messageSentEvent = MutableSharedFlow<String>(extraBufferCapacity = 1)
     val messageSentEvent: SharedFlow<String> = _messageSentEvent.asSharedFlow()
+
+    private val _taskComplexityEvent = MutableSharedFlow<TaskComplexityEvent>(extraBufferCapacity = 1)
+    val taskComplexityEvent: SharedFlow<TaskComplexityEvent> = _taskComplexityEvent.asSharedFlow()
+
+    private val _taskCompletionEvent = MutableSharedFlow<TaskCompletionEvent>(extraBufferCapacity = 1)
+    val taskCompletionEvent: SharedFlow<TaskCompletionEvent> = _taskCompletionEvent.asSharedFlow()
 
     private val _navigateToSettings = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val navigateToSettings: SharedFlow<Unit> = _navigateToSettings.asSharedFlow()
@@ -347,10 +371,62 @@ class ChatViewModel(
     ) {
         val toolCallStatus = linkedMapOf<String, ToolCall>()
         var hasToolCalling = false
+        var taskComplexity = TaskComplexityLevel.UNKNOWN
 
         try {
             chatProvider.streamReply(threadId, prompt) { event ->
                 when (event) {
+                    is ChatStreamEvent.TaskComplexity -> {
+                        taskComplexity = when (event.complexity.lowercase()) {
+                            "complex" -> TaskComplexityLevel.COMPLEX
+                            "simple" -> TaskComplexityLevel.SIMPLE
+                            else -> TaskComplexityLevel.UNKNOWN
+                        }
+                        _taskComplexityEvent.tryEmit(
+                            TaskComplexityEvent(
+                                complexity = taskComplexity,
+                                trackSteps = event.trackSteps,
+                                reason = event.reason,
+                                message = event.message,
+                            )
+                        )
+                    }
+
+                    is ChatStreamEvent.TaskProgress -> {
+                        hasToolCalling = true
+                        val key = event.progressKey
+                            ?: event.toolName
+                            ?: event.label
+                        toolCallStatus[key] = ToolCall(
+                            label = event.label,
+                            status = event.status.toToolCallStatus(),
+                            error = event.error,
+                            phase = event.phase,
+                            message = event.message,
+                            toolName = event.toolName,
+                            progressKey = event.progressKey,
+                            currentStep = event.currentStep,
+                            totalSteps = event.totalSteps,
+                            completedSteps = event.completedSteps.map {
+                                ToolProgressStep(
+                                    index = it.index,
+                                    name = it.name,
+                                    status = it.status,
+                                )
+                            },
+                        )
+                        updateAssistantMessage(
+                            assistantMessageId,
+                            ChatState.CHAT_TOOL_CALLING,
+                            ChatSessionState.RESPONDING,
+                        ) { msg ->
+                            msg.copy(
+                                deliveryState = MessageDeliveryState.STREAMING,
+                                toolCalls = toolCallStatus.toToolCallListOrNull(),
+                            )
+                        }
+                    }
+
                     is ChatStreamEvent.ToolCallStarted -> {
                         hasToolCalling = true
                         val existing = toolCallStatus[event.label]
@@ -447,6 +523,12 @@ class ChatViewModel(
                             )
                         }
                         _uiState.update { it.copy(lastError = null, canRetry = false) }
+                        _taskCompletionEvent.tryEmit(
+                            TaskCompletionEvent(
+                                complexity = taskComplexity,
+                                success = true,
+                            )
+                        )
                     }
 
                     is ChatStreamEvent.Error -> {
@@ -460,6 +542,12 @@ class ChatViewModel(
                             event.retryable,
                             chatState,
                             toolCallStatus.toToolCallListOrNull(),
+                        )
+                        _taskCompletionEvent.tryEmit(
+                            TaskCompletionEvent(
+                                complexity = taskComplexity,
+                                success = false,
+                            )
                         )
                     }
                 }
@@ -480,6 +568,12 @@ class ChatViewModel(
                 true,
                 chatState,
                 toolCallStatus.toToolCallListOrNull(),
+            )
+            _taskCompletionEvent.tryEmit(
+                TaskCompletionEvent(
+                    complexity = taskComplexity,
+                    success = false,
+                )
             )
         }
     }
@@ -650,5 +744,13 @@ class ChatViewModel(
     private fun LinkedHashMap<String, ToolCall>.toToolCallListOrNull(): List<ToolCall>? {
         if (isEmpty()) return null
         return values.toList()
+    }
+
+    private fun String.toToolCallStatus(): ToolCallStatus {
+        return when (lowercase()) {
+            "completed", "done", "end" -> ToolCallStatus.COMPLETED
+            "failed", "error" -> ToolCallStatus.FAILED
+            else -> ToolCallStatus.RUNNING
+        }
     }
 }

@@ -4,6 +4,7 @@ import com.example.blueheartv.model.Message
 import com.example.blueheartv.model.MessageDeliveryState
 import com.example.blueheartv.model.ToolCall
 import com.example.blueheartv.model.ToolCallStatus
+import com.example.blueheartv.model.ToolProgressStep
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -49,6 +50,13 @@ private fun parseToolCalls(json: String): List<ToolCall>? {
                         args = obj.optString("args").takeIf { it.isNotBlank() },
                         result = obj.optString("result").takeIf { it.isNotBlank() },
                         error = obj.optString("error").takeIf { it.isNotBlank() },
+                        phase = obj.optString("phase").takeIf { it.isNotBlank() },
+                        message = obj.optString("message").takeIf { it.isNotBlank() },
+                        toolName = obj.optString("toolName").takeIf { it.isNotBlank() },
+                        progressKey = obj.optString("progressKey").takeIf { it.isNotBlank() },
+                        currentStep = obj.optionalInt("currentStep"),
+                        totalSteps = obj.optionalInt("totalSteps"),
+                        completedSteps = obj.optJSONArray("completedSteps").parseProgressSteps(),
                     ),
                 )
             }
@@ -65,7 +73,49 @@ private fun serializeToolCalls(toolCalls: List<ToolCall>): String {
                 tc.args?.let { put("args", it) }
                 tc.result?.let { put("result", it) }
                 tc.error?.let { put("error", it) }
+                tc.phase?.let { put("phase", it) }
+                tc.message?.let { put("message", it) }
+                tc.toolName?.let { put("toolName", it) }
+                tc.progressKey?.let { put("progressKey", it) }
+                tc.currentStep?.let { put("currentStep", it) }
+                tc.totalSteps?.let { put("totalSteps", it) }
+                if (tc.completedSteps.isNotEmpty()) {
+                    put(
+                        "completedSteps",
+                        JSONArray().apply {
+                            tc.completedSteps.forEach { step ->
+                                put(JSONObject().apply {
+                                    step.index?.let { put("index", it) }
+                                    put("name", step.name)
+                                    put("status", step.status)
+                                })
+                            }
+                        },
+                    )
+                }
             })
         }
     }.toString()
+}
+
+private fun JSONObject.optionalInt(key: String): Int? {
+    if (!has(key) || isNull(key)) return null
+    return optInt(key)
+}
+
+private fun JSONArray?.parseProgressSteps(): List<ToolProgressStep> {
+    if (this == null || length() == 0) return emptyList()
+    return buildList {
+        for (i in 0 until length()) {
+            val obj = optJSONObject(i) ?: continue
+            val name = obj.optString("name").takeIf { it.isNotBlank() } ?: continue
+            add(
+                ToolProgressStep(
+                    index = obj.optionalInt("index"),
+                    name = name,
+                    status = obj.optString("status").ifBlank { "completed" },
+                ),
+            )
+        }
+    }
 }

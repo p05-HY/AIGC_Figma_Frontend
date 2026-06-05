@@ -21,6 +21,32 @@ sealed interface ChatStreamEvent {
         val invocationId: String? = null,
     ) : ChatStreamEvent
 
+    data class TaskComplexity(
+        val complexity: String,
+        val trackSteps: Boolean,
+        val reason: String,
+        val message: String? = null,
+    ) : ChatStreamEvent
+
+    data class TaskProgress(
+        val label: String,
+        val status: String,
+        val phase: String,
+        val message: String? = null,
+        val toolName: String? = null,
+        val progressKey: String? = null,
+        val currentStep: Int? = null,
+        val totalSteps: Int? = null,
+        val completedSteps: List<TaskProgressStep> = emptyList(),
+        val error: String? = null,
+    ) : ChatStreamEvent
+
+    data class TaskProgressStep(
+        val index: Int?,
+        val name: String,
+        val status: String,
+    )
+
     data object Completed : ChatStreamEvent
 
     data class Error(

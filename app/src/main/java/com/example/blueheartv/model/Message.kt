@@ -40,10 +40,23 @@ data class ToolCall(
     val args: String? = null,
     val result: String? = null,
     val error: String? = null,
+    val phase: String? = null,
+    val message: String? = null,
+    val toolName: String? = null,
+    val progressKey: String? = null,
+    val currentStep: Int? = null,
+    val totalSteps: Int? = null,
+    val completedSteps: List<ToolProgressStep> = emptyList(),
 ) {
     val isComplete: Boolean
         get() = status != ToolCallStatus.RUNNING
 }
+
+data class ToolProgressStep(
+    val index: Int?,
+    val name: String,
+    val status: String,
+)
 
 data class ChatHistory(
     val id: String,

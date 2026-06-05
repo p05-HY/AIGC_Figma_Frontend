@@ -24,6 +24,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.blueheartv.chat.AgentServerStatusClient
+import com.example.blueheartv.chat.AgentServerStatusSnapshot
 import com.example.blueheartv.chat.AgentServerConfigStore
 import com.example.blueheartv.control.AccessibilityAutoEnabler
 import com.example.blueheartv.control.AdbWebSocketService
@@ -277,9 +279,47 @@ private fun LanguageDetailContent() {
 @Composable
 private fun AgentServerDetailContent() {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val config by AgentServerConfigStore.config.collectAsState()
     var baseUrl by remember(config.baseUrl) { mutableStateOf(config.baseUrl) }
     var apiKey by remember(config.apiKey) { mutableStateOf(config.apiKey) }
+    var status by remember { mutableStateOf<AgentServerStatusSnapshot?>(null) }
+    var loadingStatus by remember { mutableStateOf(false) }
+    var statusError by remember { mutableStateOf<String?>(null) }
+
+    fun refreshStatus() {
+        loadingStatus = true
+        statusError = null
+        scope.launch {
+            runCatching { AgentServerStatusClient().fetchAll() }
+                .onSuccess { status = it }
+                .onFailure { statusError = it.message ?: "状态查询失败" }
+            loadingStatus = false
+        }
+    }
+
+    fun updateNetwork(connected: Boolean) {
+        loadingStatus = true
+        statusError = null
+        scope.launch {
+            val result = runCatching { AgentServerStatusClient().updateNetworkConnected(connected) }
+            val network = result.getOrNull()
+            if (network != null) {
+                val current = status
+                status = if (current != null) current.copy(network = network) else AgentServerStatusClient().fetchAll()
+                ToastUtil.show(if (connected) "网络状态已设为连接" else "网络状态已设为断开", ToastType.SUCCESS)
+            } else {
+                val error = result.exceptionOrNull()
+                statusError = error?.message ?: "网络状态更新失败"
+                ToastUtil.show("网络状态更新失败", ToastType.ERROR)
+            }
+            loadingStatus = false
+        }
+    }
+
+    LaunchedEffect(config.baseUrl, config.apiKey) {
+        if (config.isConfigured) refreshStatus()
+    }
 
     Column(modifier = Modifier.padding(horizontal = 16.dp)) {
         DetailCard {
@@ -307,11 +347,127 @@ private fun AgentServerDetailContent() {
                         AdbWebSocketService.start(context)
                         SystemService.start(context, baseUrl)
                         ToastUtil.show("Agent 服务配置已保存", ToastType.SUCCESS)
+                        refreshStatus()
                     },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text("保存并连接")
                 }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        DetailCard {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "服务状态",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = DarkPrimary,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(
+                        onClick = { refreshStatus() },
+                        enabled = config.isConfigured && !loadingStatus,
+                    ) {
+                        Text(if (loadingStatus) "查询中" else "刷新")
+                    }
+                }
+                statusError?.let {
+                    Text(text = it, fontSize = 13.sp, color = Color(0xFFE53935))
+                }
+                val snapshot = status
+                if (!config.isConfigured) {
+                    Text(text = "请先配置 Agent Server 地址", fontSize = 13.sp, color = MutedText)
+                } else if (snapshot == null && loadingStatus) {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                } else if (snapshot != null) {
+                    StatusSection(
+                        title = "ADB",
+                        connected = snapshot.adb.connected,
+                        rows = listOfNotNull(
+                            snapshot.adb.width?.let { width ->
+                                val height = snapshot.adb.height
+                                "分辨率" to if (height != null) "${width}x$height" else width.toString()
+                            },
+                            snapshot.adb.currentPackage?.let { "当前应用" to it },
+                            snapshot.adb.activity?.let { "Activity" to it },
+                            snapshot.adb.error?.let { "错误" to it },
+                        ),
+                    )
+                    StatusSection(
+                        title = "System",
+                        connected = snapshot.system.connected,
+                        rows = listOfNotNull(
+                            snapshot.system.path?.let { "路径" to it },
+                            snapshot.system.remoteAddress?.let { "远端地址" to it },
+                            snapshot.system.error?.let { "错误" to it },
+                        ),
+                    )
+                    StatusSection(
+                        title = "Network",
+                        connected = snapshot.network.networkConnected == true,
+                        rows = listOfNotNull(
+                            snapshot.network.mode?.let { "模式" to it },
+                            snapshot.network.localServerRunning?.let { "本地服务" to if (it) "运行中" else "未运行" },
+                            snapshot.network.localBaseUrl?.let { "本地地址" to it },
+                            snapshot.network.localModelName?.let { "本地模型" to it },
+                            snapshot.network.localModelPath?.let { "模型路径" to it },
+                            snapshot.network.lastError?.takeIf { it.isNotBlank() }?.let { "最近错误" to it },
+                            snapshot.network.error?.let { "错误" to it },
+                        ),
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = { updateNetwork(true) },
+                            enabled = !loadingStatus,
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Text("设为连接")
+                        }
+                        OutlinedButton(
+                            onClick = { updateNetwork(false) },
+                            enabled = !loadingStatus,
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Text("设为断开")
+                        }
+                    }
+                } else {
+                    Text(text = "暂无状态数据", fontSize = 13.sp, color = MutedText)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatusSection(
+    title: String,
+    connected: Boolean,
+    rows: List<Pair<String, String>>,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .background(if (connected) Color(0xFF22C55E) else Color(0xFFEF4444), CircleShape),
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(text = title, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = DarkPrimary)
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(text = if (connected) "已连接" else "未连接", fontSize = 12.sp, color = MutedText)
+        }
+        rows.forEach { (label, value) ->
+            Row(modifier = Modifier.fillMaxWidth()) {
+                Text(text = label, fontSize = 12.sp, color = MutedText, modifier = Modifier.width(72.dp))
+                Text(text = value, fontSize = 12.sp, color = TextDarkAlt, modifier = Modifier.weight(1f))
             }
         }
     }

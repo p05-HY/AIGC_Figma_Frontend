@@ -255,11 +255,51 @@ class AgentServerClient(
 
             eventName.contains("custom", ignoreCase = true) -> {
                 val obj = json as? JSONObject ?: return true
+                when (obj.optString("type")) {
+                    "task_complexity" -> {
+                        onEvent(
+                            ChatStreamEvent.TaskComplexity(
+                                complexity = obj.optString("complexity").ifBlank { "simple" },
+                                trackSteps = obj.optBoolean("trackSteps", false),
+                                reason = obj.optString("reason"),
+                                message = obj.optString("message").ifBlank { null },
+                            )
+                        )
+                        return true
+                    }
+
+                    "task_progress" -> {
+                        val label = obj.optString("label")
+                            .ifBlank { obj.optString("toolName") }
+                            .ifBlank { obj.optString("progressKey") }
+                            .ifBlank { return true }
+                        onEvent(
+                            ChatStreamEvent.TaskProgress(
+                                label = label,
+                                status = obj.optString("status").ifBlank { "running" },
+                                phase = obj.optString("phase").ifBlank { "agent" },
+                                message = obj.optString("message").ifBlank { null },
+                                toolName = obj.optString("toolName").ifBlank { null },
+                                progressKey = obj.optString("progressKey").ifBlank { null },
+                                currentStep = obj.optionalInt("currentStep"),
+                                totalSteps = obj.optionalInt("totalSteps"),
+                                completedSteps = obj.optJSONArray("completedSteps").toProgressSteps(),
+                                error = obj.optString("error").ifBlank { null },
+                            )
+                        )
+                        return true
+                    }
+                }
                 val label = obj.optString("label").ifBlank { obj.optString("node") }.ifBlank { return true }
                 when (obj.optString("status")) {
                     "completed", "done", "end" -> {
                         activeNodes.remove(label)
                         onEvent(ChatStreamEvent.ToolCallCompleted(label))
+                    }
+
+                    "failed", "error" -> {
+                        activeNodes.remove(label)
+                        onEvent(ChatStreamEvent.ToolCallFailed(label, obj.optString("error").ifBlank { null }))
                     }
 
                     else -> markNodeActive(label, activeNodes, onEvent)
@@ -330,6 +370,28 @@ class AgentServerClient(
             .ifBlank { obj.optString("name") }
             .ifBlank { obj.optJSONObject("metadata")?.optString("langgraph_node").orEmpty() }
             .ifBlank { null }
+    }
+
+    private fun JSONObject.optionalInt(key: String): Int? {
+        if (!has(key) || isNull(key)) return null
+        return optInt(key)
+    }
+
+    private fun JSONArray?.toProgressSteps(): List<ChatStreamEvent.TaskProgressStep> {
+        if (this == null || length() == 0) return emptyList()
+        val steps = mutableListOf<ChatStreamEvent.TaskProgressStep>()
+        for (i in 0 until length()) {
+            val obj = optJSONObject(i) ?: continue
+            val name = obj.optString("name")
+                .ifBlank { obj.optString("label") }
+                .ifBlank { continue }
+            steps += ChatStreamEvent.TaskProgressStep(
+                index = obj.optionalInt("index"),
+                name = name,
+                status = obj.optString("status").ifBlank { "completed" },
+            )
+        }
+        return steps
     }
 
     private data class ToolResult(

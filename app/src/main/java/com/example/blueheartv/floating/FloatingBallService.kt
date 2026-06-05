@@ -20,11 +20,11 @@ import com.example.blueheartv.util.ToastType
 import com.example.blueheartv.util.ToastUtil
 import com.example.blueheartv.util.toImageAttachment
 import com.example.blueheartv.viewmodel.ChatViewModel
+import com.example.blueheartv.viewmodel.TaskComplexityLevel
 import com.example.blueheartv.voice.SpeechRecognizerCallback
 import com.example.blueheartv.voice.SpeechRecognizerManager
 import com.example.blueheartv.voice.VoiceRecordingState
 import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.collectLatest
 import org.koin.java.KoinJavaComponent.get
 
 enum class FloatingState {
@@ -67,6 +67,8 @@ class FloatingBallService : Service() {
 
     private var currentState: FloatingState = FloatingState.STATE0
     private var state2ListenerJob: Job? = null
+    private var complexityListenerJob: Job? = null
+    private var completionListenerJob: Job? = null
     private var speechManager: SpeechRecognizerManager? = null
     private var isLongPressRecording = false
 
@@ -94,6 +96,7 @@ class FloatingBallService : Service() {
         ballView?.attach()
 
         collectHelperResults()
+        collectTaskState()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -260,10 +263,12 @@ class FloatingBallService : Service() {
             windowManager = windowManager,
             onClose = {
                 chatWindow = null
-                ballView?.setVisible(true)
-                state2ListenerJob?.cancel()
-                state2ListenerJob = null
-                currentState = FloatingState.STATE0
+                if (currentState == FloatingState.STATE2) {
+                    ballView?.setVisible(true)
+                    state2ListenerJob?.cancel()
+                    state2ListenerJob = null
+                    currentState = FloatingState.STATE0
+                }
             },
             onExpandToFull = { sessionId -> openMainActivity(sessionId) },
             onAttachClick = { handleFloatingAttach() },
@@ -291,19 +296,9 @@ class FloatingBallService : Service() {
         state2ListenerJob?.cancel()
         val chatViewModel: ChatViewModel = get(ChatViewModel::class.java)
         state2ListenerJob = serviceScope.launch {
-            chatViewModel.messageSentEvent.collectLatest { input ->
-                if (currentState != FloatingState.STATE2) return@collectLatest
-                val type = classifyTask(input)
-                mainHandler.post {
-                    if (currentState != FloatingState.STATE2) return@post
-                    when (type) {
-                        "simple" -> { /* stay in state2 */ }
-                        "complex" -> {
-                            transitionToState3()
-                            simulateComplexTask()
-                        }
-                    }
-                }
+            chatViewModel.messageSentEvent.collect {
+                if (currentState != FloatingState.STATE2) return@collect
+                // Real task complexity is emitted by the backend stream; keep state2 until that arrives.
             }
         }
     }
@@ -316,26 +311,44 @@ class FloatingBallService : Service() {
         chatViewModel.onInputChanged(input)
         chatViewModel.sendMessage()
 
-        serviceScope.launch {
-            val type = classifyTask(input)
+        mainHandler.post {
+            bubbleInput?.setLoading(false)
+        }
+    }
 
-            mainHandler.post {
-                bubbleInput?.setLoading(false)
-                when (type) {
-                    "simple" -> transitionToState2()
-                    "complex" -> {
-                        transitionToState3()
-                        simulateComplexTask()
+    private fun collectTaskState() {
+        val chatViewModel: ChatViewModel = get(ChatViewModel::class.java)
+        complexityListenerJob = serviceScope.launch {
+            chatViewModel.taskComplexityEvent.collect { event ->
+                mainHandler.post {
+                    when (event.complexity) {
+                        TaskComplexityLevel.COMPLEX -> {
+                            if (currentState == FloatingState.STATE1 || currentState == FloatingState.STATE2) {
+                                transitionToState3()
+                            }
+                        }
+
+                        TaskComplexityLevel.SIMPLE,
+                        TaskComplexityLevel.UNKNOWN -> {
+                            if (currentState == FloatingState.STATE1) {
+                                transitionToState2()
+                            }
+                        }
                     }
                 }
             }
         }
-    }
-
-    private fun simulateComplexTask() {
-        serviceScope.launch {
-            delay(2000)
-            mainHandler.post { onComplexTaskCompleted() }
+        completionListenerJob = serviceScope.launch {
+            chatViewModel.taskCompletionEvent.collect { event ->
+                mainHandler.post {
+                    when {
+                        currentState == FloatingState.STATE3 -> onComplexTaskCompleted()
+                        currentState == FloatingState.STATE1 && event.complexity != TaskComplexityLevel.COMPLEX -> {
+                            transitionToState2()
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -444,10 +457,4 @@ class FloatingBallService : Service() {
             .addAction(0, "关闭悬浮球", closePending)
             .build()
     }
-}
-
-// Mock — replace with real API call
-private suspend fun classifyTask(input: String): String {
-    delay(500)
-    return if (input.length > 10) "complex" else "simple"
 }

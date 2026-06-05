@@ -470,7 +470,12 @@ private fun ToolCallCard(toolCalls: List<ToolCall>) {
 private fun ToolCallRow(toolCall: ToolCall) {
     val hasDetail = !toolCall.args.isNullOrBlank() ||
         !toolCall.result.isNullOrBlank() ||
-        !toolCall.error.isNullOrBlank()
+        !toolCall.error.isNullOrBlank() ||
+        !toolCall.message.isNullOrBlank() ||
+        !toolCall.phase.isNullOrBlank() ||
+        toolCall.currentStep != null ||
+        toolCall.totalSteps != null ||
+        toolCall.completedSteps.isNotEmpty()
     var expanded by remember { mutableStateOf(false) }
 
     val (dotColor, statusText) = when (toolCall.status) {
@@ -493,7 +498,11 @@ private fun ToolCallRow(toolCall: ToolCall) {
                     .background(dotColor, CircleShape),
             )
             Text(
-                text = toolCall.label,
+                text = buildString {
+                    append(toolCall.label)
+                    val step = formatStep(toolCall)
+                    if (step != null) append("  ").append(step)
+                },
                 fontSize = 13.sp,
                 color = TextDarkAlt,
                 modifier = Modifier.weight(1f),
@@ -517,6 +526,12 @@ private fun ToolCallRow(toolCall: ToolCall) {
                 modifier = Modifier.padding(start = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
+                toolCall.phase?.takeIf { it.isNotBlank() }?.let {
+                    ToolDetailField(label = "阶段", value = it, valueColor = TextDarkAlt)
+                }
+                toolCall.message?.takeIf { it.isNotBlank() }?.let {
+                    ToolDetailField(label = "说明", value = it, valueColor = TextDarkAlt)
+                }
                 toolCall.args?.takeIf { it.isNotBlank() }?.let {
                     ToolDetailField(label = "入参", value = it, valueColor = TextDarkAlt)
                 }
@@ -526,8 +541,32 @@ private fun ToolCallRow(toolCall: ToolCall) {
                 toolCall.error?.takeIf { it.isNotBlank() }?.let {
                     ToolDetailField(label = "错误", value = it, valueColor = Color(0xFFEF4444))
                 }
+                toolCall.completedSteps.takeIf { it.isNotEmpty() }?.let { steps ->
+                    ToolDetailField(
+                        label = "已完成步骤",
+                        value = steps.joinToString("\n") { step ->
+                            buildString {
+                                step.index?.let { append(it).append(". ") }
+                                append(step.name)
+                                if (step.status.isNotBlank()) append(" - ").append(step.status)
+                            }
+                        },
+                        valueColor = TextDarkAlt,
+                    )
+                }
             }
         }
+    }
+}
+
+private fun formatStep(toolCall: ToolCall): String? {
+    val current = toolCall.currentStep
+    val total = toolCall.totalSteps
+    return when {
+        current != null && total != null -> "($current/$total)"
+        current != null -> "(step $current)"
+        total != null -> "(共 $total 步)"
+        else -> null
     }
 }
 
