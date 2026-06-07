@@ -1,46 +1,46 @@
-# App Frontend Task Audit
+# App 前端任务审计
 
-Scope: Android/Kotlin frontend only. Backend repository is not modified.
+范围：仅包含 Android/Kotlin 前端。后端仓库未修改。
 
-## Task Status
+## 任务完成情况
 
-| # | Task | Frontend status | Evidence / Notes |
+| 序号 | 任务 | 前端状态 | 证据 / 说明 |
 |---|---|---|---|
-| 1 | Unique device UUID generation and persistence | Done, strengthened | `DeviceIdStore` generates and persists `device_id`; `MainActivity` initializes it. HTTP requests, status requests, ADB WebSocket headers, and ADB connect snapshot now also carry `X-Device-Id` / `deviceId`. |
-| 2 | Align frontend API paths with backend paths | Mostly done, backend contract needs confirmation | `ApiPaths` centralizes LangGraph and WebSocket path segments. `AgentServerClient` uses it for `/threads/...` and `/adb/{deviceId}`. `SystemWebSocketClient` now uses `ApiPaths.SYSTEM_WS` and preserves any baseUrl path prefix. Status HTTP paths already include deviceId, but backend route support must be confirmed. |
-| 3 | Screenshot compression and downsampling | Done, strengthened | `AdbSnapshotCollector` downsamples screenshots to max long edge 1280 and compresses as WebP/PNG. Snapshot JSON now includes `screenshotMimeType` so the backend/model can decode the compressed image correctly. |
-| 4 | Scale factor maintenance and coordinate restoration | Done | `AdbSnapshotCollector` updates `ScreenScaleState`; `AdbWebSocketService` converts `tap`, `swipe`, `longPress`, and `doubleTap` model coordinates back to real device pixels before shell execution. |
-| 5 | Floating ball states and transition animations | Done | `FloatingBallService` has ball/input bubble/chat window/complex-task states. `FloatingBallView`, `FloatingBubbleInput`, `FloatingChatWindow`, and `FloatingBubbleNotification` implement fade/scale/snap animations. |
-| 6 | Echo icon transparent background | Done | `ic_echo_face.png` and `ic_avatar_brand.png` have alpha channels. Launcher foreground `ic_echo_face_inset.xml` now references `ic_echo_face` instead of the non-alpha `appicon.png`. |
-| 7 | Dialogue and tool-call integration | Done from frontend side | `AgentServerClient` parses SSE `messages`, `updates`, `tasks`, and `custom/task_progress`; `ChatViewModel` maps tool progress into `ToolCall`; `ChatBubble` renders tool status/details. |
-| 8 | Frontend output optimization for collapsible/embedded tool chain | Done from frontend side | `ChatBubble` shows thinking content and collapsible tool-call detail rows with args/result/error/progress steps, keeping the result embedded in the chat stream. |
+| 1 | 唯一设备标识（UUID）生成与持久化 | 已完成，并已补强 | `DeviceIdStore` 会生成并持久化 `device_id`，`MainActivity` 启动时初始化。现在普通 HTTP 请求、状态查询、ADB WebSocket、System WebSocket、ADB connect 快照都会携带 `X-Device-Id` / `deviceId`。 |
+| 2 | 配合后端接口路径修改 | 前端基本完成，后端契约仍需确认 | `ApiPaths` 已集中维护 LangGraph 和 WebSocket 路径片段。`AgentServerClient` 已用于 `/threads/...` 和 `/adb/{deviceId}`。`SystemWebSocketClient` 已改为使用 `ApiPaths.SYSTEM_WS`，并保留 baseUrl 自带路径前缀。状态查询 HTTP 路径已经包含 deviceId，但后端是否支持这些路径仍需确认。 |
+| 3 | 图片压缩与降采样 | 已完成，并已补强 | `AdbSnapshotCollector` 会把截图降采样到长边不超过 1280，并压缩为 WebP/PNG。快照 JSON 现在新增 `screenshotMimeType`，方便后端/模型按正确图片格式解析。 |
+| 4 | 缩放系数维护与坐标还原 | 已完成 | `AdbSnapshotCollector` 会更新 `ScreenScaleState`；`AdbWebSocketService` 在执行 `tap`、`swipe`、`longPress`、`doubleTap` 前，会把模型坐标还原到真实设备像素。 |
+| 5 | 悬浮球三个状态切换 + 过渡动画 | 已完成 | `FloatingBallService` 实现了球态、输入气泡、小窗、复杂任务等待/完成提示等状态。`FloatingBallView`、`FloatingBubbleInput`、`FloatingChatWindow`、`FloatingBubbleNotification` 实现了淡入、缩放、吸边等动画。 |
+| 6 | 图标透明底处理 | 已完成 | `ic_echo_face.png` 和 `ic_avatar_brand.png` 均带 alpha 通道。launcher foreground 的 `ic_echo_face_inset.xml` 已改为引用 `ic_echo_face`，不再引用非透明的 `appicon.png`。 |
+| 7 | 对话与工具调用对接 | 前端侧已完成 | `AgentServerClient` 会解析 SSE 的 `messages`、`updates`、`tasks`、`custom/task_progress`；`ChatViewModel` 会把工具进度映射为 `ToolCall`；`ChatBubble` 会渲染工具状态和详情。 |
+| 8 | 前端输出优化（折叠/嵌入工具链） | 前端侧已完成 | `ChatBubble` 会展示思考内容和可折叠工具调用详情，包括阶段、说明、入参、出参、错误和步骤进度，并保持结果嵌入在对话流中。 |
 
-## Frontend Changes Made
+## 本次前端改动
 
-- Added `screenshotMimeType` and `deviceId` to ADB snapshot JSON.
-- Added `X-Device-Id` to Agent Server HTTP requests, status HTTP requests, ADB WebSocket, and System WebSocket.
-- Added `deviceId` and legacy-compatible `token` to ADB connect payload.
-- Made System WebSocket path construction preserve baseUrl path prefixes.
-- Switched launcher foreground inset to the transparent Echo icon resource.
+- ADB 快照 JSON 增加 `screenshotMimeType` 和 `deviceId`。
+- Agent Server 普通 HTTP 请求、状态查询 HTTP 请求、ADB WebSocket、System WebSocket 增加 `X-Device-Id`。
+- ADB connect payload 增加 `deviceId`，并兼容旧协议冗余携带 `token`。
+- System WebSocket 路径构造现在会保留 baseUrl 中已有的路径前缀。
+- launcher foreground 改为使用透明 Echo 图标资源。
 
-## Backend Follow-Up, Not Modified
+## 后端后续事项（本次未修改）
 
-These are backend contract risks found while reading both sides:
+以下是读前后端代码时发现的后端契约风险：
 
-1. Frontend defaults to `/adb/{deviceId}` and `/system/{deviceId}`. If backend only registers `/adb` and `/system`, WebSocket connection will fail unless `DEVICE_ID_IN_PATH=false` is set in `local.properties`.
-2. Frontend status client calls `/adb/{deviceId}/status`, `/system/{deviceId}/status`, and `/network/{deviceId}/status`. Backend must confirm these routes or frontend needs a temporary compatibility fallback.
-3. Frontend screenshots can be WebP. Backend/model injection should use the new `screenshotMimeType` field, or infer the MIME type from bytes, instead of assuming PNG.
+1. 前端默认连接 `/adb/{deviceId}` 和 `/system/{deviceId}`。如果后端当前只注册了 `/adb` 和 `/system`，WebSocket 会连接失败；临时联调可以在 `local.properties` 里设置 `DEVICE_ID_IN_PATH=false`。
+2. 前端状态查询会请求 `/adb/{deviceId}/status`、`/system/{deviceId}/status`、`/network/{deviceId}/status`。后端需要确认是否支持这些路由；否则前端需要临时兼容旧路由。
+3. 前端截图可能是 WebP。后端向模型注入图片时应使用新的 `screenshotMimeType` 字段，或从图片字节推断 MIME 类型，不能固定按 PNG 处理。
 
-## Manual Device Verification Checklist
+## 真机验证清单
 
-Run these on the real Android/Kotlin development machine:
+在真实 Android/Kotlin 开发机上按下面步骤验证：
 
-1. Start the app once, then restart it. Confirm `device_id` stays stable in `device_identity` SharedPreferences.
-2. Configure Agent Server base URL and start ADB/System services. Confirm WebSocket URLs are `/adb/{deviceId}` and `/system/{deviceId}` when `DEVICE_ID_IN_PATH=true`.
-3. If backend has not implemented device-id routes yet, set `DEVICE_ID_IN_PATH=false` in `local.properties` and confirm WebSocket URLs fall back to `/adb` and `/system`.
-4. Trigger an `observe` command. Confirm the ADB connect/action JSON contains `deviceId`, `screenshot`, and `screenshotMimeType`.
-5. On a high-resolution device, trigger observe and confirm the reported connect `width`/`height` match the downsampled screenshot dimensions, not the original screen dimensions.
-6. Ask the agent to tap a visible target near screen center. Confirm the real tap lands correctly after `ScreenScaleState` coordinate restoration.
-7. Open floating ball and exercise single tap, double tap, complex-task waiting, and completion notification transitions.
-8. Check launcher and in-app Echo icons against dark/light backgrounds; the Echo face should not show an opaque square background.
-9. Trigger a backend tool call and confirm the chat bubble shows running/completed/failed status, expandable details, and embedded result without leaving the conversation flow.
+1. 首次启动 App 后退出再重启，确认 `device_identity` SharedPreferences 里的 `device_id` 保持稳定。
+2. 配置 Agent Server 地址并启动 ADB/System 服务。`DEVICE_ID_IN_PATH=true` 时，确认 WebSocket URL 为 `/adb/{deviceId}` 和 `/system/{deviceId}`。
+3. 如果后端暂未实现 deviceId 路由，在 `local.properties` 设置 `DEVICE_ID_IN_PATH=false`，确认 WebSocket URL 回退为 `/adb` 和 `/system`。
+4. 触发一次 `observe`，确认 ADB connect/action JSON 包含 `deviceId`、`screenshot`、`screenshotMimeType`。
+5. 在高分辨率设备上触发 observe，确认 connect 上报的 `width`/`height` 是降采样后的截图尺寸，而不是原始屏幕尺寸。
+6. 让 Agent 点击屏幕中心附近的可见目标，确认经过 `ScreenScaleState` 坐标还原后，真实点击位置准确。
+7. 打开悬浮球，分别验证单击、双击、复杂任务等待、任务完成提示等状态切换。
+8. 在深色/浅色背景下检查 launcher 和 App 内 Echo 图标，确认没有不透明方形底。
+9. 触发一次后端工具调用，确认对话气泡中能展示运行中、成功、失败状态，可展开详情，并且结果仍嵌入对话流。
