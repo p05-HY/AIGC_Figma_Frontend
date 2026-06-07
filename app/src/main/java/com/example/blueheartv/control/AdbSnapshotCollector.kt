@@ -6,6 +6,7 @@ import android.graphics.BitmapFactory
 import android.os.Build
 import android.util.Base64
 import android.util.Log
+import com.example.blueheartv.chat.DeviceIdStore
 import java.io.ByteArrayOutputStream
 import java.io.File
 
@@ -29,20 +30,22 @@ class AdbSnapshotCollector(
 ) {
 
     suspend fun collect(): AdbSnapshot {
-        val screenshot = captureScreenshotBase64()
+        val screenshot = captureScreenshot()
 
         val ui = AdbAccessibilityService.dumpUiTree()
         val topActivity = resolveTopActivity()
 
         return AdbSnapshot(
-            screenshot = screenshot,
+            screenshot = screenshot?.base64,
+            screenshotMimeType = screenshot?.mimeType,
             ui = ui,
             currentPackage = AdbAccessibilityService.currentPackageName() ?: topActivity.first,
-            activity = AdbAccessibilityService.currentActivityName() ?: topActivity.second
+            activity = AdbAccessibilityService.currentActivityName() ?: topActivity.second,
+            deviceId = DeviceIdStore.deviceId(),
         )
     }
 
-    private suspend fun captureScreenshotBase64(): String? {
+    private suspend fun captureScreenshot(): CompressedScreenshot? {
         return runCatching {
             // shell 用户可写的临时目录
             val tempFilePath = "/data/local/tmp/screenshot_${System.currentTimeMillis()}.png"
@@ -64,7 +67,7 @@ class AdbSnapshotCollector(
             file.delete()
 
             // 降采样 + 压缩，同时更新缩放还原系数（唯一可信源）
-            downsampleToBase64(bytes)
+            downsample(bytes)
         }.onFailure { error ->
             Log.w(TAG, "capture screenshot failed: ${error.message}", error)
         }.getOrNull()
@@ -74,7 +77,7 @@ class AdbSnapshotCollector(
      * 将原始 PNG 字节降采样到长边 <= [MAX_LONG_EDGE]（等比），压缩为 WebP/PNG 并 Base64。
      * 同时把原始/降采样尺寸写入 [ScreenScaleState]，供坐标还原使用。
      */
-    private fun downsampleToBase64(bytes: ByteArray): String? {
+    private fun downsample(bytes: ByteArray): CompressedScreenshot? {
         // 1. 仅解码边界，获取原始尺寸
         val boundsOptions = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeByteArray(bytes, 0, bytes.size, boundsOptions)
@@ -112,7 +115,8 @@ class AdbSnapshotCollector(
 
         // 5. 压缩为 WebP（或回退 PNG）
         val output = ByteArrayOutputStream()
-        scaled.compress(compressFormat(), WEBP_QUALITY, output)
+        val format = compressFormat()
+        scaled.compress(format, WEBP_QUALITY, output)
         scaled.recycle()
 
         // 6. 更新缩放还原系数（唯一可信源）
@@ -125,7 +129,10 @@ class AdbSnapshotCollector(
             )
         )
 
-        return Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP)
+        return CompressedScreenshot(
+            base64 = Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP),
+            mimeType = mimeType(format),
+        )
     }
 
     @Suppress("DEPRECATION")
@@ -133,6 +140,11 @@ class AdbSnapshotCollector(
         !USE_WEBP -> Bitmap.CompressFormat.PNG
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> Bitmap.CompressFormat.WEBP_LOSSY
         else -> Bitmap.CompressFormat.WEBP
+    }
+
+    private fun mimeType(format: Bitmap.CompressFormat): String = when (format) {
+        Bitmap.CompressFormat.PNG -> "image/png"
+        else -> "image/webp"
     }
 
     /** 计算最大不超过目标尺寸的 2 的幂下采样系数。 */
@@ -164,3 +176,8 @@ class AdbSnapshotCollector(
         return pkg.ifBlank { null } to activity.ifBlank { null }
     }
 }
+
+private data class CompressedScreenshot(
+    val base64: String,
+    val mimeType: String,
+)

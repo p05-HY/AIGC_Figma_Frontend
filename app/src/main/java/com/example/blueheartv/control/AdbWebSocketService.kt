@@ -16,6 +16,7 @@ import androidx.core.app.NotificationCompat
 import com.example.blueheartv.R
 import com.example.blueheartv.chat.AgentServerClient
 import com.example.blueheartv.chat.AgentServerConfigStore
+import com.example.blueheartv.chat.DeviceIdStore
 import com.example.blueheartv.floating.FloatingBallService
 import com.example.blueheartv.system.SystemService
 import kotlinx.coroutines.*
@@ -103,7 +104,10 @@ class AdbWebSocketService : Service() {
         heartbeatJob?.cancel()
         heartbeatJob = null
         webSocket?.close(1000, "reconnect")
-        val request = Request.Builder().url(url).build()
+        val request = Request.Builder()
+            .url(url)
+            .addDeviceIdHeader()
+            .build()
         Log.d(TAG, "connect() opening websocket: $url")
         updateNotification("ADB 连接中: $url")
         webSocket = client.newWebSocket(request, listener)
@@ -176,7 +180,12 @@ class AdbWebSocketService : Service() {
             snapshot.put("width", display.first)
             snapshot.put("height", display.second)
         }
-        // deviceId 不再通过 connect.token 携带；设备区分由 WebSocket 路径段 /adb/{deviceId} 承载（见 adbWebSocketUrl）。
+        DeviceIdStore.deviceId()?.trim()?.takeIf { it.isNotBlank() }?.let { deviceId ->
+            snapshot.put("deviceId", deviceId)
+            snapshot.put("token", deviceId)
+        }
+        // deviceId 主要由 WebSocket 路径段 /adb/{deviceId} 和 X-Device-Id 承载；
+        // connect data 冗余携带 deviceId/token，便于后端平滑兼容旧协议或调试。
         send(
             JSONObject()
                 .put("type", "request")
@@ -310,9 +319,11 @@ class AdbWebSocketService : Service() {
             .getOrElse {
                 JSONObject()
                     .put("screenshot", JSONObject.NULL)
+                    .put("screenshotMimeType", JSONObject.NULL)
                     .put("ui", AdbAccessibilityService.dumpUiTree() ?: JSONObject.NULL)
                     .put("currentPackage", AdbAccessibilityService.currentPackageName() ?: JSONObject.NULL)
                     .put("activity", AdbAccessibilityService.currentActivityName() ?: JSONObject.NULL)
+                    .put("deviceId", DeviceIdStore.deviceId() ?: JSONObject.NULL)
             }
     }
 
@@ -394,4 +405,11 @@ private fun JSONObject?.requiredString(key: String): String {
 private fun JSONObject?.requiredInt(key: String): Int {
     require(this != null && has(key) && !isNull(key)) { "$key 缺失。" }
     return getInt(key)
+}
+
+private fun Request.Builder.addDeviceIdHeader(): Request.Builder {
+    DeviceIdStore.deviceId()?.trim()?.takeIf { it.isNotBlank() }?.let {
+        addHeader("X-Device-Id", it)
+    }
+    return this
 }

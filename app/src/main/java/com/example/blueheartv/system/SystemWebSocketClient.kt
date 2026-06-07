@@ -1,5 +1,6 @@
 package com.example.blueheartv.system
 
+import com.example.blueheartv.chat.ApiPaths
 import com.example.blueheartv.chat.DeviceIdStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -32,6 +33,7 @@ class SystemWebSocketClient(
         closedByClient = false
         val request = Request.Builder()
             .url(buildSocketRequestUrl())
+            .addDeviceIdHeader()
             .build()
         onStatus("连接中", request.url.toString())
         webSocket = client.newWebSocket(request, listener)
@@ -124,7 +126,7 @@ class SystemWebSocketClient(
         // 协议：deviceId 作为 URL 路径段携带（ws://host/system/{deviceId}），后端据此区分设备。
         // 是否携带由 BuildConfig.DEVICE_ID_IN_PATH 开关控制；关闭或 deviceId 不可用时退化为无参 /system。
         val deviceId = DeviceIdStore.pathSegment()
-        val path = if (deviceId.isBlank()) PROTOCOL_PATH else "$PROTOCOL_PATH/$deviceId"
+        val path = joinPath(httpUrl.encodedPath, ApiPaths.SYSTEM_WS, deviceId)
         return httpUrl.newBuilder()
             .encodedPath(path)
             .build()
@@ -133,7 +135,17 @@ class SystemWebSocketClient(
             .replaceFirst("http://", "ws://")
     }
 
-    private companion object {
-        private const val PROTOCOL_PATH = "/system"
+    private fun joinPath(basePath: String, vararg segments: String): String {
+        val prefix = basePath.trimEnd('/').takeIf { it.isNotEmpty() && it != "/" }.orEmpty()
+        return (listOf(prefix) + segments.map { it.trim('/') })
+            .filter { it.isNotBlank() }
+            .joinToString(prefix = "/", separator = "/")
     }
+}
+
+private fun Request.Builder.addDeviceIdHeader(): Request.Builder {
+    DeviceIdStore.deviceId()?.trim()?.takeIf { it.isNotBlank() }?.let {
+        addHeader("X-Device-Id", it)
+    }
+    return this
 }

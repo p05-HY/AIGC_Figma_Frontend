@@ -643,8 +643,9 @@ class AgentServerClient(
         configProvider().apiKey.takeIf { it.isNotBlank() }?.let {
             builder.addHeader("X-Api-Key", it)
         }
-        // 注意：deviceId 不再通过 HTTP 头携带。LangGraph 标准会话接口（/threads...）不读该头，
-        // 设备区分统一由 WebSocket 路径段 /adb/{deviceId}、/system/{deviceId} 承载。
+        DeviceIdStore.deviceId()?.trim()?.takeIf { it.isNotBlank() }?.let {
+            builder.addHeader("X-Device-Id", it)
+        }
         return builder
     }
 

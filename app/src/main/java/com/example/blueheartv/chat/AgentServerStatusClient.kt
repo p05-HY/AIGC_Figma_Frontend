@@ -168,6 +168,7 @@ class AgentServerStatusClient(
     private fun Request.Builder.addJsonHeaders(): Request.Builder {
         addHeader("Content-Type", "application/json")
         configProvider().apiKey.takeIf { it.isNotBlank() }?.let { addHeader("X-Api-Key", it) }
+        deviceId().takeIf { it.isNotBlank() }?.let { addHeader("X-Device-Id", it) }
         return this
     }
 
