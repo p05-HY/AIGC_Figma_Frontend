@@ -273,16 +273,106 @@ class AdbWebSocketService : Service() {
     }
 
     private suspend fun typeText(text: String) {
-        val escaped = text.replace("'", "\\'")
-        runShell("am broadcast -a ADB_INPUT_TEXT --es msg '$escaped'")
+        if (text.isEmpty()) return
+        val beforeUi = AdbAccessibilityService.dumpUiTree()
+        val diagnostics = mutableListOf<String>()
+
+        if (isAsciiFriendlyInput(text)) {
+            val encoded = encodeForAdbInputText(text)
+            val asciiResult = runShellForResult("input text ${shellQuote(encoded)}")
+            if (asciiResult.isSuccess) {
+                if (verifyTypedText(beforeUi, text)) return
+                diagnostics += "input text 执行成功但未观测到输入结果"
+            } else {
+                diagnostics += asciiResult.stderr.ifBlank { "input text 执行失败" }
+            }
+        }
+
+        ensureAdbKeyboardActive()
+        val broadcastResult = runShellForResult("am broadcast -a ADB_INPUT_TEXT --es msg ${shellQuote(text)}")
+        if (!broadcastResult.isSuccess) {
+            diagnostics += broadcastResult.stderr.ifBlank { "ADB Keyboard 广播执行失败" }
+        } else if (verifyTypedText(beforeUi, text)) {
+            return
+        } else {
+            diagnostics += "ADB Keyboard 广播执行成功但未观测到输入结果"
+        }
+
+        error(diagnostics.joinToString("；").ifBlank { "输入未生效" })
+    }
+
+    private suspend fun ensureAdbKeyboardActive() {
+        val imeResult = runShellForResult("settings get secure default_input_method")
+        if (!imeResult.isSuccess) {
+            error(imeResult.stderr.ifBlank { "无法检查当前输入法。" })
+        }
+        val currentIme = imeResult.stdout.trim()
+        if (!currentIme.contains(ADB_KEYBOARD_IME_ID)) {
+            error(
+                "当前输入法不是 ADB Keyboard（$ADB_KEYBOARD_IME_ID），无法输入非 ASCII 文本。" +
+                        "请先切换输入法后重试。",
+            )
+        }
+    }
+
+    private fun isAsciiFriendlyInput(text: String): Boolean {
+        return text.all { it == '\n' || it == '\t' || (it.code in 0x20..0x7E) }
+    }
+
+    private fun encodeForAdbInputText(text: String): String {
+        return buildString(text.length) {
+            text.forEach { ch ->
+                when (ch) {
+                    ' ', '\n', '\t' -> append("%s")
+                    '%' -> append("\\%")
+                    else -> append(ch)
+                }
+            }
+        }
+    }
+
+    private fun shellQuote(value: String): String {
+        return "'" + value.replace("'", "'\"'\"'") + "'"
+    }
+
+    private suspend fun verifyTypedText(beforeUi: String?, expectedText: String): Boolean {
+        if (expectedText.isBlank()) return true
+        delay(250.milliseconds)
+        val afterUi = AdbAccessibilityService.dumpUiTree() ?: return false
+        val expectedEscaped = xmlEscape(expectedText)
+        if (afterUi.contains("text=\"$expectedEscaped\"")) return true
+
+        val beforeFocusedText = focusedNodeText(beforeUi)
+        val afterFocusedText = focusedNodeText(afterUi)
+        return beforeFocusedText != null &&
+                afterFocusedText != null &&
+                beforeFocusedText != afterFocusedText
+    }
+
+    private fun focusedNodeText(uiXml: String?): String? {
+        if (uiXml.isNullOrBlank()) return null
+        val match = FOCUSED_NODE_TEXT_REGEX.find(uiXml) ?: return null
+        return match.groupValues.getOrNull(1)
+    }
+
+    private fun xmlEscape(value: String): String {
+        return value
+            .replace("&", "&amp;")
+            .replace("\"", "&quot;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace("\n", "&#10;")
     }
 
     private suspend fun runShell(command: String) {
-        val result = withContext(Dispatchers.IO) { executor.execute(command) }
+        val result = runShellForResult(command)
         if (!result.isSuccess) {
             error(result.stderr.ifBlank { "shell exitCode=${result.exitCode}" })
         }
     }
+
+    private suspend fun runShellForResult(command: String) =
+        withContext(Dispatchers.IO) { executor.execute(command) }
 
     private suspend fun waitForUserInteraction(message: String?) {
         if (!overlay.show()) {
@@ -389,7 +479,10 @@ class AdbWebSocketService : Service() {
         private const val NOTIFICATION_ID = 3001
         private const val NOTIFICATION_CHANNEL_ID = "adb_tool_connection"
         private const val ACTION_STOP_ALL = "com.example.blueheartv.STOP_ALL_SERVICES"
+        private const val ADB_KEYBOARD_IME_ID = "com.android.adbkeyboard/.AdbIME"
         private const val TAG = "AdbWebSocketService"
+        private val FOCUSED_NODE_TEXT_REGEX =
+            Regex("""<node(?=[^>]*focused=\"true\")[^>]*text=\"([^\"]*)\"[^>]*>""")
 
         fun start(context: Context) {
             context.startForegroundService(Intent(context, AdbWebSocketService::class.java))
