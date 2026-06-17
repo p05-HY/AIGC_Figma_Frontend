@@ -233,14 +233,14 @@ private fun FailedContent(message: String) {
         Box(
             modifier = Modifier
                 .size(64.dp)
-                .background(FailedRed.copy(alpha = 0.15f), CircleShape)
-                .border(1.dp, FailedRed.copy(alpha = 0.5f), CircleShape),
+                .background(ErrorRed.copy(alpha = 0.15f), CircleShape)
+                .border(1.dp, ErrorRed.copy(alpha = 0.5f), CircleShape),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
                 imageVector = Icons.Outlined.Close,
                 contentDescription = null,
-                tint = FailedRed,
+                tint = ErrorRed,
                 modifier = Modifier.size(32.dp),
             )
         }
