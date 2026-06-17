@@ -1,31 +1,41 @@
 package com.example.blueheartv.ui.components
 
+import android.content.res.Configuration
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import com.example.blueheartv.R
+import com.example.blueheartv.ui.theme.Radius
 
 @Composable
 fun DecorativeBackground(modifier: Modifier = Modifier) {
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val isTablet = configuration.screenWidthDp >= 600
+
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
-            .clip(RoundedCornerShape(topStart = 40.dp, topEnd = 40.dp))
+            .clip(RoundedCornerShape(topStart = Radius.xxlarge.dp, topEnd = Radius.xxlarge.dp))
     ) {
         val w = maxWidth
         val h = maxHeight
         val designRatio = 402f / 790f
         val actualRatio = w / h
         val widthScale = (actualRatio / designRatio).coerceIn(0.8f, 1.5f)
+
+        if (!isLandscape || isTablet) {
 
         Image(
             painter = painterResource(R.drawable.bg_abstract),
@@ -82,5 +92,12 @@ fun DecorativeBackground(modifier: Modifier = Modifier) {
                 .size(width = w * (576f / 402f * widthScale), height = h * (563.6f / 790f)),
             contentScale = ContentScale.FillBounds,
         )
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.White)
+            )
+        }
     }
 }

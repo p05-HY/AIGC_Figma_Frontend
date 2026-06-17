@@ -14,15 +14,12 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -48,15 +45,9 @@ import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.example.blueheartv.R
-import com.example.blueheartv.ui.components.AiBubble
-import com.example.blueheartv.ui.components.UserBubble
 import com.example.blueheartv.ui.theme.*
 import com.example.blueheartv.viewmodel.ChatSessionState
 import com.example.blueheartv.viewmodel.ChatViewModel
-import kotlinx.coroutines.FlowPreview
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.debounce
-import kotlinx.coroutines.flow.distinctUntilChanged
 import org.koin.java.KoinJavaComponent.get
 import kotlin.math.abs
 
@@ -70,8 +61,6 @@ private val GlassWhiteOverlay70 = Color(0xB3FFFFFF)      // rgba(255,255,255,0.7
 private val GlassWhiteOverlay80 = Color(0xCCFFFFFF)      // rgba(255,255,255,0.8)
 private val TitleBlue = Color(0xFF80A3E5)                // #80A3E5 Echo标题色
 private val PlaceholderGray = Color(0xFF6D6D6D)          // #6D6D6D 输入框占位文字
-private val GlassCardRadius = 16.dp
-
 class FloatingChatWindow(
     private val context: Context,
     private val windowManager: WindowManager,
@@ -87,9 +76,19 @@ class FloatingChatWindow(
     private val density = context.resources.displayMetrics.density
     private val screenWidth = context.resources.displayMetrics.widthPixels
     private val screenHeight = context.resources.displayMetrics.heightPixels
-    // Figma: 245×375 aspect ratio → scale to 75% of screen width
+    private val horizontalMarginPx = (24 * density).toInt()
+    private val verticalMarginPx = (48 * density).toInt()
+    private val minWindowWidthPx = (220 * density).toInt()
+    private val maxWindowWidthPx = (520 * density).toInt()
+    private val minWindowHeightPx = (300 * density).toInt()
+    private val availableWidthPx = (screenWidth - horizontalMarginPx).coerceAtLeast(1)
+    private val availableHeightPx = (screenHeight - verticalMarginPx).coerceAtLeast(1)
     private val windowWidth = (screenWidth * 0.68f).toInt()
+        .coerceAtMost(minOf(maxWindowWidthPx, availableWidthPx))
+        .coerceAtLeast(minOf(minWindowWidthPx, availableWidthPx))
     private val windowHeight = (windowWidth * (375f / 245f)).toInt()
+        .coerceAtMost(availableHeightPx)
+        .coerceAtLeast(minOf(minWindowHeightPx, availableHeightPx))
 
     private var composeView: android.view.View? = null
     private var lifecycleOwner: WindowLifecycleOwner? = null
@@ -260,12 +259,14 @@ class FloatingChatWindow(
 /* ─── Glassmorphism Card Background (来源：Figma node-id=462:460, 毛玻璃卡片) ─── */
 @Composable
 private fun GlassCard(
+    cornerRadius: androidx.compose.ui.unit.Dp,
     modifier: Modifier = Modifier,
     content: @Composable BoxScope.() -> Unit,
 ) {
+    val shape = RoundedCornerShape(cornerRadius)
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(GlassCardRadius))
+            .clip(shape)
             // Layer 1: 半透明填充 (Figma node-id=462:462)
             .background(GlassFillColor)
             // Layer 2: 内部渐变 (Figma node-id=462:463)
@@ -284,9 +285,9 @@ private fun GlassCard(
                 )
             )
             // Layer 4: 蓝色高光描边 (Figma node-id=462:464)
-            .border(1.dp, GlassStrokeBlue, RoundedCornerShape(GlassCardRadius))
+            .border(1.dp, GlassStrokeBlue, shape)
             // Layer 5: 外部描边 (Figma node-id=462:461)
-            .border(0.5.dp, GlassStrokeOuter, RoundedCornerShape(GlassCardRadius)),
+            .border(0.5.dp, GlassStrokeOuter, shape),
     ) {
         content()
     }
@@ -304,111 +305,118 @@ private fun FloatingChatContent(
     val uiState by viewModel.uiState.collectAsState()
     val listState = rememberLazyListState()
 
-    @OptIn(FlowPreview::class)
-    LaunchedEffect(Unit) {
-        snapshotFlow { uiState.messages.size to (uiState.messages.lastOrNull()?.content?.length ?: 0) }
-            .debounce(100)
-            .distinctUntilChanged()
-            .collectLatest {
-                if (uiState.messages.isNotEmpty()) {
-                    listState.animateScrollToItem(uiState.messages.lastIndex)
-                }
-            }
-    }
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val sizeClass = remember(maxWidth) { classifyFloatingChatWidth(maxWidth.value) }
+        val metrics = remember(sizeClass) { floatingChatMetrics(sizeClass) }
 
-    GlassCard(modifier = Modifier.fillMaxSize()) {
-        Column(modifier = Modifier.fillMaxSize()) {
+        GlassCard(
+            cornerRadius = metrics.cardRadius,
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            Column(modifier = Modifier.fillMaxSize()) {
             /* ─── 标题栏 (来源：Figma node-id=462:487, 462:481, 462:486) ─── */
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 16.dp, bottom = 8.dp, start = 21.dp, end = 16.dp),
-            ) {
-                // 左侧全屏展开按钮 (Figma node-id=462:481, 16dp)
-                Icon(
-                    painter = painterResource(R.drawable.ic_arrow_right),
-                    contentDescription = stringResource(R.string.floating_expand),
+                Box(
                     modifier = Modifier
-                        .size(16.dp)
-                        .align(Alignment.CenterStart)
-                        .clickable { onExpand() },
-                    tint = DarkPrimary,
-                )
-                // 居中标题 "Echo" (Figma node-id=462:488, 16sp Medium #80A3E5)
-                Text(
-                    text = "Echo",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = TitleBlue,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.align(Alignment.Center),
-                )
-                // 右侧关闭/展开 (Figma node-id=462:486, 12dp)
-                Icon(
-                    Icons.Default.Close,
-                    contentDescription = stringResource(R.string.floating_close),
+                        .fillMaxWidth()
+                        .padding(
+                            horizontal = metrics.headerHorizontalPadding,
+                            vertical = metrics.headerVerticalPadding,
+                        ),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(metrics.headerButtonSize)
+                            .align(Alignment.CenterStart)
+                            .clickable { onExpand() },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_arrow_right),
+                            contentDescription = stringResource(R.string.floating_expand),
+                            modifier = Modifier.size(metrics.headerIconSize),
+                            tint = DarkPrimary,
+                        )
+                    }
+                    Text(
+                        text = "Echo",
+                        fontSize = metrics.titleFontSize,
+                        fontWeight = FontWeight.Medium,
+                        color = TitleBlue,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.align(Alignment.Center),
+                    )
+                    Box(
+                        modifier = Modifier
+                            .size(metrics.headerButtonSize)
+                            .align(Alignment.CenterEnd)
+                            .clickable { onClose() },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            Icons.Default.Close,
+                            contentDescription = stringResource(R.string.floating_close),
+                            modifier = Modifier.size(metrics.headerIconSize),
+                            tint = MutedText,
+                        )
+                    }
+                }
+
+                Box(
                     modifier = Modifier
-                        .size(12.dp)
-                        .align(Alignment.CenterEnd)
-                        .clickable { onClose() },
-                    tint = MutedText,
+                        .padding(horizontal = metrics.headerHorizontalPadding)
+                        .fillMaxWidth()
+                        .height(0.5.dp)
+                        .background(DividerColor),
                 )
-            }
 
-            /* ─── 顶部分割线 (来源：Figma node-id=462:474) ─── */
-            Box(
-                modifier = Modifier
-                    .padding(horizontal = 16.dp)
-                    .fillMaxWidth()
-                    .height(0.5.dp)
-                    .background(DividerColor),
-            )
-
-            /* ─── 消息列表区域 ─── */
-            LazyColumn(
-                state = listState,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
                 if (uiState.messages.isEmpty()) {
-                    item {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 60.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                stringResource(R.string.floating_chat_empty),
-                                fontSize = 14.sp,
-                                color = MutedText,
-                            )
-                        }
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            stringResource(R.string.floating_chat_empty),
+                            fontSize = metrics.bodyFontSize,
+                            color = MutedText,
+                        )
                     }
+                } else {
+                    FloatingChatRenderer(
+                        messages = uiState.messages,
+                        listState = listState,
+                        metrics = metrics,
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                    )
                 }
-                items(uiState.messages, key = { it.id }) { message ->
-                    if (message.isUser) {
-                        UserBubble(message = message)
-                    } else {
-                        AiBubble(message = message)
-                    }
-                }
-            }
 
-            /* ─── 底部输入栏 (来源：Figma node-id=462:489) ─── */
-            GlassInputBar(
-                value = uiState.inputText,
-                onValueChange = { viewModel.onInputChanged(it) },
-                onSend = { viewModel.sendMessage() },
-                onExpand = onExpand,
-                onAttachClick = onAttachClick,
-                onMicClick = onMicClick,
-                sendEnabled = uiState.sessionState != ChatSessionState.RESPONDING
-                        && uiState.inputText.isNotBlank(),
-            )
+                uiState.lastError?.takeIf { it.isNotBlank() }?.let { error ->
+                    Text(
+                        text = error,
+                        modifier = Modifier.padding(
+                            horizontal = metrics.listHorizontalPadding,
+                            vertical = 2.dp,
+                        ),
+                        color = MaterialTheme.colorScheme.error,
+                        fontSize = metrics.inputFontSize,
+                        maxLines = 2,
+                    )
+                }
+
+                GlassInputBar(
+                    value = uiState.inputText,
+                    onValueChange = { viewModel.onInputChanged(it) },
+                    onSend = { viewModel.sendMessage() },
+                    onAttachClick = onAttachClick,
+                    onMicClick = onMicClick,
+                    sendEnabled = uiState.sessionState != ChatSessionState.RESPONDING
+                            && uiState.inputText.isNotBlank(),
+                    metrics = metrics,
+                )
+            }
         }
     }
 }
@@ -419,81 +427,71 @@ private fun GlassInputBar(
     value: String,
     onValueChange: (String) -> Unit,
     onSend: () -> Unit,
-    onExpand: () -> Unit,
     onAttachClick: () -> Unit = {},
     onMicClick: () -> Unit = {},
     sendEnabled: Boolean,
+    metrics: FloatingChatMetrics,
 ) {
+    val inputShape = RoundedCornerShape(metrics.cardRadius)
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 7.dp, vertical = 8.dp),
+            .padding(metrics.inputOuterPadding),
     ) {
-        // 输入栏毛玻璃背景 (Figma: 232×38.8dp, 16dp radius, 同样的毛玻璃效果)
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(39.dp)
-                .clip(RoundedCornerShape(GlassCardRadius))
+                .height(metrics.inputHeight)
+                .clip(inputShape)
                 .background(GlassFillColor)
                 .background(
                     Brush.verticalGradient(
                         colors = listOf(GlassGradientTop, GlassGradientBottom),
                     )
                 )
-                .border(1.dp, GlassStrokeBlue, RoundedCornerShape(GlassCardRadius))
-                .border(0.5.dp, GlassStrokeOuter, RoundedCornerShape(GlassCardRadius))
-                .padding(horizontal = 10.dp),
+                .border(1.dp, GlassStrokeBlue, inputShape)
+                .border(0.5.dp, GlassStrokeOuter, inputShape)
+                .padding(horizontal = metrics.inputHorizontalPadding),
             contentAlignment = Alignment.CenterStart,
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                // 附件图标 (Figma node-id=462:502, ~14dp)
-                Icon(
-                    painter = painterResource(R.drawable.ic_attachment),
-                    contentDescription = null,
-                    modifier = Modifier
-                        .size(14.dp)
-                        .clickable { onAttachClick() },
-                    tint = MutedText,
+                CompactInputAction(
+                    iconRes = R.drawable.ic_attachment,
+                    contentDescription = "添加附件",
+                    metrics = metrics,
+                    onClick = onAttachClick,
                 )
-                Spacer(modifier = Modifier.width(8.dp))
-                // 输入框
                 Box(modifier = Modifier.weight(1f)) {
                     if (value.isEmpty()) {
                         Text(
                             stringResource(R.string.floating_chat_input_hint),
-                            fontSize = 14.sp,
+                            fontSize = metrics.inputFontSize,
                             color = PlaceholderGray,
+                            maxLines = 1,
                         )
                     }
                     BasicTextField(
                         value = value,
                         onValueChange = { if (it.length <= 2000) onValueChange(it) },
                         modifier = Modifier.fillMaxWidth(),
-                        textStyle = TextStyle(fontSize = 14.sp, color = TextBlack),
+                        textStyle = TextStyle(fontSize = metrics.inputFontSize, color = TextBlack),
                         singleLine = true,
                     )
                 }
-                Spacer(modifier = Modifier.width(8.dp))
-                // 麦克风图标
-                Icon(
-                    painter = painterResource(R.drawable.ic_mic),
+                CompactInputAction(
+                    iconRes = R.drawable.ic_mic,
                     contentDescription = "Voice input",
-                    modifier = Modifier
-                        .size(14.dp)
-                        .clickable { onMicClick() },
-                    tint = MutedText,
+                    metrics = metrics,
+                    onClick = onMicClick,
                 )
-                Spacer(modifier = Modifier.width(8.dp))
-                // 右侧发送/AI头像 (Figma node-id=462:503, 27dp 圆形)
                 Image(
                     painter = painterResource(R.drawable.ic_echo_face),
                     contentDescription = stringResource(R.string.floating_send),
                     modifier = Modifier
-                        .size(27.dp)
+                        .size(metrics.sendButtonSize)
                         .clip(CircleShape)
                         .alpha(if (sendEnabled) 1f else 0.5f)
                         .then(if (sendEnabled) Modifier.clickable { onSend() } else Modifier),
@@ -501,6 +499,28 @@ private fun GlassInputBar(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun CompactInputAction(
+    iconRes: Int,
+    contentDescription: String,
+    metrics: FloatingChatMetrics,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .size(metrics.inputActionSize)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            painter = painterResource(iconRes),
+            contentDescription = contentDescription,
+            modifier = Modifier.size(metrics.inputIconSize),
+            tint = MutedText,
+        )
     }
 }
 

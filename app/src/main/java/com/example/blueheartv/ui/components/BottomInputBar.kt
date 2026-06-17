@@ -53,9 +53,9 @@ fun BottomInputBar(
                 .padding(horizontal = 13.dp)
                 .fillMaxWidth()
                 .heightIn(min = 48.dp)
-                .shadow(2.dp, RoundedCornerShape(16.dp))
-                .background(SurfaceWhite, RoundedCornerShape(16.dp))
-                .border(0.5.dp, StrokeMuted, RoundedCornerShape(16.dp)),
+                .shadow(2.dp, RoundedCornerShape(Radius.large.dp))
+                .background(SurfaceWhite, RoundedCornerShape(Radius.large.dp))
+                .border(0.5.dp, StrokeMuted, RoundedCornerShape(Radius.large.dp)),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(

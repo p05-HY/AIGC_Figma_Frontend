@@ -19,17 +19,6 @@
     <string name="prompt_today_delivery">请帮我查看今天的快递物流状态</string>
     <string name="prompt_today_weather">请告诉我今天的天气情况和出行建议</string>
 
-    <!-- FloatingMenu -->
-    <string name="menu_new_chat">新对话</string>
-    <string name="menu_screenshot">截图识别</string>
-    <string name="menu_translate">快速翻译</string>
-    <string name="menu_summarize">内容总结</string>
-    <string name="menu_settings">设置</string>
-    <string name="feature_in_dev_screenshot">截图识别功能开发中</string>
-    <string name="feature_in_dev_translate">快速翻译功能开发中</string>
-    <string name="feature_in_dev_summarize">内容总结功能开发中</string>
-    <string name="feature_in_dev_voice_input">录音功能开发中，权限已就绪</string>
-
     <!-- Permission rationales -->
     <string name="rationale_media_attach">需要存储权限以选择图片</string>
     <string name="rationale_audio_input">需要麦克风权限以进行语音输入</string>

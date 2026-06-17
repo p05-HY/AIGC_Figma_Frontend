@@ -15,6 +15,7 @@ data class Message(
     val toolCalls: List<ToolCall>? = null,
     val thinking: String? = null,
     val errorMessage: String? = null,
+    val timestamp: Long = System.currentTimeMillis(),
 ) {
     val isLoading: Boolean
         get() = deliveryState == MessageDeliveryState.SENDING ||

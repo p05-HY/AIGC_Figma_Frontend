@@ -40,15 +40,11 @@ import androidx.compose.ui.zIndex
 import com.example.blueheartv.R
 import com.example.blueheartv.model.SmartRecommendation
 import com.example.blueheartv.ui.theme.BlueAccent
-import com.example.blueheartv.ui.theme.GlassFill
-import com.example.blueheartv.ui.theme.GlassUpperHighlight
-import com.example.blueheartv.ui.theme.GradientWhite00
-import com.example.blueheartv.ui.theme.GradientWhite40
 import com.example.blueheartv.ui.theme.IconGray
-import com.example.blueheartv.ui.theme.Slate700Stroke
+import com.example.blueheartv.ui.theme.MutedText
+import com.example.blueheartv.ui.theme.Radius
 import com.example.blueheartv.ui.theme.SurfaceWhite
 import com.example.blueheartv.ui.theme.TextBlack
-import com.example.blueheartv.ui.theme.MutedText
 
 @Composable
 fun SmartCardRow(
@@ -129,7 +125,7 @@ private fun SmartCard(
     withFaceImage: Boolean = false,
     contentAlpha: Float = 1f,
 ) {
-    val shape = RoundedCornerShape(12.dp)
+    val shape = RoundedCornerShape(Radius.medium.dp)
 
     Box(
         modifier = modifier
@@ -137,43 +133,7 @@ private fun SmartCard(
             .clip(shape)
             .clickable { onClick() },
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(GlassFill, shape),
-        )
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(listOf(GradientWhite00, SurfaceWhite)),
-                    shape,
-                ),
-        )
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .blur(21.dp)
-                .background(
-                    Brush.horizontalGradient(
-                        colorStops = arrayOf(
-                            0f to GradientWhite40,
-                            1f to GradientWhite00,
-                        ),
-                    ),
-                    shape,
-                ),
-        )
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .border(1.dp, Slate700Stroke, shape),
-        )
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .border(1.dp, GlassUpperHighlight, shape),
-        )
+        GlassmorphismCardBackground(shape = shape)
 
         if (withFaceImage) {
             Column(

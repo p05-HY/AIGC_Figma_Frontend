@@ -41,3 +41,39 @@ val GradientWhite40 = Color(0x66FFFFFF) // 40% opacity white
 val Slate700Stroke = Color(0x6647515A) // 40% opacity dark slate (for outer border)
 val ChipFill = Color(0x99F8FAFC) // Chip background (60% opacity)
 val ChipStroke = Color(0x333F85FF) // Chip border (20% opacity blue)
+
+// Semantic status colors
+val ErrorRed = Color(0xFFE53935)
+val SuccessGreen = Color(0xFF22C55E)
+val WarningAmber = Color(0xFFFF9800)
+
+// Surface backgrounds
+val CodeBlockBackground = Color(0xFF111827)
+val CodeBlockText = Color(0xFFF9FAFB)
+val CodeBlockLabel = Color(0xFF9CA3AF)
+val ThinkingCardBackground = Color(0xFFF3F4F6)
+val ToolDetailBackground = Color(0xFFF7F8FA)
+val OverlayHeavy = Color(0xCC1A2030) // For calibration top card
+val AuthCheckGreenStart = Color(0xFF9BF763)
+val AuthCheckGreenEnd = Color(0xFF26AB5B)
+val AuthUncheckedGray = Color(0xFFE0E0E0)
+
+// Toast card gradient colors (from Figma node-id=462-660)
+val ToastGradient1 = Color(0xFFD0E4FF)
+val ToastGradient2 = Color(0xFFE8D0FF)
+val ToastGradient3 = Color(0xFFD0F0FF)
+val ToastBodyText = Color(0xFA3C3E40) // rgba(60,62,64,0.98)
+
+// Corner radius tokens
+object Radius {
+    /** 8dp — chips, small buttons */
+    val small = 8
+    /** 12dp — cards, smart cards, holders */
+    val medium = 12
+    /** 16dp — input bars, card groups, surface cards */
+    val large = 16
+    /** 24dp — chat bubbles, auth card */
+    val xlarge = 24
+    /** 40dp — drawers, top-level containers */
+    val xxlarge = 40
+}

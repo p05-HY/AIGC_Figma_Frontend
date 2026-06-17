@@ -1,8 +1,12 @@
 package com.example.blueheartv.ui.components
 
 import androidx.compose.animation.core.*
-import androidx.compose.foundation.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -16,7 +20,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -35,6 +38,9 @@ import com.example.blueheartv.ui.theme.*
 import com.example.blueheartv.util.ToastType
 import com.example.blueheartv.util.ToastUtil
 import kotlinx.coroutines.delay
+import kotlin.math.roundToInt
+import java.text.SimpleDateFormat
+import java.util.*
 import kotlin.time.Duration.Companion.milliseconds
 
 private const val TYPEWRITER_DELAY_MS = 35L
@@ -117,72 +123,82 @@ fun UserBubble(
             .fillMaxWidth()
             .padding(horizontal = 24.dp, vertical = 4.dp),
         horizontalArrangement = Arrangement.End,
+        verticalAlignment = Alignment.Bottom,
     ) {
         BoxWithConstraints {
             val bubbleMaxWidth = (maxWidth * 0.78f).coerceIn(200.dp, 480.dp)
-            Box {
-                Box(
-                    modifier = Modifier
-                        .widthIn(max = bubbleMaxWidth)
-                    .border(1.dp, BorderGray, bubbleShape)
-                    .background(SurfaceWhite, bubbleShape)
-                    .combinedClickable(
-                        onClick = {},
-                        onLongClick = { if (!isEditing) showMenu = true },
-                    )
-                    .padding(16.dp),
-            ) {
-                if (isEditing) {
-                    Column {
-                        BasicTextField(
-                            value = editText,
-                            onValueChange = { editText = it },
-                            textStyle = TextStyle(
+            Column(horizontalAlignment = Alignment.End) {
+                Box {
+                    Box(
+                        modifier = Modifier
+                            .widthIn(max = bubbleMaxWidth)
+                        .border(1.dp, BorderGray, bubbleShape)
+                        .background(SurfaceWhite, bubbleShape)
+                        .combinedClickable(
+                            onClick = {},
+                            onLongClick = { if (!isEditing) showMenu = true },
+                        )
+                        .padding(16.dp),
+                ) {
+                    if (isEditing) {
+                        Column {
+                            BasicTextField(
+                                value = editText,
+                                onValueChange = { editText = it },
+                                textStyle = TextStyle(
+                                    fontSize = 16.sp,
+                                    color = TextDark,
+                                    lineHeight = 24.sp,
+                                ),
+                                cursorBrush = SolidColor(BlueAccent),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .focusRequester(focusRequester),
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                IconButton(
+                                    onClick = {
+                                        isEditing = false
+                                        editText = message.content
+                                    },
+                                    modifier = Modifier.size(32.dp),
+                                ) {
+                                    Icon(Icons.Outlined.Close, "取消", tint = ErrorRed)
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                                IconButton(
+                                    onClick = {
+                                        isEditing = false
+                                        val newContent = editText.trim()
+                                        if (newContent.isNotBlank() && newContent != message.content) {
+                                            onEditConfirm(newContent)
+                                        }
+                                    },
+                                    modifier = Modifier.size(32.dp),
+                                ) {
+                                    Icon(Icons.Outlined.Check, "确认", tint = BlueAccent)
+                                }
+                            }
+                        }
+                        LaunchedEffect(Unit) {
+                            delay(100.milliseconds)
+                            focusRequester.requestFocus()
+                        }
+                    } else if (enableTextSelection) {
+                        SelectionContainer {
+                            Text(
+                                text = message.content,
                                 fontSize = 16.sp,
                                 color = TextDark,
                                 lineHeight = 24.sp,
-                            ),
-                            cursorBrush = SolidColor(BlueAccent),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .focusRequester(focusRequester),
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.End,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            IconButton(
-                                onClick = {
-                                    isEditing = false
-                                    editText = message.content
-                                },
-                                modifier = Modifier.size(32.dp),
-                            ) {
-                                Icon(Icons.Outlined.Close, "取消", tint = MaterialTheme.colorScheme.error)
-                            }
-                            Spacer(modifier = Modifier.width(8.dp))
-                            IconButton(
-                                onClick = {
-                                    isEditing = false
-                                    val newContent = editText.trim()
-                                    if (newContent.isNotBlank() && newContent != message.content) {
-                                        onEditConfirm(newContent)
-                                    }
-                                },
-                                modifier = Modifier.size(32.dp),
-                            ) {
-                                Icon(Icons.Outlined.Check, "确认", tint = BlueAccent)
-                            }
+                            )
                         }
-                    }
-                    LaunchedEffect(Unit) {
-                        delay(100.milliseconds)
-                        focusRequester.requestFocus()
-                    }
-                } else if (enableTextSelection) {
-                    SelectionContainer {
+                    } else {
                         Text(
                             text = message.content,
                             fontSize = 16.sp,
@@ -190,59 +206,53 @@ fun UserBubble(
                             lineHeight = 24.sp,
                         )
                     }
-                } else {
-                    Text(
-                        text = message.content,
-                        fontSize = 16.sp,
-                        color = TextDark,
-                        lineHeight = 24.sp,
+                }
+                DropdownMenu(
+                    expanded = showMenu,
+                    onDismissRequest = { showMenu = false },
+                    offset = DpOffset(0.dp, 0.dp),
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("复制") },
+                        onClick = {
+                            showMenu = false
+                            onCopy(message.content)
+                        },
+                        leadingIcon = { Icon(Icons.Outlined.ContentCopy, null, Modifier.size(18.dp)) },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("修改") },
+                        onClick = {
+                            showMenu = false
+                            editText = message.content
+                            isEditing = true
+                        },
+                        leadingIcon = { Icon(Icons.Outlined.Edit, null, Modifier.size(18.dp)) },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("选取文字") },
+                        onClick = {
+                            showMenu = false
+                            enableTextSelection = true
+                        },
+                        leadingIcon = { Icon(Icons.Outlined.SelectAll, null, Modifier.size(18.dp)) },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("删除", color = ErrorRed) },
+                        onClick = {
+                            showMenu = false
+                            showDeleteConfirm = true
+                        },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Outlined.Delete, null, Modifier.size(18.dp),
+                                tint = ErrorRed,
+                            )
+                        },
                     )
                 }
-            }
-            DropdownMenu(
-                expanded = showMenu,
-                onDismissRequest = { showMenu = false },
-                offset = DpOffset(0.dp, 0.dp),
-            ) {
-                DropdownMenuItem(
-                    text = { Text("复制") },
-                    onClick = {
-                        showMenu = false
-                        onCopy(message.content)
-                    },
-                    leadingIcon = { Icon(Icons.Outlined.ContentCopy, null, Modifier.size(18.dp)) },
-                )
-                DropdownMenuItem(
-                    text = { Text("修改") },
-                    onClick = {
-                        showMenu = false
-                        editText = message.content
-                        isEditing = true
-                    },
-                    leadingIcon = { Icon(Icons.Outlined.Edit, null, Modifier.size(18.dp)) },
-                )
-                DropdownMenuItem(
-                    text = { Text("选取文字") },
-                    onClick = {
-                        showMenu = false
-                        enableTextSelection = true
-                    },
-                    leadingIcon = { Icon(Icons.Outlined.SelectAll, null, Modifier.size(18.dp)) },
-                )
-                DropdownMenuItem(
-                    text = { Text("删除", color = MaterialTheme.colorScheme.error) },
-                    onClick = {
-                        showMenu = false
-                        showDeleteConfirm = true
-                    },
-                    leadingIcon = {
-                        Icon(
-                            Icons.Outlined.Delete, null, Modifier.size(18.dp),
-                            tint = MaterialTheme.colorScheme.error,
-                        )
-                    },
-                )
-            }
+                }
+                MessageTimestamp(timestamp = message.timestamp)
             }
         }
     }
@@ -352,14 +362,6 @@ fun AiBubble(
                     offset = DpOffset(0.dp, 0.dp),
                 ) {
                     DropdownMenuItem(
-                        text = { Text("创建文档") },
-                        onClick = {
-                            showMenu = false
-                            ToastUtil.show("创建文档功能开发中", ToastType.INFO)
-                        },
-                        leadingIcon = { Icon(Icons.Outlined.Description, null, Modifier.size(18.dp)) },
-                    )
-                    DropdownMenuItem(
                         text = { Text("选取文字") },
                         onClick = {
                             showMenu = false
@@ -368,23 +370,7 @@ fun AiBubble(
                         leadingIcon = { Icon(Icons.Outlined.SelectAll, null, Modifier.size(18.dp)) },
                     )
                     DropdownMenuItem(
-                        text = { Text("收藏") },
-                        onClick = {
-                            showMenu = false
-                            ToastUtil.show("收藏功能开发中", ToastType.INFO)
-                        },
-                        leadingIcon = { Icon(Icons.Outlined.BookmarkBorder, null, Modifier.size(18.dp)) },
-                    )
-                    DropdownMenuItem(
-                        text = { Text("导出文件") },
-                        onClick = {
-                            showMenu = false
-                            ToastUtil.show("导出文件功能开发中", ToastType.INFO)
-                        },
-                        leadingIcon = { Icon(Icons.Outlined.FileDownload, null, Modifier.size(18.dp)) },
-                    )
-                    DropdownMenuItem(
-                        text = { Text("删除", color = MaterialTheme.colorScheme.error) },
+                        text = { Text("删除", color = ErrorRed) },
                         onClick = {
                             showMenu = false
                             showDeleteConfirm = true
@@ -392,11 +378,12 @@ fun AiBubble(
                         leadingIcon = {
                             Icon(
                                 Icons.Outlined.Delete, null, Modifier.size(18.dp),
-                                tint = MaterialTheme.colorScheme.error,
+                                tint = ErrorRed,
                             )
                         },
                     )
                 }
+                MessageTimestamp(timestamp = message.timestamp)
             }
             }
         }
@@ -404,22 +391,32 @@ fun AiBubble(
 }
 
 @Composable
+private fun MessageTimestamp(timestamp: Long) {
+    val formatter = remember {
+        SimpleDateFormat("HH:mm", Locale.getDefault())
+    }
+    val timeText = remember(timestamp) {
+        val now = System.currentTimeMillis()
+        val diff = now - timestamp
+        when {
+            diff < 60_000 -> "刚刚"
+            diff < 3600_000 -> "${diff / 60_000}分钟前"
+            diff < 86400_000 -> "${diff / 3600_000}小时前"
+            else -> formatter.format(Date(timestamp))
+        }
+    }
+    Text(
+        text = timeText,
+        fontSize = 11.sp,
+        color = MutedText,
+        modifier = Modifier.padding(top = 2.dp, bottom = 2.dp),
+    )
+}
+
+@Composable
 private fun ThinkingCard(thinking: String, isStreaming: Boolean) {
     var expanded by remember { mutableStateOf(false) }
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color(0xFFF3F4F6), RoundedCornerShape(10.dp))
-            .border(0.5.dp, DividerColor, RoundedCornerShape(10.dp))
-            .clickable { expanded = !expanded }
-            .padding(horizontal = 10.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
             Icon(
                 imageVector = Icons.Outlined.Psychology,
                 contentDescription = null,
@@ -480,8 +477,8 @@ private fun ToolCallRow(toolCall: ToolCall) {
 
     val (dotColor, statusText) = when (toolCall.status) {
         ToolCallStatus.RUNNING -> BlueAccent to "执行中"
-        ToolCallStatus.COMPLETED -> Color(0xFF22C55E) to "成功"
-        ToolCallStatus.FAILED -> Color(0xFFEF4444) to "失败"
+        ToolCallStatus.COMPLETED -> SuccessGreen to "成功"
+        ToolCallStatus.FAILED -> ErrorRed to "失败"
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -539,7 +536,7 @@ private fun ToolCallRow(toolCall: ToolCall) {
                     ToolDetailField(label = "出参", value = it, valueColor = TextDarkAlt)
                 }
                 toolCall.error?.takeIf { it.isNotBlank() }?.let {
-                    ToolDetailField(label = "错误", value = it, valueColor = Color(0xFFEF4444))
+                    ToolDetailField(label = "错误", value = it, valueColor = ErrorRed)
                 }
                 toolCall.completedSteps.takeIf { it.isNotEmpty() }?.let { steps ->
                     ToolDetailField(
@@ -582,7 +579,7 @@ private fun ToolDetailField(label: String, value: String, valueColor: Color) {
             lineHeight = 16.sp,
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Color(0xFFF7F8FA), RoundedCornerShape(6.dp))
+                .background(ToolDetailBackground, RoundedCornerShape(6.dp))
                 .padding(horizontal = 8.dp, vertical = 6.dp),
         )
     }
@@ -611,7 +608,7 @@ fun MarkdownMessageContent(content: String) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(Color(0xFF111827), RoundedCornerShape(10.dp))
+                            .background(CodeBlockBackground, RoundedCornerShape(10.dp))
                             .padding(10.dp),
                     ) {
                         Row(
@@ -621,7 +618,7 @@ fun MarkdownMessageContent(content: String) {
                             Text(
                                 text = block.language.ifBlank { "code" },
                                 fontSize = 12.sp,
-                                color = Color(0xFF9CA3AF),
+                                color = CodeBlockLabel,
                                 modifier = Modifier.weight(1f),
                             )
                             IconButton(
@@ -641,7 +638,7 @@ fun MarkdownMessageContent(content: String) {
                             Text(
                                 text = block.code,
                                 fontSize = 13.sp,
-                                color = Color(0xFFF9FAFB),
+                                color = CodeBlockText,
                                 fontFamily = FontFamily.Monospace,
                                 lineHeight = 20.sp,
                                 modifier = Modifier.horizontalScroll(rememberScrollState()),
@@ -706,28 +703,23 @@ private fun parseMarkdownBlocks(content: String): List<MarkdownBlock> {
 fun LoadingDots() {
     val infiniteTransition = rememberInfiniteTransition(label = "loading")
 
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-    ) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        // Skeleton bars for visual weight during loading
         repeat(3) { index ->
             val alpha by infiniteTransition.animateFloat(
-                initialValue = 0.3f,
-                targetValue = 1f,
+                initialValue = 0.25f,
+                targetValue = 0.55f,
                 animationSpec = infiniteRepeatable(
-                    animation = tween(600, delayMillis = index * 200),
+                    animation = tween(800, delayMillis = index * 200),
                     repeatMode = RepeatMode.Reverse,
                 ),
-                label = "dot_$index",
+                label = "skeleton_$index",
             )
             Box(
                 modifier = Modifier
-                    .size(6.dp)
-                    .background(
-                        Color(0xFFBCBCBC).copy(alpha = alpha),
-                        CircleShape,
-                    ),
+                    .fillMaxWidth(if (index == 2) 0.6f else 1f)
+                    .height(12.dp)
+                    .background(Color(0xFFBCBCBC).copy(alpha = alpha), RoundedCornerShape(6.dp)),
             )
         }
     }

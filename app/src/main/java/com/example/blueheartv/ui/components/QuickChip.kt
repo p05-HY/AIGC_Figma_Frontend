@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.sp
 import com.example.blueheartv.ui.theme.ChipFill
 import com.example.blueheartv.ui.theme.ChipStroke
 import com.example.blueheartv.ui.theme.GradientWhite00
+import com.example.blueheartv.ui.theme.Radius
 import com.example.blueheartv.ui.theme.SurfaceWhite
 import com.example.blueheartv.ui.theme.MutedText
 
@@ -28,7 +29,7 @@ fun QuickChip(
     onClick: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    val shape = RoundedCornerShape(10.dp)
+    val shape = RoundedCornerShape(Radius.small.dp)
     Box(
         modifier = modifier
             .heightIn(min = 34.dp)

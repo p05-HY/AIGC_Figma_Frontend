@@ -13,6 +13,8 @@ import com.example.blueheartv.ui.screens.HomeScreen
 import com.example.blueheartv.ui.screens.SettingsDetailScreen
 import com.example.blueheartv.ui.screens.SettingsScreen
 import com.example.blueheartv.viewmodel.ChatViewModel
+import com.example.blueheartv.viewmodel.SettingsDetailViewModel
+import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
 
 object Routes {
@@ -70,9 +72,11 @@ fun AppNavGraph() {
 
         composable(Routes.SETTINGS_DETAIL) { backStackEntry ->
             val key = backStackEntry.arguments?.getString("key") ?: ""
+            val settingsDetailViewModel: SettingsDetailViewModel = koinViewModel()
             SettingsDetailScreen(
                 settingKey = key,
                 onBack = { navController.popBackStack() },
+                viewModel = settingsDetailViewModel,
                 onClearHistory = { chatViewModel.clearAllHistory() },
                 onLogout = {
                     chatViewModel.clearAllHistory()

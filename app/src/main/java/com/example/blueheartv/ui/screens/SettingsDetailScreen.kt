@@ -18,14 +18,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.blueheartv.chat.AgentServerStatusClient
-import com.example.blueheartv.chat.AgentServerStatusSnapshot
 import com.example.blueheartv.chat.AgentServerConfigStore
 import com.example.blueheartv.control.AccessibilityAutoEnabler
 import com.example.blueheartv.control.AdbWebSocketService
@@ -33,7 +31,9 @@ import com.example.blueheartv.system.SystemService
 import com.example.blueheartv.ui.theme.*
 import com.example.blueheartv.util.ToastType
 import com.example.blueheartv.util.ToastUtil
+import com.example.blueheartv.viewmodel.SettingsDetailViewModel
 import kotlinx.coroutines.launch
+import org.koin.androidx.compose.koinViewModel
 
 @Composable
 fun SettingsDetailScreen(
@@ -41,6 +41,7 @@ fun SettingsDetailScreen(
     onBack: () -> Unit,
     onClearHistory: () -> Unit = {},
     onLogout: () -> Unit = {},
+    viewModel: SettingsDetailViewModel = koinViewModel(),
 ) {
     val gradientBrush = Brush.radialGradient(
         colors = listOf(GradientBlueStart, GradientBlueEnd),
@@ -48,7 +49,9 @@ fun SettingsDetailScreen(
         radius = 800f,
     )
 
-    val (title, content) = remember(settingKey) { resolveDetail(settingKey, onClearHistory, onLogout) }
+    val (title, content) = remember(settingKey, viewModel) {
+        resolveDetail(settingKey, onClearHistory, onLogout, viewModel)
+    }
 
     Box(
         modifier = Modifier
@@ -98,12 +101,13 @@ private fun resolveDetail(
     key: String,
     onClearHistory: () -> Unit,
     onLogout: () -> Unit,
+    viewModel: SettingsDetailViewModel,
 ): Pair<String, @Composable () -> Unit> = when (key) {
     "profile" -> "个人信息" to { ProfileDetailContent() }
     "notifications" -> "通知设置" to { NotificationsDetailContent() }
     "privacy" -> "隐私与安全" to { PrivacyDetailContent(onClearHistory, onLogout) }
     "language" -> "语言设置" to { LanguageDetailContent() }
-    "agent_server" -> "Agent 服务" to { AgentServerDetailContent() }
+    "agent_server" -> "Agent 服务" to { AgentServerDetailContent(viewModel) }
     "storage" -> "存储管理" to { StorageDetailContent() }
     "accessibility" -> "无障碍设置" to { AccessibilityDetailContent() }
     "help" -> "帮助与反馈" to { HelpDetailContent() }
@@ -184,7 +188,7 @@ private fun PrivacyDetailContent(
                 TextButton(onClick = {
                     showClearDialog = false
                     onClearHistory()
-                }) { Text("确定", color = Color(0xFFE53935)) }
+                }) { Text("确定", color = ErrorRed) }
             },
             dismissButton = {
                 TextButton(onClick = { showClearDialog = false }) { Text("取消") }
@@ -201,7 +205,7 @@ private fun PrivacyDetailContent(
                 TextButton(onClick = {
                     showLogoutDialog = false
                     onLogout()
-                }) { Text("确定", color = Color(0xFFE53935)) }
+                }) { Text("确定", color = ErrorRed) }
             },
             dismissButton = {
                 TextButton(onClick = { showLogoutDialog = false }) { Text("取消") }
@@ -222,14 +226,14 @@ private fun PrivacyDetailContent(
             DetailActionRow(
                 label = "清除所有对话记录",
                 icon = Icons.Outlined.Delete,
-                tint = Color(0xFFE53935),
+                tint = ErrorRed,
                 onClick = { showClearDialog = true },
             )
             DetailDivider()
             DetailActionRow(
                 label = "注销账号",
                 icon = Icons.AutoMirrored.Outlined.ExitToApp,
-                tint = Color(0xFFE53935),
+                tint = ErrorRed,
                 onClick = { showLogoutDialog = true },
             )
         }
@@ -277,49 +281,13 @@ private fun LanguageDetailContent() {
 // ── Agent Server ─────────────────────────────────────────────────────────────
 
 @Composable
-private fun AgentServerDetailContent() {
+private fun AgentServerDetailContent(viewModel: SettingsDetailViewModel) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val config by AgentServerConfigStore.config.collectAsState()
     var baseUrl by remember(config.baseUrl) { mutableStateOf(config.baseUrl) }
     var apiKey by remember(config.apiKey) { mutableStateOf(config.apiKey) }
-    var status by remember { mutableStateOf<AgentServerStatusSnapshot?>(null) }
-    var loadingStatus by remember { mutableStateOf(false) }
-    var statusError by remember { mutableStateOf<String?>(null) }
-
-    fun refreshStatus() {
-        loadingStatus = true
-        statusError = null
-        scope.launch {
-            runCatching { AgentServerStatusClient().fetchAll() }
-                .onSuccess { status = it }
-                .onFailure { statusError = it.message ?: "状态查询失败" }
-            loadingStatus = false
-        }
-    }
-
-    fun updateNetwork(connected: Boolean) {
-        loadingStatus = true
-        statusError = null
-        scope.launch {
-            val result = runCatching { AgentServerStatusClient().updateNetworkConnected(connected) }
-            val network = result.getOrNull()
-            if (network != null) {
-                val current = status
-                status = if (current != null) current.copy(network = network) else AgentServerStatusClient().fetchAll()
-                ToastUtil.show(if (connected) "网络状态已设为连接" else "网络状态已设为断开", ToastType.SUCCESS)
-            } else {
-                val error = result.exceptionOrNull()
-                statusError = error?.message ?: "网络状态更新失败"
-                ToastUtil.show("网络状态更新失败", ToastType.ERROR)
-            }
-            loadingStatus = false
-        }
-    }
-
-    LaunchedEffect(config.baseUrl, config.apiKey) {
-        if (config.isConfigured) refreshStatus()
-    }
+    val uiState by viewModel.uiState.collectAsState()
 
     Column(modifier = Modifier.padding(horizontal = 16.dp)) {
         DetailCard {
@@ -343,11 +311,9 @@ private fun AgentServerDetailContent() {
                 Spacer(modifier = Modifier.height(16.dp))
                 Button(
                     onClick = {
-                        AgentServerConfigStore.update(context, baseUrl, apiKey)
-                        AdbWebSocketService.start(context)
-                        SystemService.start(context, baseUrl)
+                        viewModel.saveAndConnect(context, baseUrl, apiKey)
                         ToastUtil.show("Agent 服务配置已保存", ToastType.SUCCESS)
-                        refreshStatus()
+                        viewModel.refreshNow()
                     },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
@@ -372,19 +338,19 @@ private fun AgentServerDetailContent() {
                         modifier = Modifier.weight(1f),
                     )
                     TextButton(
-                        onClick = { refreshStatus() },
-                        enabled = config.isConfigured && !loadingStatus,
+                        onClick = { viewModel.refreshNow() },
+                        enabled = uiState.isConfigured && !uiState.isLoading,
                     ) {
-                        Text(if (loadingStatus) "查询中" else "刷新")
+                        Text(if (uiState.isLoading) "查询中" else "刷新")
                     }
                 }
-                statusError?.let {
-                    Text(text = it, fontSize = 13.sp, color = Color(0xFFE53935))
+                uiState.errorMessage?.let {
+                    Text(text = it, fontSize = 13.sp, color = ErrorRed)
                 }
-                val snapshot = status
-                if (!config.isConfigured) {
+                val snapshot = uiState.status
+                if (!uiState.isConfigured) {
                     Text(text = "请先配置 Agent Server 地址", fontSize = 13.sp, color = MutedText)
-                } else if (snapshot == null && loadingStatus) {
+                } else if (snapshot == null && uiState.isLoading) {
                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 } else if (snapshot != null) {
                     StatusSection(
@@ -424,15 +390,31 @@ private fun AgentServerDetailContent() {
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(
-                            onClick = { updateNetwork(true) },
-                            enabled = !loadingStatus,
+                            onClick = {
+                                scope.launch {
+                                    val success = viewModel.updateNetwork(true)
+                                    ToastUtil.show(
+                                        if (success) "网络状态已设为连接" else "网络状态更新失败",
+                                        if (success) ToastType.SUCCESS else ToastType.ERROR,
+                                    )
+                                }
+                            },
+                            enabled = !uiState.isLoading,
                             modifier = Modifier.weight(1f),
                         ) {
                             Text("设为连接")
                         }
                         OutlinedButton(
-                            onClick = { updateNetwork(false) },
-                            enabled = !loadingStatus,
+                            onClick = {
+                                scope.launch {
+                                    val success = viewModel.updateNetwork(false)
+                                    ToastUtil.show(
+                                        if (success) "网络状态已设为断开" else "网络状态更新失败",
+                                        if (success) ToastType.SUCCESS else ToastType.ERROR,
+                                    )
+                                }
+                            },
+                            enabled = !uiState.isLoading,
                             modifier = Modifier.weight(1f),
                         ) {
                             Text("设为断开")
@@ -457,7 +439,7 @@ private fun StatusSection(
             Box(
                 modifier = Modifier
                     .size(8.dp)
-                    .background(if (connected) Color(0xFF22C55E) else Color(0xFFEF4444), CircleShape),
+                    .background(if (connected) SuccessGreen else ErrorRed, CircleShape),
             )
             Spacer(modifier = Modifier.width(8.dp))
             Text(text = title, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = DarkPrimary)
@@ -634,7 +616,7 @@ private fun AccessibilityDetailContent() {
                     Text(
                         text = if (serviceActive) "已开启" else "未开启",
                         fontSize = 14.sp,
-                        color = if (serviceActive) GradientBlueStart else Color(0xFFE53935),
+                        color = if (serviceActive) GradientBlueStart else ErrorRed,
                     )
                 }
             }

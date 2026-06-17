@@ -26,17 +26,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.core.content.ContextCompat
-import androidx.core.net.toUri
 import com.example.blueheartv.R
 import com.example.blueheartv.ui.theme.*
 import com.example.blueheartv.viewmodel.AuthViewModel
@@ -330,7 +319,7 @@ private fun PermissionRow(
                     .size(20.dp)
                     .background(
                         Brush.linearGradient(
-                            colors = listOf(Color(0xFF9BF763), Color(0xFF26AB5B))
+                            colors = listOf(AuthCheckGreenStart, AuthCheckGreenEnd)
                         ),
                         CircleShape,
                     ),
@@ -347,7 +336,7 @@ private fun PermissionRow(
             Box(
                 modifier = Modifier
                     .size(20.dp)
-                    .background(Color(0xFFE0E0E0), CircleShape),
+                    .background(AuthUncheckedGray, CircleShape),
             )
         }
     }

@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.blueheartv.ui.theme.ButtonBorderDark
 import com.example.blueheartv.ui.theme.MutedText
+import com.example.blueheartv.ui.theme.Radius
 
 @Composable
 fun GlassButton(
@@ -31,7 +32,7 @@ fun GlassButton(
     icon: ImageVector? = null,
     onClick: () -> Unit = {},
 ) {
-    val shape = RoundedCornerShape(10.dp)
+    val shape = RoundedCornerShape(Radius.small.dp)
 
     Box(
         modifier = modifier

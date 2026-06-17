@@ -20,15 +20,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.blueheartv.ui.theme.*
 import com.example.blueheartv.voice.VoiceRecordingState
-
-private val SuccessGreen = Color(0xFF4CAF50)
-private val FailedRed = Color(0xFFFF6B6B)
 
 @Composable
 fun VoiceRecordingOverlay(

@@ -29,8 +29,6 @@ import com.example.blueheartv.model.ChatAttachment
 import com.example.blueheartv.ui.components.*
 import com.example.blueheartv.ui.theme.*
 import com.example.blueheartv.util.AppGlobalUiHost
-import com.example.blueheartv.util.ToastType
-import com.example.blueheartv.util.ToastUtil
 import com.example.blueheartv.chat.AgentServerConfigStore
 import com.example.blueheartv.viewmodel.ChatSessionState
 import com.example.blueheartv.viewmodel.ChatState
@@ -45,7 +43,6 @@ fun HomeScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val listState = rememberLazyListState()
-    var showFloatingMenu by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
     val actions = rememberHomeScreenActions(viewModel, snackbarHostState)
@@ -53,10 +50,6 @@ fun HomeScreen(
     LaunchedEffect(Unit) {
         viewModel.navigateToSettings.collect { onNavigateToSettings() }
     }
-
-    val screenshotInDevText = stringResource(R.string.feature_in_dev_screenshot)
-    val translateInDevText = stringResource(R.string.feature_in_dev_translate)
-    val summarizeInDevText = stringResource(R.string.feature_in_dev_summarize)
 
     val shouldAutoScroll by remember(uiState.messages.size, uiState.sessionState) {
         derivedStateOf {
@@ -186,35 +179,6 @@ fun HomeScreen(
                 onNavigateToSettings()
             },
         )
-
-        BoxWithConstraints(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.BottomEnd) {
-            val menuEndPadding = maxWidth * 0.08f
-            val menuBottomPadding = maxHeight * 0.12f
-            FloatingMenu(
-                visible = showFloatingMenu,
-                onDismiss = { showFloatingMenu = false },
-                items = listOf(
-                    FloatingMenuItem(Icons.Outlined.ChatBubbleOutline, stringResource(R.string.menu_new_chat)) {
-                        viewModel.startNewConversation()
-                    },
-                    FloatingMenuItem(Icons.Outlined.Screenshot, stringResource(R.string.menu_screenshot)) {
-                        showFloatingMenu = false
-                        ToastUtil.show(screenshotInDevText, ToastType.INFO)
-                    },
-                    FloatingMenuItem(Icons.Outlined.Translate, stringResource(R.string.menu_translate)) {
-                        showFloatingMenu = false
-                        ToastUtil.show(translateInDevText, ToastType.INFO)
-                    },
-                    FloatingMenuItem(Icons.Outlined.Summarize, stringResource(R.string.menu_summarize)) {
-                        showFloatingMenu = false
-                        ToastUtil.show(summarizeInDevText, ToastType.INFO)
-                    },
-                ),
-                modifier = Modifier.padding(end = menuEndPadding, bottom = menuBottomPadding),
-            )
-
-            FloatingWidget { showFloatingMenu = !showFloatingMenu }
-        }
 
         VoiceRecordingOverlay(
             visible = actions.voiceRecordingState.value != VoiceRecordingState.IDLE,

@@ -64,7 +64,7 @@ fun HistoryDrawer(
                     .fillMaxHeight()
                     .fillMaxWidth(0.82f)
                     .widthIn(min = 260.dp, max = 360.dp),
-                shape = RoundedCornerShape(topEnd = 40.dp, bottomEnd = 0.dp),
+                shape = RoundedCornerShape(topEnd = Radius.xxlarge.dp, bottomEnd = Radius.xxlarge.dp),
                 color = SurfaceWhite,
             ) {
                 Column(

@@ -5,9 +5,11 @@ import com.example.blueheartv.db.AppDatabase
 import com.example.blueheartv.viewmodel.ChatSessionRepository
 import com.example.blueheartv.viewmodel.ChatSessionStore
 import com.example.blueheartv.viewmodel.ChatViewModel
+import com.example.blueheartv.viewmodel.SettingsDetailViewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import org.koin.androidx.viewmodel.dsl.viewModel
 import org.koin.dsl.module
 
 val appModule = module {
@@ -33,4 +35,6 @@ val appModule = module {
             repo = get(),
         )
     }
+
+    viewModel { SettingsDetailViewModel() }
 }
