@@ -407,19 +407,24 @@ private fun ChatContent(
         contentPadding = PaddingValues(vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        items(uiState.messages, key = { it.id }) { message ->
+        val conversationGroups = groupConversationMessages(uiState.messages)
+        items(conversationGroups, key = { it.id }) { group ->
             Column {
-                if (message.isUser) {
-                    UserBubble(
-                        message = message,
-                        onCopy = onCopy,
-                        onDelete = onDelete,
-                        onEditConfirm = { newContent -> onEditUserMessage(message.id, newContent) },
-                    )
-                } else {
-                    AiBubble(message = message, onCopy = onCopy, onSpeak = onSpeak, onDelete = onDeleteAiMessage)
-                    if (!message.isLoading) {
-                        ActionToolbar(messageContent = message.content, onSpeak = onSpeak, onRefresh = onRefresh)
+                ConversationTimestampHeader(timestamp = group.timestamp)
+                Spacer(modifier = Modifier.height(8.dp))
+                group.messages.forEach { message ->
+                    if (message.isUser) {
+                        UserBubble(
+                            message = message,
+                            onCopy = onCopy,
+                            onDelete = onDelete,
+                            onEditConfirm = { newContent -> onEditUserMessage(message.id, newContent) },
+                        )
+                    } else {
+                        AiBubble(message = message, onCopy = onCopy, onSpeak = onSpeak, onDelete = onDeleteAiMessage)
+                        if (!message.isLoading) {
+                            ActionToolbar(messageContent = message.content, onSpeak = onSpeak, onRefresh = onRefresh)
+                        }
                     }
                 }
             }

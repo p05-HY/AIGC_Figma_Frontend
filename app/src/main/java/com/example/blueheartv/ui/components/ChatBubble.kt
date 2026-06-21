@@ -52,8 +52,6 @@ import com.example.blueheartv.util.ToastType
 import com.example.blueheartv.util.ToastUtil
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
-import java.text.SimpleDateFormat
-import java.util.*
 import kotlin.time.Duration.Companion.milliseconds
 
 private const val TYPEWRITER_DELAY_MS = 35L
@@ -273,7 +271,6 @@ fun UserBubble(
                     )
                 }
                 }
-                MessageTimestamp(timestamp = message.timestamp)
             }
         }
     }
@@ -410,34 +407,10 @@ fun AiBubble(
                         },
                     )
                 }
-                MessageTimestamp(timestamp = message.timestamp)
             }
             }
         }
     }
-}
-
-@Composable
-private fun MessageTimestamp(timestamp: Long) {
-    val formatter = remember {
-        SimpleDateFormat("HH:mm", Locale.getDefault())
-    }
-    val timeText = remember(timestamp) {
-        val now = System.currentTimeMillis()
-        val diff = now - timestamp
-        when {
-            diff < 60_000 -> "刚刚"
-            diff < 3600_000 -> "${diff / 60_000}分钟前"
-            diff < 86400_000 -> "${diff / 3600_000}小时前"
-            else -> formatter.format(Date(timestamp))
-        }
-    }
-    Text(
-        text = timeText,
-        fontSize = 11.sp,
-        color = MutedText,
-        modifier = Modifier.padding(top = 2.dp, bottom = 2.dp),
-    )
 }
 
 @Composable
