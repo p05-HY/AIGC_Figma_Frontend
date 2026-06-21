@@ -42,6 +42,16 @@ val Slate700Stroke = Color(0x6647515A) // 40% opacity dark slate (for outer bord
 val ChipFill = Color(0x99F8FAFC) // Chip background (60% opacity)
 val ChipStroke = Color(0x333F85FF) // Chip border (20% opacity blue)
 
+// Echo brand tokens for high-exposure controls
+val BrandPrimary = Color(0xFF7F77DD)
+val BrandPrimarySoft = Color(0x1A7F77DD)
+val BrandPrimaryPressed = Color(0xFF6F67CA)
+val BrandStroke = Color(0x667F77DD)
+val BrandRipple = Color(0x337F77DD)
+val DangerSoft = Color(0xFFFCEBEB)
+val DangerStroke = Color(0x66A32D2D)
+val DangerText = Color(0xFFA32D2D)
+
 // Semantic status colors
 val ErrorRed = Color(0xFFE53935)
 val SuccessGreen = Color(0xFF22C55E)

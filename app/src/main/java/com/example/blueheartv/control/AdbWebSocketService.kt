@@ -13,6 +13,7 @@ import android.util.DisplayMetrics
 import android.util.Log
 import android.view.WindowManager
 import androidx.core.app.NotificationCompat
+import com.example.blueheartv.BuildConfig
 import com.example.blueheartv.R
 import com.example.blueheartv.chat.AgentServerClient
 import com.example.blueheartv.chat.AgentServerConfigStore
@@ -48,7 +49,7 @@ class AdbWebSocketService : Service() {
         collector = AdbSnapshotCollector(this, executor)
         overlay = AdbOverlayController(this)
         createNotificationChannel()
-        startForeground(NOTIFICATION_ID, buildNotification("ADB 工具服务启动中"))
+        startForeground(NOTIFICATION_ID, buildNotification(getString(R.string.assist_notification_starting)))
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -81,7 +82,7 @@ class AdbWebSocketService : Service() {
     private fun connect() {
         val config = AgentServerConfigStore.snapshot()
         if (!config.isConfigured) {
-            updateNotification("请先配置 Agent Server")
+            updateNotification(getString(R.string.assist_notification_config_required))
             stopSelf()
             return
         }
@@ -94,7 +95,7 @@ class AdbWebSocketService : Service() {
         val url = runCatching {
             AgentServerClient(configProvider = { AgentServerConfigStore.snapshot() }).adbWebSocketUrl()
         }.getOrElse {
-            updateNotification("ADB 连接地址无效: ${it.message}")
+            updateNotification(userVisibleStatus(getString(R.string.assist_notification_url_invalid), it.message))
             return
         }
 
@@ -109,7 +110,7 @@ class AdbWebSocketService : Service() {
             .addDeviceIdHeader()
             .build()
         Log.d(TAG, "connect() opening websocket: $url")
-        updateNotification("ADB 连接中: $url")
+        updateNotification(userVisibleStatus(getString(R.string.assist_notification_connecting), url))
         webSocket = client.newWebSocket(request, listener)
     }
 
@@ -117,9 +118,8 @@ class AdbWebSocketService : Service() {
         override fun onOpen(webSocket: WebSocket, response: Response) {
             isConnecting = false
             Log.d(TAG, "onOpen: websocket connected")
-            updateNotification("ADB 已连接")
-            overlay.update("ADB 已连接", "等待 Agent 指令")
-            overlay.showBriefly(3000)
+            updateNotification(getString(R.string.assist_notification_connected))
+            showDebugOverlay("手机协助能力已连接", "等待指令")
             serviceScope.launch {
                 if (!connectSent) {
                     connectSent = true
@@ -148,9 +148,8 @@ class AdbWebSocketService : Service() {
             heartbeatJob?.cancel()
             heartbeatJob = null
             Log.d(TAG, "onClosed: code=$code reason=$reason")
-            updateNotification("ADB 连接关闭: $code $reason")
-            overlay.update("ADB 连接关闭", "$code $reason")
-            overlay.showBriefly(3000)
+            updateNotification(userVisibleStatus(getString(R.string.assist_notification_closed), "$code $reason"))
+            showDebugOverlay("手机协助能力已断开", "$code $reason")
             reconnectLater()
         }
 
@@ -160,9 +159,8 @@ class AdbWebSocketService : Service() {
             heartbeatJob?.cancel()
             heartbeatJob = null
             Log.d(TAG, "onFailure: ${t.message}")
-            updateNotification("ADB 连接异常: ${t.message}")
-            overlay.update("ADB 连接异常", t.message)
-            overlay.showBriefly(3000)
+            updateNotification(userVisibleStatus(getString(R.string.assist_notification_error), t.message))
+            showDebugOverlay("手机协助能力连接异常", t.message)
             reconnectLater()
         }
     }
@@ -210,8 +208,7 @@ class AdbWebSocketService : Service() {
         val type = envelope.optString("type")
         val message = envelope.optString("message")
         if (type == "response" && message == "pong") {
-            overlay.update("ADB 心跳正常")
-            overlay.showBriefly(3000)
+            showDebugOverlay("连接状态正常")
             return
         }
         if (type != "request") return
@@ -222,8 +219,7 @@ class AdbWebSocketService : Service() {
             return
         }
 
-        overlay.update("执行 $message")
-        overlay.showBriefly(3000)
+        showDebugOverlay("正在执行指令", message)
         runCatching {
             executeRequest(message, envelope.optJSONObject("data"))
             actionResult(requestId)
@@ -268,7 +264,7 @@ class AdbWebSocketService : Service() {
 
             "keyevent" -> runShell("input keyevent ${data.requiredInt("keyevent")}")
             "interact" -> waitForUserInteraction(data?.optString("message"))
-            else -> error("未知 ADB 指令: $message")
+            else -> error("未知手机协助指令: $message")
         }
     }
 
@@ -291,11 +287,11 @@ class AdbWebSocketService : Service() {
         ensureAdbKeyboardActive()
         val broadcastResult = runShellForResult("am broadcast -a ADB_INPUT_TEXT --es msg ${shellQuote(text)}")
         if (!broadcastResult.isSuccess) {
-            diagnostics += broadcastResult.stderr.ifBlank { "ADB Keyboard 广播执行失败" }
+            diagnostics += broadcastResult.stderr.ifBlank { "输入通道发送失败" }
         } else if (verifyTypedText(beforeUi, text)) {
             return
         } else {
-            diagnostics += "ADB Keyboard 广播执行成功但未观测到输入结果"
+            diagnostics += "输入通道已发送但未观测到输入结果"
         }
 
         error(diagnostics.joinToString("；").ifBlank { "输入未生效" })
@@ -309,8 +305,8 @@ class AdbWebSocketService : Service() {
         val currentIme = imeResult.stdout.trim()
         if (!currentIme.contains(ADB_KEYBOARD_IME_ID)) {
             error(
-                "当前输入法不是 ADB Keyboard（$ADB_KEYBOARD_IME_ID），无法输入非 ASCII 文本。" +
-                        "请先切换输入法后重试。",
+                "当前输入方式暂不支持这段文本。" +
+                        "请先切换到 Echo 支持的输入方式后重试。",
             )
         }
     }
@@ -367,7 +363,7 @@ class AdbWebSocketService : Service() {
     private suspend fun runShell(command: String) {
         val result = runShellForResult(command)
         if (!result.isSuccess) {
-            error(result.stderr.ifBlank { "shell exitCode=${result.exitCode}" })
+            error(result.stderr.ifBlank { "命令执行失败(${result.exitCode})" })
         }
     }
 
@@ -447,6 +443,17 @@ class AdbWebSocketService : Service() {
             .notify(NOTIFICATION_ID, buildNotification(content))
     }
 
+    private fun showDebugOverlay(status: String, detail: String? = null) {
+        if (!BuildConfig.SHOW_TECH_DEBUG_UI) return
+        overlay.update(status, detail)
+        overlay.showBriefly(3000)
+    }
+
+    private fun userVisibleStatus(status: String, detail: String?): String {
+        if (!BuildConfig.SHOW_TECH_DEBUG_UI || detail.isNullOrBlank()) return status
+        return "$status: $detail"
+    }
+
     private fun buildNotification(content: String): Notification {
         val stopIntent = Intent(this, AdbWebSocketService::class.java).apply {
             action = ACTION_STOP_ALL
@@ -457,11 +464,11 @@ class AdbWebSocketService : Service() {
         )
         return NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_echo_face)
-            .setContentTitle("Echo ADB")
+            .setContentTitle(getString(R.string.assist_notification_title))
             .setContentText(content)
             .setOngoing(true)
             .setSilent(true)
-            .addAction(0, "停止所有服务", stopPending)
+            .addAction(0, getString(R.string.assist_notification_stop), stopPending)
             .build()
     }
 
@@ -469,7 +476,7 @@ class AdbWebSocketService : Service() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val channel = NotificationChannel(
             NOTIFICATION_CHANNEL_ID,
-            "ADB 工具连接",
+            getString(R.string.assist_notification_channel_name),
             NotificationManager.IMPORTANCE_LOW,
         )
         getSystemService(NotificationManager::class.java).createNotificationChannel(channel)

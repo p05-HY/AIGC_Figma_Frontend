@@ -29,7 +29,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.res.painterResource
@@ -51,16 +50,6 @@ import com.example.blueheartv.viewmodel.ChatViewModel
 import org.koin.java.KoinJavaComponent.get
 import kotlin.math.abs
 
-/* ─── Figma Design Tokens (node-id=462:458) ─── */
-private val GlassFillColor = Color(0x99F8FAFC)           // rgba(248,250,252,0.6)
-private val GlassStrokeOuter = Color(0x6647515A)         // rgba(71,81,90,0.4) 外描边
-private val GlassStrokeBlue = Color(0x333F85FF)          // rgba(63,133,255,0.2) 蓝色高光描边
-private val GlassGradientTop = Color(0x00FFFFFF)         // 渐变起始：透明白
-private val GlassGradientBottom = Color(0xFFFFFFFF)      // 渐变终止：纯白
-private val GlassWhiteOverlay70 = Color(0xB3FFFFFF)      // rgba(255,255,255,0.7)
-private val GlassWhiteOverlay80 = Color(0xCCFFFFFF)      // rgba(255,255,255,0.8)
-private val TitleBlue = Color(0xFF80A3E5)                // #80A3E5 Echo标题色
-private val PlaceholderGray = Color(0xFF6D6D6D)          // #6D6D6D 输入框占位文字
 class FloatingChatWindow(
     private val context: Context,
     private val windowManager: WindowManager,
@@ -268,26 +257,26 @@ private fun GlassCard(
         modifier = modifier
             .clip(shape)
             // Layer 1: 半透明填充 (Figma node-id=462:462)
-            .background(GlassFillColor)
+            .background(FloatingDesignTokens.GlassFillColor)
             // Layer 2: 内部渐变 (Figma node-id=462:463)
             .background(
                 Brush.verticalGradient(
-                    colors = listOf(GlassGradientTop, GlassGradientBottom),
+                    colors = listOf(FloatingDesignTokens.GlassGradientTop, FloatingDesignTokens.GlassGradientBottom),
                 )
             )
             // Layer 3: 白色覆盖渐变模拟光泽 (Figma node-id=462:471)
             .background(
                 Brush.verticalGradient(
                     colorStops = arrayOf(
-                        0.41f to GlassWhiteOverlay70,
-                        0.96f to GlassWhiteOverlay80,
+                        0.41f to FloatingDesignTokens.GlassWhiteOverlay70,
+                        0.96f to FloatingDesignTokens.GlassWhiteOverlay80,
                     ),
                 )
             )
             // Layer 4: 蓝色高光描边 (Figma node-id=462:464)
-            .border(1.dp, GlassStrokeBlue, shape)
+            .border(1.dp, FloatingDesignTokens.GlassStrokeBlue, shape)
             // Layer 5: 外部描边 (Figma node-id=462:461)
-            .border(0.5.dp, GlassStrokeOuter, shape),
+            .border(0.5.dp, FloatingDesignTokens.GlassStrokeOuter, shape),
     ) {
         content()
     }
@@ -341,7 +330,7 @@ private fun FloatingChatContent(
                         text = "Echo",
                         fontSize = metrics.titleFontSize,
                         fontWeight = FontWeight.Medium,
-                        color = TitleBlue,
+                        color = FloatingDesignTokens.TitleBlue,
                         textAlign = TextAlign.Center,
                         modifier = Modifier.align(Alignment.Center),
                     )
@@ -443,14 +432,14 @@ private fun GlassInputBar(
                 .fillMaxWidth()
                 .height(metrics.inputHeight)
                 .clip(inputShape)
-                .background(GlassFillColor)
+                .background(FloatingDesignTokens.GlassFillColor)
                 .background(
                     Brush.verticalGradient(
-                        colors = listOf(GlassGradientTop, GlassGradientBottom),
+                        colors = listOf(FloatingDesignTokens.GlassGradientTop, FloatingDesignTokens.GlassGradientBottom),
                     )
                 )
-                .border(1.dp, GlassStrokeBlue, inputShape)
-                .border(0.5.dp, GlassStrokeOuter, inputShape)
+                .border(1.dp, FloatingDesignTokens.GlassStrokeBlue, inputShape)
+                .border(0.5.dp, FloatingDesignTokens.GlassStrokeOuter, inputShape)
                 .padding(horizontal = metrics.inputHorizontalPadding),
             contentAlignment = Alignment.CenterStart,
         ) {
@@ -460,7 +449,7 @@ private fun GlassInputBar(
             ) {
                 CompactInputAction(
                     iconRes = R.drawable.ic_attachment,
-                    contentDescription = "添加附件",
+                    contentDescription = stringResource(R.string.action_attach_file),
                     metrics = metrics,
                     onClick = onAttachClick,
                 )
@@ -469,7 +458,7 @@ private fun GlassInputBar(
                         Text(
                             stringResource(R.string.floating_chat_input_hint),
                             fontSize = metrics.inputFontSize,
-                            color = PlaceholderGray,
+                            color = FloatingDesignTokens.PlaceholderGray,
                             maxLines = 1,
                         )
                     }
@@ -483,7 +472,7 @@ private fun GlassInputBar(
                 }
                 CompactInputAction(
                     iconRes = R.drawable.ic_mic,
-                    contentDescription = "Voice input",
+                    contentDescription = stringResource(R.string.action_voice_input),
                     metrics = metrics,
                     onClick = onMicClick,
                 )

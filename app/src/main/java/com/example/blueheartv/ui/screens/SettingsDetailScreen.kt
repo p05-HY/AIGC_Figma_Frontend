@@ -21,6 +21,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -73,7 +74,7 @@ fun SettingsDetailScreen(
             ) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Back",
+                    contentDescription = stringResource(com.example.blueheartv.R.string.action_back),
                     modifier = Modifier
                         .size(24.dp)
                         .clickable { onBack() },
@@ -107,7 +108,7 @@ private fun resolveDetail(
     "notifications" -> "通知设置" to { NotificationsDetailContent() }
     "privacy" -> "隐私与安全" to { PrivacyDetailContent(onClearHistory, onLogout) }
     "language" -> "语言设置" to { LanguageDetailContent() }
-    "agent_server" -> "Agent 服务" to { AgentServerDetailContent(viewModel) }
+    "agent_server" -> "服务连接" to { AgentServerDetailContent(viewModel) }
     "storage" -> "存储管理" to { StorageDetailContent() }
     "accessibility" -> "无障碍设置" to { AccessibilityDetailContent() }
     "help" -> "帮助与反馈" to { HelpDetailContent() }
@@ -139,9 +140,9 @@ private fun ProfileDetailContent() {
         Spacer(modifier = Modifier.height(24.dp))
 
         DetailCard {
-            DetailRow(label = "昵称", value = "蓝心小V用户")
+            DetailRow(label = "昵称", value = "Echo用户")
             DetailDivider()
-            DetailRow(label = "账号", value = "user@blueheartv.com")
+            DetailRow(label = "账号", value = "user@Echo.com")
             DetailDivider()
             DetailRow(label = "手机号", value = "138****8888")
         }
@@ -278,7 +279,7 @@ private fun LanguageDetailContent() {
     }
 }
 
-// ── Agent Server ─────────────────────────────────────────────────────────────
+// ── Service connection ───────────────────────────────────────────────────────
 
 @Composable
 private fun AgentServerDetailContent(viewModel: SettingsDetailViewModel) {
@@ -295,7 +296,7 @@ private fun AgentServerDetailContent(viewModel: SettingsDetailViewModel) {
                 OutlinedTextField(
                     value = baseUrl,
                     onValueChange = { baseUrl = it },
-                    label = { Text("Server URL") },
+                    label = { Text("服务地址") },
                     placeholder = { Text("http://127.0.0.1:8124") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
@@ -304,7 +305,7 @@ private fun AgentServerDetailContent(viewModel: SettingsDetailViewModel) {
                 OutlinedTextField(
                     value = apiKey,
                     onValueChange = { apiKey = it },
-                    label = { Text("X-Api-Key") },
+                    label = { Text("访问密钥") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -312,9 +313,11 @@ private fun AgentServerDetailContent(viewModel: SettingsDetailViewModel) {
                 Button(
                     onClick = {
                         viewModel.saveAndConnect(context, baseUrl, apiKey)
-                        ToastUtil.show("Agent 服务配置已保存", ToastType.SUCCESS)
+                        ToastUtil.show("服务配置已保存", ToastType.SUCCESS)
                         viewModel.refreshNow()
                     },
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary),
+                    shape = RoundedCornerShape(24.dp),
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text("保存并连接")
@@ -349,12 +352,12 @@ private fun AgentServerDetailContent(viewModel: SettingsDetailViewModel) {
                 }
                 val snapshot = uiState.status
                 if (!uiState.isConfigured) {
-                    Text(text = "请先配置 Agent Server 地址", fontSize = 13.sp, color = MutedText)
+                    Text(text = "请先配置服务地址", fontSize = 13.sp, color = MutedText)
                 } else if (snapshot == null && uiState.isLoading) {
                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 } else if (snapshot != null) {
                     StatusSection(
-                        title = "ADB",
+                        title = "手机协助",
                         connected = snapshot.adb.connected,
                         rows = listOfNotNull(
                             snapshot.adb.width?.let { width ->
@@ -362,12 +365,12 @@ private fun AgentServerDetailContent(viewModel: SettingsDetailViewModel) {
                                 "分辨率" to if (height != null) "${width}x$height" else width.toString()
                             },
                             snapshot.adb.currentPackage?.let { "当前应用" to it },
-                            snapshot.adb.activity?.let { "Activity" to it },
+                            snapshot.adb.activity?.let { "当前界面" to it },
                             snapshot.adb.error?.let { "错误" to it },
                         ),
                     )
                     StatusSection(
-                        title = "System",
+                        title = "系统能力",
                         connected = snapshot.system.connected,
                         rows = listOfNotNull(
                             snapshot.system.path?.let { "路径" to it },
@@ -376,7 +379,7 @@ private fun AgentServerDetailContent(viewModel: SettingsDetailViewModel) {
                         ),
                     )
                     StatusSection(
-                        title = "Network",
+                        title = "网络模式",
                         connected = snapshot.network.networkConnected == true,
                         rows = listOfNotNull(
                             snapshot.network.mode?.let { "模式" to it },
@@ -400,6 +403,7 @@ private fun AgentServerDetailContent(viewModel: SettingsDetailViewModel) {
                                 }
                             },
                             enabled = !uiState.isLoading,
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = BrandPrimary),
                             modifier = Modifier.weight(1f),
                         ) {
                             Text("设为连接")
@@ -415,6 +419,7 @@ private fun AgentServerDetailContent(viewModel: SettingsDetailViewModel) {
                                 }
                             },
                             enabled = !uiState.isLoading,
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = BrandPrimary),
                             modifier = Modifier.weight(1f),
                         ) {
                             Text("设为断开")

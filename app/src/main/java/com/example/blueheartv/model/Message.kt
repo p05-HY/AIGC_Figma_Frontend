@@ -77,8 +77,3 @@ val defaultRecommendations = listOf(
     SmartRecommendation("今天深圳多云转晴 28°C", "出门建议带把伞，下午可能有阵雨"),
     SmartRecommendation("您有3个未读快递通知", "需要我帮您查看物流详情吗？"),
 )
-
-data class PermissionItem(
-    val name: String,
-    val isGranted: Boolean = true,
-)

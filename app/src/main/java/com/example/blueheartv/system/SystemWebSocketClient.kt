@@ -115,7 +115,7 @@ class SystemWebSocketClient(
 
     private fun buildSocketRequestUrl(): String {
         val base = config.serverBaseUrl.trim()
-        require(base.isNotBlank()) { "System WebSocket URL 不能为空。" }
+        require(base.isNotBlank()) { "系统能力连接地址不能为空。" }
         val normalizedBase = when {
             base.startsWith("ws://") -> "http://${base.removePrefix("ws://")}"
             base.startsWith("wss://") -> "https://${base.removePrefix("wss://")}"

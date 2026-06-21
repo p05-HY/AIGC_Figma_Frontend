@@ -11,15 +11,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -35,6 +34,7 @@ import com.example.blueheartv.viewmodel.ChatState
 import com.example.blueheartv.viewmodel.ChatViewModel
 import com.example.blueheartv.viewmodel.HomeUiState
 import com.example.blueheartv.voice.VoiceRecordingState
+import kotlinx.coroutines.launch
 
 @Composable
 fun HomeScreen(
@@ -45,7 +45,35 @@ fun HomeScreen(
     val listState = rememberLazyListState()
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
+    val scope = rememberCoroutineScope()
     val actions = rememberHomeScreenActions(viewModel, snackbarHostState)
+    val undoActionLabel = stringResource(R.string.action_undo)
+    val deletedMessageText = stringResource(R.string.snackbar_message_deleted)
+    val editedMessageText = stringResource(R.string.snackbar_message_edited)
+    val scrollToBottomDescription = stringResource(R.string.action_scroll_to_bottom)
+    val goSettingsText = stringResource(R.string.go_settings)
+    val retryText = stringResource(R.string.retry)
+
+    fun showUndoSnackbar(message: String, undoToken: Long) {
+        scope.launch {
+            val result = snackbarHostState.showSnackbar(
+                message = message,
+                actionLabel = undoActionLabel,
+                duration = SnackbarDuration.Short,
+            )
+            if (result == SnackbarResult.ActionPerformed) {
+                viewModel.undoLastMessageMutation(undoToken)
+            }
+        }
+    }
+
+    fun sendCurrentMessage() {
+        val canSend = uiState.inputText.isNotBlank() || uiState.imageAttachments.isNotEmpty()
+        if (!canSend) return
+        viewModel.sendMessage()
+        focusManager.clearFocus()
+    }
 
     LaunchedEffect(Unit) {
         viewModel.navigateToSettings.collect { onNavigateToSettings() }
@@ -93,22 +121,57 @@ fun HomeScreen(
                         listState = listState,
                         onRefresh = { viewModel.retryLastMessage() },
                         onCopy = { actions.copyToClipboard(it) },
-                        onDelete = { viewModel.deleteMessage(it) },
+                        onDelete = {
+                            viewModel.deleteMessage(it)?.let { result ->
+                                showUndoSnackbar(deletedMessageText, result.token)
+                            }
+                        },
                         onSpeak = { actions.speak(it) },
-                        onEditUserMessage = { messageId, newContent -> viewModel.editAndResend(messageId, newContent) },
-                        onDeleteAiMessage = { viewModel.deleteAiMessage(it) },
+                        onEditUserMessage = { messageId, newContent ->
+                            viewModel.editAndResend(messageId, newContent)?.let { result ->
+                                showUndoSnackbar(editedMessageText, result.token)
+                            }
+                        },
+                        onDeleteAiMessage = {
+                            viewModel.deleteAiMessage(it)?.let { result ->
+                                showUndoSnackbar(deletedMessageText, result.token)
+                            }
+                        },
                     )
+                }
+
+                if (!shouldAutoScroll && uiState.messages.size > 5) {
+                    SmallFloatingActionButton(
+                        onClick = {
+                            scope.launch {
+                                if (uiState.messages.isNotEmpty()) {
+                                    listState.animateScrollToItem(uiState.messages.lastIndex)
+                                }
+                            }
+                        },
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(end = 20.dp, bottom = 20.dp),
+                        containerColor = SurfaceWhite,
+                        contentColor = BlueAccent,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.KeyboardArrowDown,
+                            contentDescription = scrollToBottomDescription,
+                        )
+                    }
                 }
             }
 
             val lastError = uiState.lastError
             if (uiState.sessionState == ChatSessionState.ERROR && lastError != null) {
                 val isConfigError = !AgentServerConfigStore.snapshot().isConfigured
+                val retryAction: () -> Unit = { viewModel.retryLastMessage() }
                 ErrorRetryBar(
                     message = lastError,
-                    actionText = if (isConfigError) "去设置" else "重试",
+                    actionText = if (isConfigError) goSettingsText else retryText,
                     canAction = if (isConfigError) true else uiState.canRetry,
-                    onAction = if (isConfigError) onNavigateToSettings else {{ viewModel.retryLastMessage() }},
+                    onAction = if (isConfigError) onNavigateToSettings else retryAction,
                 )
             }
 
@@ -138,8 +201,9 @@ fun HomeScreen(
             BottomInputBar(
                 value = uiState.inputText,
                 onValueChange = { viewModel.onInputChanged(it) },
-                onSend = { viewModel.sendMessage() },
-                sendEnabled = uiState.sessionState != ChatSessionState.RESPONDING,
+                onSend = { sendCurrentMessage() },
+                sendEnabled = uiState.sessionState != ChatSessionState.RESPONDING &&
+                    (uiState.inputText.isNotBlank() || uiState.imageAttachments.isNotEmpty()),
                 onAttachClick = { actions.requestAttach() },
                 onMicClick = { actions.requestMic() },
                 inputMode = uiState.inputMode,
@@ -206,6 +270,7 @@ private fun AttachmentPreviewRow(
     onRemove: (String) -> Unit,
 ) {
     if (attachments.isEmpty()) return
+    val removeAttachmentDescription = stringResource(R.string.action_remove_attachment)
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -238,7 +303,7 @@ private fun AttachmentPreviewRow(
                     Spacer(modifier = Modifier.width(4.dp))
                     androidx.compose.material3.Icon(
                         imageVector = Icons.Outlined.Close,
-                        contentDescription = "Remove attachment",
+                        contentDescription = removeAttachmentDescription,
                         modifier = Modifier
                             .size(16.dp)
                             .clickable { onRemove(attachment.id) },
@@ -336,7 +401,9 @@ private fun ChatContent(
 ) {
     LazyColumn(
         state = listState,
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .testTag("chat_list"),
         contentPadding = PaddingValues(vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {

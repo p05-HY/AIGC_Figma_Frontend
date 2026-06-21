@@ -123,6 +123,31 @@ class ChatSessionRepository(
         persistDeleteAll()
     }
 
+    internal fun snapshotActiveSession(): ConversationMutationSnapshot? {
+        val activeId = activeSessionId ?: return null
+        return ConversationMutationSnapshot(
+            activeSessionId = activeId,
+            sessions = sessions.map { it.deepCopy() },
+        )
+    }
+
+    internal fun restoreSnapshot(snapshot: ConversationMutationSnapshot): ConversationSession? {
+        val snapshotSessionIds = snapshot.sessions.map { it.id }.toSet()
+        val removedSessionIds = sessions
+            .map { it.id }
+            .filterNot { it in snapshotSessionIds }
+            .toSet()
+        sessions.clear()
+        sessions.addAll(snapshot.sessions.map { it.deepCopy() })
+        activeSessionId = snapshot.activeSessionId
+        persistDeleteSessions(removedSessionIds)
+        sessions.forEach { session ->
+            persistSession(session)
+            persistMessages(session)
+        }
+        return getActiveSession()
+    }
+
     fun getShareText(sessionId: String): String {
         val session = sessions.firstOrNull { it.id == sessionId } ?: return ""
         return buildString {
@@ -166,11 +191,7 @@ class ChatSessionRepository(
         val idx = active.messages.indexOfFirst { it.id == messageId }
         if (idx < 0) return null
 
-        val toRemove = mutableListOf(messageId)
-        if (idx + 1 < active.messages.size && !active.messages[idx + 1].isUser) {
-            toRemove.add(active.messages[idx + 1].id)
-        }
-        active.messages.removeAll { it.id in toRemove }
+        active.messages.subList(idx, active.messages.size).clear()
         active.updatedAtMillis = timeProvider()
         persistSession(active)
         persistMessages(active)
@@ -310,3 +331,12 @@ internal data class SessionRestoreResult(
     val activeSession: ConversationSession?,
     val histories: List<ChatHistory>,
 )
+
+internal data class ConversationMutationSnapshot(
+    val activeSessionId: String,
+    val sessions: List<ConversationSession>,
+)
+
+private fun ConversationSession.deepCopy(): ConversationSession {
+    return copy(messages = messages.toMutableList())
+}

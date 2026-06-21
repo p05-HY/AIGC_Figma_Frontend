@@ -18,7 +18,6 @@ import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
 
 object Routes {
-    const val AUTH = "auth"
     const val HOME = "home"
     const val SETTINGS = "settings"
     const val SETTINGS_DETAIL = "settings_detail/{key}"

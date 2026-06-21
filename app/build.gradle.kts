@@ -30,6 +30,7 @@ val agentServerApiKey: String = localProperties.getProperty("AGENT_SERVER_API_KE
 // deviceId 路径开关：true=WS 走 /adb/{deviceId}、/system/{deviceId}（对齐协议）；
 // false=WS 走无参 /adb、/system（兼容尚未改造的现网后端，便于提前联调）。默认 true。
 val deviceIdInPath: String = localProperties.getProperty("DEVICE_ID_IN_PATH", "true")
+val showTechDebugUi: String = localProperties.getProperty("SHOW_TECH_DEBUG_UI", "false")
 
 android {
     namespace = "com.example.blueheartv"
@@ -47,6 +48,7 @@ android {
         buildConfigField("String", "AGENT_SERVER_BASE_URL", agentServerBaseUrl.toBuildConfigLiteral())
         buildConfigField("String", "AGENT_SERVER_API_KEY", agentServerApiKey.toBuildConfigLiteral())
         buildConfigField("boolean", "DEVICE_ID_IN_PATH", deviceIdInPath.trim().ifBlank { "true" })
+        buildConfigField("boolean", "SHOW_TECH_DEBUG_UI", showTechDebugUi.trim().ifBlank { "false" })
 
         vectorDrawables {
             useSupportLibrary = true

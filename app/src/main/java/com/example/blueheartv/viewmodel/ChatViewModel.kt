@@ -52,6 +52,10 @@ data class TaskCompletionEvent(
     val success: Boolean,
 )
 
+data class MessageMutationResult(
+    val token: Long,
+)
+
 data class HomeUiState(
     val chatState: ChatState = ChatState.DEFAULT,
     val sessionState: ChatSessionState = ChatSessionState.IDLE,
@@ -71,6 +75,10 @@ private const val SEND_DEBOUNCE_MS = 500L
 
 private const val TAG = "ChatViewModel"
 
+private data class PendingUndoMutation(
+    val token: Long,
+    val snapshot: ConversationMutationSnapshot,
+)
 
 class ChatViewModel(
     private val chatProvider: ChatProvider,
@@ -95,6 +103,8 @@ class ChatViewModel(
     private var streamJob: Job? = null
     private var historyJob: Job? = null
     private var lastSendAtMillis: Long = 0L
+    private var nextUndoToken: Long = 0L
+    private var pendingUndoMutation: PendingUndoMutation? = null
     private val rawStreamContent = mutableMapOf<String, String>()
     private val streamInvocationIds = mutableMapOf<String, String>()
     private val completeThinkTagRegex = Regex("<think>[\\s\\S]*?</think>", RegexOption.IGNORE_CASE)
@@ -194,15 +204,18 @@ class ChatViewModel(
     }
 
     fun sendMessage() {
+        val state = _uiState.value
+        val userInput = state.inputText.trim()
+        if (userInput.isBlank() && state.imageAttachments.isEmpty()) return
+
         val now = repo.now()
         if (now - lastSendAtMillis < SEND_DEBOUNCE_MS) {
             AppEventLogger.info("chat_send_debounced", "ignored duplicate send request")
             return
         }
         lastSendAtMillis = now
-        val userInput = _uiState.value.inputText.trim()
-        submitPrompt(userInput, clearInput = true, resetConversation = false)
-        if (userInput.isNotBlank()) {
+        val submitted = submitPrompt(userInput, clearInput = true, resetConversation = false)
+        if (submitted && userInput.isNotBlank()) {
             _messageSentEvent.tryEmit(userInput)
         }
     }
@@ -263,14 +276,17 @@ class ChatViewModel(
 
     fun getShareText(sessionId: String): String = repo.getShareText(sessionId)
 
-    fun deleteMessage(messageId: String) {
-        val active = repo.deleteMessage(messageId) ?: return
+    fun deleteMessage(messageId: String): MessageMutationResult? {
+        val snapshot = repo.snapshotActiveSession() ?: return null
+        val active = repo.deleteMessage(messageId) ?: return null
+        val result = storeUndoSnapshot(snapshot)
         _uiState.update { state ->
             state.copy(
                 chatState = deriveChatState(active.messages),
                 messages = active.messages.toList(),
             )
         }
+        return result
     }
 
     fun quoteMessage(content: String) {
@@ -278,37 +294,101 @@ class ChatViewModel(
         _uiState.update { it.copy(inputText = quoted + it.inputText) }
     }
 
-    fun editAndResend(messageId: String, newContent: String) {
-        val active = repo.removeMessageAndFollowing(messageId) ?: return
+    fun editAndResend(messageId: String, newContent: String): MessageMutationResult? {
+        val prompt = newContent.trim()
+        val attachments = _uiState.value.imageAttachments
+        if (!canSubmitPrompt(prompt, attachments)) return null
+
+        val snapshot = repo.snapshotActiveSession() ?: return null
+        val active = repo.removeMessageAndFollowing(messageId) ?: return null
+        val result = storeUndoSnapshot(snapshot)
         _uiState.update { state -> state.copy(messages = active.messages.toList()) }
-        submitPrompt(newContent, clearInput = false, resetConversation = false)
+        if (!startPrompt(prompt, attachments, clearInput = false, resetConversation = false)) {
+            pendingUndoMutation = null
+            restoreUndoSnapshot(snapshot)
+            return null
+        }
+        return result
     }
 
-    fun deleteAiMessage(messageId: String) {
-        val active = repo.deleteAiMessage(messageId) ?: return
+    fun deleteAiMessage(messageId: String): MessageMutationResult? {
+        val snapshot = repo.snapshotActiveSession() ?: return null
+        val active = repo.deleteAiMessage(messageId) ?: return null
+        val result = storeUndoSnapshot(snapshot)
         _uiState.update { state ->
             state.copy(
                 chatState = deriveChatState(active.messages),
                 messages = active.messages.toList(),
             )
         }
+        return result
     }
 
-    private fun submitPrompt(prompt: String, clearInput: Boolean, resetConversation: Boolean) {
+    fun undoLastMessageMutation(token: Long): Boolean {
+        val pending = pendingUndoMutation ?: return false
+        if (pending.token != token) return false
+        streamJob?.cancel()
+        rawStreamContent.clear()
+        streamInvocationIds.clear()
+        pendingUndoMutation = null
+        return restoreUndoSnapshot(pending.snapshot)
+    }
+
+    fun undoLastMessageMutation(): Boolean {
+        val token = pendingUndoMutation?.token ?: return false
+        return undoLastMessageMutation(token)
+    }
+
+    private fun storeUndoSnapshot(snapshot: ConversationMutationSnapshot): MessageMutationResult {
+        val token = ++nextUndoToken
+        pendingUndoMutation = PendingUndoMutation(token = token, snapshot = snapshot)
+        return MessageMutationResult(token)
+    }
+
+    private fun restoreUndoSnapshot(snapshot: ConversationMutationSnapshot): Boolean {
+        val active = repo.restoreSnapshot(snapshot) ?: return false
+        _uiState.update { state ->
+            state.copy(
+                chatState = deriveChatState(active.messages),
+                sessionState = ChatSessionState.IDLE,
+                messages = active.messages.toList(),
+                histories = repo.buildHistories(),
+                lastError = null,
+                canRetry = false,
+                retryPrompt = null,
+            )
+        }
+        return true
+    }
+
+    private fun submitPrompt(prompt: String, clearInput: Boolean, resetConversation: Boolean): Boolean {
+        val attachments = _uiState.value.imageAttachments
+        if (!canSubmitPrompt(prompt, attachments)) return false
+        return startPrompt(prompt, attachments, clearInput, resetConversation)
+    }
+
+    private fun canSubmitPrompt(prompt: String, attachments: List<ChatAttachment>): Boolean {
         if (!AgentServerConfigStore.snapshot().isConfigured) {
             DialogUtil.showAlert(
                 title = "未配置服务",
-                message = "请先在设置中配置 Agent Server 地址",
+                message = "请先在设置中配置服务地址",
                 confirmText = "去设置",
                 cancelText = "取消",
                 onConfirm = { _navigateToSettings.tryEmit(Unit) },
             )
-            return
+            return false
         }
-        val attachments = _uiState.value.imageAttachments
-        if (prompt.isBlank() && attachments.isEmpty()) return
-        if (_uiState.value.sessionState == ChatSessionState.RESPONDING) return
+        if (prompt.isBlank() && attachments.isEmpty()) return false
+        if (_uiState.value.sessionState == ChatSessionState.RESPONDING) return false
+        return true
+    }
 
+    private fun startPrompt(
+        prompt: String,
+        attachments: List<ChatAttachment>,
+        clearInput: Boolean,
+        resetConversation: Boolean,
+    ): Boolean {
         val outgoingPrompt = ChatPrompt(text = prompt, attachments = attachments)
         if (clearInput) {
             _uiState.update { it.copy(inputText = "", imageAttachments = emptyList()) }
@@ -362,6 +442,7 @@ class ChatViewModel(
 
             startStreamingReply(activeSession.id, assistantMessageId, outgoingPrompt)
         }
+        return true
     }
 
     private suspend fun startStreamingReply(
@@ -394,13 +475,18 @@ class ChatViewModel(
 
                     is ChatStreamEvent.TaskProgress -> {
                         hasToolCalling = true
-                        val key = event.progressKey
-                            ?: event.toolName
-                            ?: event.label
+                        val key = toolCallStatus.findToolCallKey(
+                            label = event.label,
+                            toolName = event.toolName,
+                            progressKey = event.progressKey,
+                        )
+                        val existing = toolCallStatus[key]
                         toolCallStatus[key] = ToolCall(
                             label = event.label,
                             status = event.status.toToolCallStatus(),
-                            error = event.error,
+                            args = existing?.args,
+                            result = existing?.result,
+                            error = event.error ?: existing?.error,
                             phase = event.phase,
                             message = event.message,
                             toolName = event.toolName,
@@ -429,8 +515,10 @@ class ChatViewModel(
 
                     is ChatStreamEvent.ToolCallStarted -> {
                         hasToolCalling = true
-                        val existing = toolCallStatus[event.label]
-                        toolCallStatus[event.label] = (existing ?: ToolCall(label = event.label)).copy(
+                        val key = toolCallStatus.findToolCallKey(label = event.label)
+                        val existing = toolCallStatus[key]
+                        toolCallStatus[key] = (existing ?: ToolCall(label = event.label)).copy(
+                            label = existing?.label ?: event.label,
                             status = ToolCallStatus.RUNNING,
                             args = event.args ?: existing?.args,
                         )
@@ -448,8 +536,10 @@ class ChatViewModel(
 
                     is ChatStreamEvent.ToolCallCompleted -> {
                         hasToolCalling = true
-                        val existing = toolCallStatus[event.label]
-                        toolCallStatus[event.label] = (existing ?: ToolCall(label = event.label)).copy(
+                        val key = toolCallStatus.findToolCallKey(label = event.label)
+                        val existing = toolCallStatus[key]
+                        toolCallStatus[key] = (existing ?: ToolCall(label = event.label)).copy(
+                            label = existing?.label ?: event.label,
                             status = ToolCallStatus.COMPLETED,
                             result = event.result ?: existing?.result,
                         )
@@ -467,8 +557,10 @@ class ChatViewModel(
 
                     is ChatStreamEvent.ToolCallFailed -> {
                         hasToolCalling = true
-                        val existing = toolCallStatus[event.label]
-                        toolCallStatus[event.label] = (existing ?: ToolCall(label = event.label)).copy(
+                        val key = toolCallStatus.findToolCallKey(label = event.label)
+                        val existing = toolCallStatus[key]
+                        toolCallStatus[key] = (existing ?: ToolCall(label = event.label)).copy(
+                            label = existing?.label ?: event.label,
                             status = ToolCallStatus.FAILED,
                             error = event.error ?: existing?.error,
                         )
@@ -739,6 +831,19 @@ class ChatViewModel(
         val withoutComplete = text.replace(completeThinkTagRegex, "")
         unclosedThinkContentRegex.find(withoutComplete)?.let { parts.add(it.groupValues[1].trim()) }
         return parts.filter { it.isNotBlank() }.joinToString("\n\n").ifBlank { null }
+    }
+
+    private fun LinkedHashMap<String, ToolCall>.findToolCallKey(
+        label: String,
+        toolName: String? = null,
+        progressKey: String? = null,
+    ): String {
+        val candidates = listOfNotNull(progressKey, toolName, label)
+        return entries.firstOrNull { (_, toolCall) ->
+            toolCall.label in candidates ||
+                (toolCall.toolName != null && toolCall.toolName in candidates) ||
+                (toolCall.progressKey != null && toolCall.progressKey in candidates)
+        }?.key ?: keys.firstOrNull { it in candidates } ?: candidates.first()
     }
 
     private fun LinkedHashMap<String, ToolCall>.toToolCallListOrNull(): List<ToolCall>? {

@@ -1,29 +1,14 @@
 package com.example.blueheartv.ui.components
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Icon
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalWindowInfo
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.example.blueheartv.ui.theme.ButtonBorderDark
-import com.example.blueheartv.ui.theme.MutedText
-import com.example.blueheartv.ui.theme.Radius
 
 @Composable
 fun GlassButton(
@@ -32,75 +17,12 @@ fun GlassButton(
     icon: ImageVector? = null,
     onClick: () -> Unit = {},
 ) {
-    val shape = RoundedCornerShape(Radius.small.dp)
-
-    Box(
-        modifier = modifier
-            .heightIn(min = 34.dp)
-            .clip(shape)
-            .clickable { onClick() },
-        contentAlignment = Alignment.Center,
-    ) {
-        Box(
-            modifier = Modifier
-                .matchParentSize()
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            Color.White.copy(alpha = 0f),
-                            Color.White.copy(alpha = 1f),
-                        )
-                    ),
-                    shape,
-                )
-        )
-
-        Box(
-            modifier = Modifier
-                .matchParentSize()
-                .border(0.5.dp, ButtonBorderDark, shape)
-        )
-
-        Box(
-            modifier = Modifier
-                .matchParentSize()
-                .border(
-                    0.5.dp,
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            Color.White.copy(alpha = 0f),
-                            Color.White.copy(alpha = 0.56f),
-                            Color.White,
-                        ),
-                        startY = 0f,
-                        endY = 100f,
-                    ),
-                    shape,
-                )
-        )
-
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-        ) {
-            if (icon != null) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = MutedText,
-                    modifier = Modifier.size(14.dp),
-                )
-            }
-            Text(
-                text = text,
-                fontSize = 12.sp,
-                color = MutedText,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-    }
+    EchoPromptChip(
+        text = text,
+        icon = icon,
+        onClick = onClick,
+        modifier = modifier,
+    )
 }
 
 @Composable
@@ -109,10 +31,6 @@ fun GlassButtonRow(
     icons: List<ImageVector?> = emptyList(),
     onButtonClick: (Int) -> Unit = {},
 ) {
-    val density = LocalDensity.current
-    val screenWidth = with(density) { LocalWindowInfo.current.containerSize.width.toDp() }
-    val buttonWidth = (screenWidth - 13.dp * 2 - 8.dp * 3) / 3.5f
-
     LazyRow(
         modifier = Modifier.fillMaxWidth(),
         contentPadding = PaddingValues(horizontal = 13.dp),
@@ -123,7 +41,6 @@ fun GlassButtonRow(
                 text = label,
                 icon = icons.getOrNull(index),
                 onClick = { onButtonClick(index) },
-                modifier = Modifier.width(buttonWidth),
             )
         }
     }

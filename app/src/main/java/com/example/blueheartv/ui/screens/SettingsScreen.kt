@@ -71,7 +71,7 @@ fun SettingsScreen(
             ) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Back",
+                    contentDescription = stringResource(R.string.action_back),
                     modifier = Modifier
                         .size(24.dp)
                         .clickable { onBack() },
@@ -79,7 +79,7 @@ fun SettingsScreen(
                 )
                 Spacer(modifier = Modifier.width(16.dp))
                 Text(
-                    text = "设置",
+                    text = stringResource(R.string.settings_title),
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
                     color = DarkPrimary,
@@ -88,63 +88,41 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Settings sections
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                shape = RoundedCornerShape(16.dp),
-                color = SurfaceWhite,
-                shadowElevation = 2.dp,
-            ) {
+            SettingsSection(title = stringResource(R.string.settings_section_account)) {
                 Column {
-                    SettingsItem(Icons.Outlined.Person, "个人信息") { onNavigateToDetail("profile") }
+                    SettingsItem(Icons.Outlined.Person, stringResource(R.string.settings_profile)) { onNavigateToDetail("profile") }
                     SettingsDivider()
-                    SettingsItem(Icons.Outlined.Notifications, "通知设置") { onNavigateToDetail("notifications") }
+                    SettingsItem(Icons.Outlined.Notifications, stringResource(R.string.settings_notifications)) { onNavigateToDetail("notifications") }
                     SettingsDivider()
-                    SettingsItem(Icons.Outlined.Security, "隐私与安全") { onNavigateToDetail("privacy") }
+                    SettingsItem(Icons.Outlined.Security, stringResource(R.string.settings_privacy)) { onNavigateToDetail("privacy") }
                 }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                shape = RoundedCornerShape(16.dp),
-                color = SurfaceWhite,
-                shadowElevation = 2.dp,
-            ) {
+            SettingsSection(title = stringResource(R.string.settings_section_service)) {
                 Column {
-                    SettingsItem(Icons.Outlined.Language, "语言设置") { onNavigateToDetail("language") }
+                    SettingsItem(Icons.Outlined.Language, stringResource(R.string.settings_language)) { onNavigateToDetail("language") }
                     SettingsDivider()
-                    SettingsItem(Icons.Outlined.Cloud, "Agent 服务") { onNavigateToDetail("agent_server") }
+                    SettingsItem(Icons.Outlined.Cloud, stringResource(R.string.settings_agent_service)) { onNavigateToDetail("agent_server") }
                     SettingsDivider()
-                    SettingsItem(Icons.Outlined.Storage, "存储管理") { onNavigateToDetail("storage") }
+                    SettingsItem(Icons.Outlined.Storage, stringResource(R.string.settings_storage)) { onNavigateToDetail("storage") }
                 }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                shape = RoundedCornerShape(16.dp),
-                color = SurfaceWhite,
-                shadowElevation = 2.dp,
-            ) {
+            SettingsSection(title = stringResource(R.string.settings_section_phone_control)) {
                 Column {
                     SettingsItem(Icons.Outlined.ChatBubble, stringResource(R.string.floating_open_ball)) {
                         FloatingServiceLauncher.launch(context, overlayPermissionLauncher)
                     }
                     SettingsDivider()
-                    SettingsItem(Icons.Outlined.Accessibility, "无障碍设置") {
+                    SettingsItem(Icons.Outlined.Accessibility, stringResource(R.string.settings_accessibility)) {
                         onNavigateToDetail("accessibility")
                     }
                     SettingsDivider()
-                    SettingsItem(Icons.Outlined.GpsFixed, "坐标校准") {
+                    SettingsItem(Icons.Outlined.GpsFixed, stringResource(R.string.settings_calibration)) {
                         onNavigateToCalibration()
                     }
                 }
@@ -152,18 +130,11 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                shape = RoundedCornerShape(16.dp),
-                color = SurfaceWhite,
-                shadowElevation = 2.dp,
-            ) {
+            SettingsSection(title = stringResource(R.string.settings_section_support)) {
                 Column {
-                    SettingsItem(Icons.AutoMirrored.Outlined.Help, "帮助与反馈") { onNavigateToDetail("help") }
+                    SettingsItem(Icons.AutoMirrored.Outlined.Help, stringResource(R.string.settings_help)) { onNavigateToDetail("help") }
                     SettingsDivider()
-                    SettingsItem(Icons.Outlined.Info, "关于") { onNavigateToDetail("about") }
+                    SettingsItem(Icons.Outlined.Info, stringResource(R.string.settings_about)) { onNavigateToDetail("about") }
                 }
             }
 
@@ -171,13 +142,42 @@ fun SettingsScreen(
 
             // Version info
             Text(
-                text = "版本 1.0.0",
+                text = stringResource(R.string.settings_version_name, "1.0.0"),
                 fontSize = 12.sp,
                 color = MutedText,
                 modifier = Modifier.align(Alignment.CenterHorizontally),
             )
 
             Spacer(modifier = Modifier.height(40.dp))
+        }
+    }
+}
+
+@Composable
+private fun SettingsSection(
+    title: String,
+    content: @Composable () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            text = title,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = MutedText,
+            modifier = Modifier.padding(horizontal = 4.dp),
+        )
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            color = SurfaceWhite,
+            shadowElevation = 2.dp,
+        ) {
+            content()
         }
     }
 }

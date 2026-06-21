@@ -40,16 +40,11 @@ class FloatingBallView(
         private const val PREFS_NAME = "floating_ball_prefs"
         private const val KEY_X = "ball_x"
         private const val KEY_Y = "ball_y"
-        private const val BALL_SIZE_DP = 60
-        private const val CLICK_THRESHOLD_DP = 8
-        private const val MULTI_TAP_TIMEOUT_MS = 300L
-        private const val MAX_TAP_COUNT = 3
-        private const val VISUAL_RESET_DELAY_MS = 1200L
     }
 
     private val density = context.resources.displayMetrics.density
-    private val ballSizePx = (BALL_SIZE_DP * density).toInt()
-    private val clickThresholdPx = (CLICK_THRESHOLD_DP * density).toInt()
+    private val ballSizePx = (FloatingDesignTokens.BallSizeDp * density).toInt()
+    private val clickThresholdPx = (FloatingDesignTokens.ClickThresholdDp * density).toInt()
     private val prefs: SharedPreferences =
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
@@ -277,7 +272,7 @@ class FloatingBallView(
                 ballView.scaleX = 1f
                 ballView.scaleY = 1f
                 val bg = ballView.background as? GradientDrawable ?: return
-                bg.setStroke((2 * density).toInt(), AndroidColor.parseColor("#4CAF50"))
+                bg.setStroke((2 * density).toInt(), FloatingDesignTokens.SuccessStrokeColor)
                 bg.setColor(AndroidColor.TRANSPARENT)
                 scheduleVisualReset()
             }
@@ -286,7 +281,7 @@ class FloatingBallView(
                 ballView.scaleX = 1f
                 ballView.scaleY = 1f
                 val bg = ballView.background as? GradientDrawable ?: return
-                bg.setStroke((2 * density).toInt(), AndroidColor.parseColor("#FF6B6B"))
+                bg.setStroke((2 * density).toInt(), FloatingDesignTokens.FailedStrokeColor)
                 bg.setColor(AndroidColor.TRANSPARENT)
                 scheduleVisualReset()
             }
@@ -298,7 +293,7 @@ class FloatingBallView(
     private fun scheduleVisualReset() {
         val runnable = Runnable { resetBallVisual() }
         visualResetRunnable = runnable
-        longPressHandler.postDelayed(runnable, VISUAL_RESET_DELAY_MS)
+        longPressHandler.postDelayed(runnable, FloatingDesignTokens.VisualResetDelayMs)
     }
 
     private fun resetBallVisual() {
@@ -340,13 +335,13 @@ class FloatingBallView(
         pendingTapRunnable?.let { tapHandler.removeCallbacks(it) }
         pendingTapRunnable = null
         tapCount++
-        if (tapCount >= MAX_TAP_COUNT) {
+        if (tapCount >= FloatingDesignTokens.MaxTapCount) {
             commitTaps()
             return
         }
         val runnable = Runnable { commitTaps() }
         pendingTapRunnable = runnable
-        tapHandler.postDelayed(runnable, MULTI_TAP_TIMEOUT_MS)
+        tapHandler.postDelayed(runnable, FloatingDesignTokens.MultiTapTimeoutMs)
     }
 
     private fun commitTaps() {

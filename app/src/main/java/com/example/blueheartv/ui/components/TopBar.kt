@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -46,7 +47,7 @@ fun AppTopBar(
         ) {
             Image(
                 painter = painterResource(R.drawable.ic_menu_hamburger),
-                contentDescription = "Menu",
+                contentDescription = stringResource(R.string.action_open_history),
                 modifier = Modifier.size(25.dp),
             )
         }
@@ -61,7 +62,7 @@ fun AppTopBar(
 
         Image(
             painter = painterResource(R.drawable.ic_avatar_brand),
-            contentDescription = "New Chat",
+            contentDescription = stringResource(R.string.action_new_chat),
             modifier = Modifier
                 .align(Alignment.CenterEnd)
                 .padding(end = 16.dp)

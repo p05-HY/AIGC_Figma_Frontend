@@ -12,6 +12,9 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -48,6 +51,198 @@ class ChatViewModelTest {
         assertTrue(uiState.messages.first().isUser)
         assertEquals("hello world", uiState.messages.last().content)
         assertEquals(MessageDeliveryState.COMPLETED, uiState.messages.last().deliveryState)
+    }
+
+    @Test
+    fun sendMessage_blankInput_doesNotCreateThreadOrConsumeDebounce() = runTest {
+        var now = 1_000L
+        val provider = ScriptedProvider { _, _, onEvent ->
+            onEvent(ChatStreamEvent.TextDelta("ok"))
+            onEvent(ChatStreamEvent.Completed)
+        }
+        val viewModel = createViewModel(
+            chatProvider = provider,
+            timeProvider = { now },
+        )
+        advanceUntilIdle()
+
+        viewModel.onInputChanged("   ")
+        viewModel.sendMessage()
+        now += 100L
+        viewModel.onInputChanged("after blank")
+        viewModel.sendMessage()
+        advanceUntilIdle()
+
+        assertEquals(1, provider.createThreadCalls)
+        assertEquals(1, provider.streamReplyCalls)
+        assertEquals("after blank", viewModel.uiState.value.messages.first().content)
+    }
+
+    @Test
+    fun deleteUserMessage_thenUndo_restoresUserAndPairedAssistantMessages() = runTest {
+        val provider = ScriptedProvider { _, prompt, onEvent ->
+            onEvent(ChatStreamEvent.TextDelta("reply:${prompt.text}"))
+            onEvent(ChatStreamEvent.Completed)
+        }
+        val viewModel = createViewModel(chatProvider = provider)
+        advanceUntilIdle()
+        viewModel.onInputChanged("hello")
+        viewModel.sendMessage()
+        advanceUntilIdle()
+
+        val userId = viewModel.uiState.value.messages.first().id
+        val undo = viewModel.deleteMessage(userId)
+        assertNotNull(undo)
+        assertEquals(0, viewModel.uiState.value.messages.size)
+
+        viewModel.undoLastMessageMutation(undo!!.token)
+
+        val restored = viewModel.uiState.value.messages
+        assertEquals(2, restored.size)
+        assertEquals("hello", restored.first().content)
+        assertEquals("reply:hello", restored.last().content)
+    }
+
+    @Test
+    fun deleteAiMessage_thenUndo_restoresAssistantMessage() = runTest {
+        val provider = ScriptedProvider { _, prompt, onEvent ->
+            onEvent(ChatStreamEvent.TextDelta("reply:${prompt.text}"))
+            onEvent(ChatStreamEvent.Completed)
+        }
+        val viewModel = createViewModel(chatProvider = provider)
+        advanceUntilIdle()
+        viewModel.onInputChanged("hello")
+        viewModel.sendMessage()
+        advanceUntilIdle()
+
+        val assistantId = viewModel.uiState.value.messages.last().id
+        val undo = viewModel.deleteAiMessage(assistantId)
+        assertNotNull(undo)
+        assertEquals(1, viewModel.uiState.value.messages.size)
+
+        viewModel.undoLastMessageMutation(undo!!.token)
+
+        val restored = viewModel.uiState.value.messages
+        assertEquals(2, restored.size)
+        assertEquals("reply:hello", restored.last().content)
+    }
+
+    @Test
+    fun editAndResend_thenUndo_restoresOriginalConversation() = runTest {
+        var now = 1_000L
+        val provider = ScriptedProvider { _, prompt, onEvent ->
+            onEvent(ChatStreamEvent.TextDelta("reply:${prompt.text}"))
+            onEvent(ChatStreamEvent.Completed)
+        }
+        val viewModel = createViewModel(chatProvider = provider, timeProvider = { now })
+        advanceUntilIdle()
+        viewModel.onInputChanged("first")
+        viewModel.sendMessage()
+        advanceUntilIdle()
+        now += 1_000L
+        viewModel.onInputChanged("second")
+        viewModel.sendMessage()
+        advanceUntilIdle()
+
+        val original = viewModel.uiState.value.messages.map { it.content }
+        val firstUserId = viewModel.uiState.value.messages.first().id
+        now += 1_000L
+        val undo = viewModel.editAndResend(firstUserId, "changed")
+        assertNotNull(undo)
+        advanceUntilIdle()
+        assertEquals(listOf("changed", "reply:changed"), viewModel.uiState.value.messages.map { it.content })
+
+        viewModel.undoLastMessageMutation(undo!!.token)
+
+        assertEquals(original, viewModel.uiState.value.messages.map { it.content })
+    }
+
+    @Test
+    fun editAndResend_whenConfigMissing_doesNotRemoveOriginalMessages() = runTest {
+        val provider = ScriptedProvider { _, prompt, onEvent ->
+            onEvent(ChatStreamEvent.TextDelta("reply:${prompt.text}"))
+            onEvent(ChatStreamEvent.Completed)
+        }
+        val viewModel = createViewModel(chatProvider = provider)
+        advanceUntilIdle()
+        viewModel.onInputChanged("hello")
+        viewModel.sendMessage()
+        advanceUntilIdle()
+
+        val original = viewModel.uiState.value.messages.map { it.content }
+        val userId = viewModel.uiState.value.messages.first().id
+        AgentServerConfigStore.setForTesting(baseUrl = "", apiKey = "")
+
+        val undo = viewModel.editAndResend(userId, "changed")
+
+        assertNull(undo)
+        assertEquals(original, viewModel.uiState.value.messages.map { it.content })
+        assertEquals(1, provider.streamReplyCalls)
+    }
+
+    @Test
+    fun undoLastMessageMutation_ignoresStaleUndoToken() = runTest {
+        var now = 1_000L
+        val provider = ScriptedProvider { _, prompt, onEvent ->
+            onEvent(ChatStreamEvent.TextDelta("reply:${prompt.text}"))
+            onEvent(ChatStreamEvent.Completed)
+        }
+        val viewModel = createViewModel(chatProvider = provider, timeProvider = { now })
+        advanceUntilIdle()
+        viewModel.onInputChanged("first")
+        viewModel.sendMessage()
+        advanceUntilIdle()
+        now += 1_000L
+        viewModel.onInputChanged("second")
+        viewModel.sendMessage()
+        advanceUntilIdle()
+
+        val firstUserId = viewModel.uiState.value.messages.first().id
+        val firstUndo = viewModel.deleteMessage(firstUserId)
+        assertNotNull(firstUndo)
+        val secondUserId = viewModel.uiState.value.messages.first().id
+        val secondUndo = viewModel.deleteMessage(secondUserId)
+        assertNotNull(secondUndo)
+
+        assertFalse(viewModel.undoLastMessageMutation(firstUndo!!.token))
+        assertEquals(emptyList<String>(), viewModel.uiState.value.messages.map { it.content })
+
+        assertTrue(viewModel.undoLastMessageMutation(secondUndo!!.token))
+        assertEquals(
+            listOf("second", "reply:second"),
+            viewModel.uiState.value.messages.map { it.content },
+        )
+    }
+
+    @Test
+    fun toolProgressAndLegacyToolEvents_shareOneToolCallRow() = runTest {
+        val provider = ScriptedProvider { _, _, onEvent ->
+            onEvent(
+                ChatStreamEvent.TaskProgress(
+                    label = "观察屏幕",
+                    status = "running",
+                    phase = "observe",
+                    toolName = "observe",
+                    progressKey = "observe-step",
+                    currentStep = 1,
+                    totalSteps = 2,
+                )
+            )
+            onEvent(ChatStreamEvent.ToolCallCompleted(label = "观察屏幕", result = "ok"))
+            onEvent(ChatStreamEvent.Completed)
+        }
+        val viewModel = createViewModel(chatProvider = provider)
+        advanceUntilIdle()
+        viewModel.onInputChanged("tool")
+        viewModel.sendMessage()
+        advanceUntilIdle()
+
+        val toolCalls = viewModel.uiState.value.messages.last().toolCalls.orEmpty()
+        assertEquals(1, toolCalls.size)
+        assertEquals("观察屏幕", toolCalls.single().label)
+        assertEquals("ok", toolCalls.single().result)
+        assertEquals(1, toolCalls.single().currentStep)
+        assertEquals(2, toolCalls.single().totalSteps)
     }
 
     @Test
@@ -136,7 +331,13 @@ class ChatViewModelTest {
             onEvent(ChatStreamEvent.Completed)
         },
     ) : ChatProvider {
+        var createThreadCalls: Int = 0
+            private set
+        var streamReplyCalls: Int = 0
+            private set
+
         override suspend fun createThread(titleHint: String?): RemoteChatThread {
+            createThreadCalls += 1
             return RemoteChatThread("thread-${System.nanoTime()}", titleHint ?: "当前对话", 0L, emptyList())
         }
 
@@ -155,6 +356,7 @@ class ChatViewModelTest {
             prompt: ChatPrompt,
             onEvent: (ChatStreamEvent) -> Unit,
         ) {
+            streamReplyCalls += 1
             script(threadId, prompt, onEvent)
         }
     }

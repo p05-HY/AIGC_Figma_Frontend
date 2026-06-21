@@ -53,7 +53,7 @@ class AgentServerClient(
         val json = postJson(url(ApiPaths.THREADS), body)
         val id = json.optString("thread_id")
             .ifBlank { json.optString("threadId") }
-            .ifBlank { error("Agent Server 未返回 thread_id") }
+            .ifBlank { error("服务未返回会话编号") }
         return RemoteChatThread(
             id = id,
             title = titleHint?.let { truncateTitle(it) } ?: DEFAULT_SESSION_TITLE,
@@ -129,7 +129,7 @@ class AgentServerClient(
             if (!response.isSuccessful) {
                 val retryable = response.code == 408 || response.code == 429 || response.code in 500..599
                 val message = response.body.string().take(MAX_ERROR_BODY)
-                    .ifBlank { "Agent Server 请求失败(${response.code})" }
+                    .ifBlank { "服务请求失败(${response.code})" }
                 onEvent(ChatStreamEvent.Error(message, retryable = retryable))
                 return
             }
@@ -670,12 +670,12 @@ class AgentServerClient(
                 this is ConnectException ||
                 this is UnknownHostException ||
                 message?.contains("timeout", ignoreCase = true) == true
-        return IOException(if (retryable) "Agent Server 网络异常：${message}" else message)
+        return IOException(if (retryable) "服务网络异常：${message}" else message)
     }
 
     private fun normalizedBaseUrl(): HttpUrl {
         val raw = configProvider().baseUrl.trim()
-        require(raw.isNotBlank()) { "请先配置 Agent Server 地址" }
+        require(raw.isNotBlank()) { "请先配置服务地址" }
         val normalized = when {
             raw.startsWith("http://") || raw.startsWith("https://") -> raw
             raw.startsWith("ws://") -> "http://${raw.removePrefix("ws://")}"

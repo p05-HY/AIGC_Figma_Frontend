@@ -16,11 +16,13 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.blueheartv.R
 import com.example.blueheartv.model.ChatHistory
 import com.example.blueheartv.ui.theme.*
 
@@ -38,6 +40,8 @@ fun HistoryDrawer(
     onDelete: (ChatHistory) -> Unit = {},
     onSettings: () -> Unit = {},
 ) {
+    val newChatDescription = stringResource(R.string.action_new_chat)
+    val settingsDescription = stringResource(R.string.action_settings)
     AnimatedVisibility(
         visible = isOpen,
         enter = fadeIn(animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing)) +
@@ -98,7 +102,7 @@ fun HistoryDrawer(
                         Spacer(modifier = Modifier.weight(1f))
                         Icon(
                             imageVector = Icons.Default.Add,
-                            contentDescription = "New Chat",
+                            contentDescription = newChatDescription,
                             modifier = Modifier
                                 .size(28.dp)
                                 .clickable { onNewChat() },
@@ -141,7 +145,7 @@ fun HistoryDrawer(
                     ) {
                         Icon(
                             imageVector = Icons.Outlined.Settings,
-                            contentDescription = "Settings",
+                            contentDescription = settingsDescription,
                             modifier = Modifier.size(22.dp),
                             tint = MutedText,
                         )
@@ -170,6 +174,7 @@ private fun HistoryItem(
     var showMenu by remember { mutableStateOf(false) }
     var showRenameDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
+    val moreOptionsDescription = stringResource(R.string.action_more_options)
 
     Surface(
         modifier = Modifier
@@ -215,7 +220,7 @@ private fun HistoryItem(
             Box {
                 Icon(
                     imageVector = Icons.Outlined.MoreVert,
-                    contentDescription = "More",
+                    contentDescription = moreOptionsDescription,
                     modifier = Modifier
                         .size(24.dp)
                         .clickable { showMenu = true },

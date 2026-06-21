@@ -1,6 +1,7 @@
 package com.example.blueheartv.control
 
 import android.content.Context
+import android.content.res.ColorStateList
 import android.graphics.PixelFormat
 import android.os.Build
 import android.os.Handler
@@ -24,30 +25,37 @@ class AdbOverlayController(
 
     private val container = LinearLayout(appContext).apply {
         orientation = LinearLayout.VERTICAL
-        setBackgroundColor(0xCC111827.toInt())
+        setBackgroundColor(0xF7FFFFFF.toInt())
         setPadding(24, 20, 24, 20)
-        alpha = 0.96f
+        alpha = 0.98f
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            elevation = 12f
+        }
     }
 
     private val titleView = TextView(appContext).apply {
-        text = "ADB"
-        setTextColor(0xFFFFFFFF.toInt())
+        text = appContext.getString(R.string.overlay_title_echo)
+        setTextColor(0xFF242033.toInt())
         textSize = 16f
     }
 
     private val statusView = TextView(appContext).apply {
         text = appContext.getString(R.string.overlay_waiting)
-        setTextColor(0xFF93C5FD.toInt())
+        setTextColor(0xFF6F67CA.toInt())
         textSize = 13f
     }
 
     private val detailView = TextView(appContext).apply {
-        setTextColor(0xFFE5E7EB.toInt())
+        setTextColor(0xFF4B5563.toInt())
         textSize = 12f
     }
 
     private val interactionButton = Button(appContext).apply {
-        text = "完成交互"
+        text = appContext.getString(R.string.overlay_confirm_done)
+        setTextColor(0xFFFFFFFF.toInt())
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            backgroundTintList = ColorStateList.valueOf(0xFF7F77DD.toInt())
+        }
         visibility = View.GONE
     }
 
@@ -129,16 +137,18 @@ class AdbOverlayController(
         runOnMain {
             mainHandler.removeCallbacks(autoHideRunnable)
             setInteractive(true)
-            statusView.text = "等待用户交互"
+            statusView.text = appContext.getString(R.string.overlay_confirm_status)
             detailView.text = message.orEmpty()
             detailView.visibility = if (message.isNullOrBlank()) View.GONE else View.VISIBLE
             interactionButton.visibility = View.VISIBLE
             interactionButton.setOnClickListener {
                 interactionButton.visibility = View.GONE
                 interactionButton.setOnClickListener(null)
+                statusView.text = appContext.getString(R.string.overlay_confirm_continue)
+                detailView.visibility = View.GONE
                 setInteractive(false)
                 onDone()
-                showBriefly(3000)
+                showBriefly(1600)
             }
         }
     }

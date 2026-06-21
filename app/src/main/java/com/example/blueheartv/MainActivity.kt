@@ -28,6 +28,7 @@ import com.example.blueheartv.control.AdbWebSocketService
 import com.example.blueheartv.floating.FloatingBallService
 import com.example.blueheartv.navigation.AppNavGraph
 import com.example.blueheartv.system.SystemService
+import com.example.blueheartv.ui.components.DeviceCapabilityPanel
 import com.example.blueheartv.ui.theme.BlueHeartVTheme
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -135,55 +136,23 @@ class MainActivity : ComponentActivity() {
                     Column(
                         modifier = Modifier.fillMaxSize()
                     ) {
-                        if (needsOverlay || needsAccessibility || needsShizuku) {
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(start = 12.dp, end = 12.dp, top = 8.dp),
-                                colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.errorContainer
+                        DeviceCapabilityPanel(
+                            needsShizuku = needsShizuku,
+                            needsAccessibility = needsAccessibility,
+                            needsOverlay = needsOverlay,
+                            onRequestShizuku = { requestShizukuPermissionIfNeeded() },
+                            onRequestAccessibility = {
+                                accessibilitySettingsLauncher.launch(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                            },
+                            onRequestOverlay = {
+                                overlaySettingsLauncher.launch(
+                                    Intent(
+                                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                        "package:$packageName".toUri(),
+                                    ),
                                 )
-                            ) {
-                                Column(
-                                    modifier = Modifier.padding(12.dp),
-                                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    Text(
-                                        text = "AI 控制功能需要以下权限",
-                                        style = MaterialTheme.typography.titleSmall,
-                                        color = MaterialTheme.colorScheme.onErrorContainer
-                                    )
-                                    if (needsShizuku) {
-                                        TextButton(
-                                            onClick = { requestShizukuPermissionIfNeeded() }
-                                        ) {
-                                            Text("授权 Shizuku（执行 shell 命令）")
-                                        }
-                                    }
-                                    if (needsAccessibility) {
-                                        TextButton(onClick = {
-                                            accessibilitySettingsLauncher.launch(
-                                                Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                                            )
-                                        }) {
-                                            Text("开启无障碍服务（AI 控制手机）")
-                                        }
-                                    }
-                                    if (needsOverlay) {
-                                        TextButton(onClick = {
-                                            overlaySettingsLauncher.launch(
-                                                Intent(
-                                                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                                    "package:$packageName".toUri()
-                                                )
-                                            )
-                                        }) {
-                                            Text("授权悬浮窗（状态提示）")
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                            },
+                        )
                         AppNavGraph()
                     }
                 }

@@ -181,7 +181,7 @@ class AgentServerStatusClient(
 
     private fun normalizedBaseUrl(): HttpUrl {
         val raw = configProvider().baseUrl.trim()
-        require(raw.isNotBlank()) { "请先配置 Agent Server 地址" }
+        require(raw.isNotBlank()) { "请先配置服务地址" }
         val normalized = when {
             raw.startsWith("http://") || raw.startsWith("https://") -> raw
             raw.startsWith("ws://") -> "http://${raw.removePrefix("ws://")}"

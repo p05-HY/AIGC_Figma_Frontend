@@ -13,6 +13,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.ClickableText
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
@@ -27,13 +28,21 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.blueheartv.BuildConfig
 import com.example.blueheartv.R
 import com.example.blueheartv.model.Message
 import com.example.blueheartv.model.ToolCall
@@ -104,20 +113,28 @@ fun UserBubble(
     var enableTextSelection by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
+    val deleteTitle = stringResource(R.string.delete_message_title)
+    val deleteMessage = stringResource(R.string.delete_user_message_message)
+    val confirmText = stringResource(R.string.confirm)
+    val cancelText = stringResource(R.string.cancel)
+    val copyText = stringResource(R.string.action_copy_message)
+    val editTextLabel = stringResource(R.string.action_edit_message)
+    val selectText = stringResource(R.string.action_select_text)
+    val deleteText = stringResource(R.string.action_delete)
 
     if (showDeleteConfirm) {
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
-            title = { Text("删除消息") },
-            text = { Text("确定要删除这条消息吗？") },
+            title = { Text(deleteTitle) },
+            text = { Text(deleteMessage) },
             confirmButton = {
                 TextButton(onClick = {
                     showDeleteConfirm = false
                     onDelete(message.id)
-                }) { Text("确定") }
+                }) { Text(confirmText) }
             },
             dismissButton = {
-                TextButton(onClick = { showDeleteConfirm = false }) { Text("取消") }
+                TextButton(onClick = { showDeleteConfirm = false }) { Text(cancelText) }
             },
         )
     }
@@ -172,7 +189,7 @@ fun UserBubble(
                                     },
                                     modifier = Modifier.size(32.dp),
                                 ) {
-                                    Icon(Icons.Outlined.Close, "取消", tint = ErrorRed)
+                                    Icon(Icons.Outlined.Close, cancelText, tint = ErrorRed)
                                 }
                                 Spacer(modifier = Modifier.width(8.dp))
                                 IconButton(
@@ -185,7 +202,7 @@ fun UserBubble(
                                     },
                                     modifier = Modifier.size(32.dp),
                                 ) {
-                                    Icon(Icons.Outlined.Check, "确认", tint = BlueAccent)
+                                    Icon(Icons.Outlined.Check, confirmText, tint = BlueAccent)
                                 }
                             }
                         }
@@ -217,7 +234,7 @@ fun UserBubble(
                     offset = DpOffset(0.dp, 0.dp),
                 ) {
                     DropdownMenuItem(
-                        text = { Text("复制") },
+                        text = { Text(copyText) },
                         onClick = {
                             showMenu = false
                             onCopy(message.content)
@@ -225,7 +242,7 @@ fun UserBubble(
                         leadingIcon = { Icon(Icons.Outlined.ContentCopy, null, Modifier.size(18.dp)) },
                     )
                     DropdownMenuItem(
-                        text = { Text("修改") },
+                        text = { Text(editTextLabel) },
                         onClick = {
                             showMenu = false
                             editText = message.content
@@ -234,7 +251,7 @@ fun UserBubble(
                         leadingIcon = { Icon(Icons.Outlined.Edit, null, Modifier.size(18.dp)) },
                     )
                     DropdownMenuItem(
-                        text = { Text("选取文字") },
+                        text = { Text(selectText) },
                         onClick = {
                             showMenu = false
                             enableTextSelection = true
@@ -242,7 +259,7 @@ fun UserBubble(
                         leadingIcon = { Icon(Icons.Outlined.SelectAll, null, Modifier.size(18.dp)) },
                     )
                     DropdownMenuItem(
-                        text = { Text("删除", color = ErrorRed) },
+                        text = { Text(deleteText, color = ErrorRed) },
                         onClick = {
                             showMenu = false
                             showDeleteConfirm = true
@@ -281,20 +298,26 @@ fun AiBubble(
     var showMenu by remember { mutableStateOf(false) }
     var enableTextSelection by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
+    val deleteTitle = stringResource(R.string.delete_message_title)
+    val deleteMessage = stringResource(R.string.delete_ai_message_message)
+    val confirmText = stringResource(R.string.confirm)
+    val cancelText = stringResource(R.string.cancel)
+    val selectText = stringResource(R.string.action_select_text)
+    val deleteText = stringResource(R.string.action_delete)
 
     if (showDeleteConfirm) {
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
-            title = { Text("删除消息") },
-            text = { Text("确定要删除这条回答吗？") },
+            title = { Text(deleteTitle) },
+            text = { Text(deleteMessage) },
             confirmButton = {
                 TextButton(onClick = {
                     showDeleteConfirm = false
                     onDelete(message.id)
-                }) { Text("确定") }
+                }) { Text(confirmText) }
             },
             dismissButton = {
-                TextButton(onClick = { showDeleteConfirm = false }) { Text("取消") }
+                TextButton(onClick = { showDeleteConfirm = false }) { Text(cancelText) }
             },
         )
     }
@@ -344,8 +367,8 @@ fun AiBubble(
                         val isStreaming = message.deliveryState == com.example.blueheartv.model.MessageDeliveryState.STREAMING
                         val displayText = rememberTypewriterText(message.content, isStreaming)
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            message.thinking?.takeIf { it.isNotBlank() }?.let { thinking ->
-                                ThinkingCard(thinking = thinking, isStreaming = isStreaming)
+                            message.thinking?.takeIf { it.isNotBlank() }?.let {
+                                ThinkingCard(isStreaming = isStreaming)
                             }
                             message.toolCalls?.takeIf { it.isNotEmpty() }?.let { toolCalls ->
                                 ToolCallCard(toolCalls = toolCalls)
@@ -366,7 +389,7 @@ fun AiBubble(
                     offset = DpOffset(0.dp, 0.dp),
                 ) {
                     DropdownMenuItem(
-                        text = { Text("选取文字") },
+                        text = { Text(selectText) },
                         onClick = {
                             showMenu = false
                             enableTextSelection = true
@@ -374,7 +397,7 @@ fun AiBubble(
                         leadingIcon = { Icon(Icons.Outlined.SelectAll, null, Modifier.size(18.dp)) },
                     )
                     DropdownMenuItem(
-                        text = { Text("删除", color = ErrorRed) },
+                        text = { Text(deleteText, color = ErrorRed) },
                         onClick = {
                             showMenu = false
                             showDeleteConfirm = true
@@ -418,62 +441,67 @@ private fun MessageTimestamp(timestamp: Long) {
 }
 
 @Composable
-private fun ThinkingCard(thinking: String, isStreaming: Boolean) {
-    var expanded by remember { mutableStateOf(false) }
-    Column(
+private fun ThinkingCard(isStreaming: Boolean) {
+    val streamingText = stringResource(R.string.thinking_streaming)
+    val titleText = stringResource(R.string.thinking_title)
+    Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(ThinkingCardBackground, RoundedCornerShape(10.dp))
             .border(0.5.dp, DividerColor, RoundedCornerShape(10.dp))
-            .clickable { expanded = !expanded }
             .padding(horizontal = 10.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                imageVector = Icons.Outlined.Psychology,
-                contentDescription = null,
-                modifier = Modifier.size(16.dp),
-                tint = MutedText,
-            )
-            Text(
-                text = if (isStreaming) "思考中…" else "思考过程",
-                fontSize = 13.sp,
-                color = MutedText,
-                modifier = Modifier.weight(1f),
-            )
-            Icon(
-                imageVector = if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
-                contentDescription = if (expanded) "收起" else "展开",
-                modifier = Modifier.size(18.dp),
-                tint = MutedText,
-            )
-        }
-        if (expanded) {
-            Text(
-                text = thinking,
-                fontSize = 12.sp,
-                color = TextDarkAlt,
-                lineHeight = 18.sp,
-            )
-        }
+        Icon(
+            imageVector = Icons.Outlined.Psychology,
+            contentDescription = null,
+            modifier = Modifier.size(16.dp),
+            tint = MutedText,
+        )
+        Text(
+            text = if (isStreaming) streamingText else titleText,
+            fontSize = 13.sp,
+            color = MutedText,
+            modifier = Modifier.weight(1f),
+        )
     }
 }
 
 @Composable
 private fun ToolCallCard(toolCalls: List<ToolCall>) {
+    val summary = remember(toolCalls) { summarizeToolProgress(toolCalls) }
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .background(Color.White, RoundedCornerShape(10.dp))
             .border(0.5.dp, DividerColor, RoundedCornerShape(10.dp))
             .padding(horizontal = 10.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        Text(
+            text = summary.label,
+            fontSize = 12.sp,
+            color = MutedText,
+        )
+        if (summary.indeterminate) {
+            LinearProgressIndicator(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(4.dp),
+                color = BlueAccent,
+                trackColor = DividerColor,
+            )
+        } else {
+            LinearProgressIndicator(
+                progress = { summary.progress ?: 0f },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(4.dp),
+                color = BlueAccent,
+                trackColor = DividerColor,
+            )
+        }
         toolCalls.forEach { toolCall ->
             ToolCallRow(toolCall = toolCall)
         }
@@ -482,7 +510,7 @@ private fun ToolCallCard(toolCalls: List<ToolCall>) {
 
 @Composable
 private fun ToolCallRow(toolCall: ToolCall) {
-    val hasDetail = !toolCall.args.isNullOrBlank() ||
+    val hasRawDetail = !toolCall.args.isNullOrBlank() ||
         !toolCall.result.isNullOrBlank() ||
         !toolCall.error.isNullOrBlank() ||
         !toolCall.message.isNullOrBlank() ||
@@ -490,12 +518,20 @@ private fun ToolCallRow(toolCall: ToolCall) {
         toolCall.currentStep != null ||
         toolCall.totalSteps != null ||
         toolCall.completedSteps.isNotEmpty()
+    val hasDetail = BuildConfig.SHOW_TECH_DEBUG_UI && hasRawDetail
     var expanded by remember { mutableStateOf(false) }
+    val phaseLabel = stringResource(R.string.tool_detail_phase)
+    val messageLabel = stringResource(R.string.tool_detail_message)
+    val argsLabel = stringResource(R.string.tool_detail_args)
+    val resultLabel = stringResource(R.string.tool_detail_result)
+    val errorLabel = stringResource(R.string.tool_detail_error)
+    val completedStepsLabel = stringResource(R.string.tool_detail_completed_steps)
+    val display = remember(toolCall) { displayToolCall(toolCall) }
 
-    val (dotColor, statusText) = when (toolCall.status) {
-        ToolCallStatus.RUNNING -> BlueAccent to "执行中"
-        ToolCallStatus.COMPLETED -> SuccessGreen to "成功"
-        ToolCallStatus.FAILED -> ErrorRed to "失败"
+    val dotColor = when (toolCall.status) {
+        ToolCallStatus.RUNNING -> BrandPrimary
+        ToolCallStatus.COMPLETED -> SuccessGreen
+        ToolCallStatus.FAILED -> ErrorRed
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -511,18 +547,28 @@ private fun ToolCallRow(toolCall: ToolCall) {
                     .size(8.dp)
                     .background(dotColor, CircleShape),
             )
-            Text(
-                text = buildString {
-                    append(toolCall.label)
-                    val step = formatStep(toolCall)
-                    if (step != null) append("  ").append(step)
-                },
-                fontSize = 13.sp,
-                color = TextDarkAlt,
+            Column(
                 modifier = Modifier.weight(1f),
-            )
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(
+                    text = buildString {
+                        append(display.title)
+                        val step = formatStep(toolCall)
+                        if (step != null) append("  ").append(step)
+                    },
+                    fontSize = 13.sp,
+                    color = TextDarkAlt,
+                )
+                Text(
+                    text = display.subtitle,
+                    fontSize = 11.sp,
+                    color = MutedText,
+                    lineHeight = 15.sp,
+                )
+            }
             Text(
-                text = statusText,
+                text = display.statusText,
                 fontSize = 11.sp,
                 color = dotColor,
             )
@@ -541,23 +587,23 @@ private fun ToolCallRow(toolCall: ToolCall) {
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 toolCall.phase?.takeIf { it.isNotBlank() }?.let {
-                    ToolDetailField(label = "阶段", value = it, valueColor = TextDarkAlt)
+                    ToolDetailField(label = phaseLabel, value = it, valueColor = TextDarkAlt)
                 }
                 toolCall.message?.takeIf { it.isNotBlank() }?.let {
-                    ToolDetailField(label = "说明", value = it, valueColor = TextDarkAlt)
+                    ToolDetailField(label = messageLabel, value = it, valueColor = TextDarkAlt)
                 }
                 toolCall.args?.takeIf { it.isNotBlank() }?.let {
-                    ToolDetailField(label = "入参", value = it, valueColor = TextDarkAlt)
+                    ToolDetailField(label = argsLabel, value = it, valueColor = TextDarkAlt)
                 }
                 toolCall.result?.takeIf { it.isNotBlank() }?.let {
-                    ToolDetailField(label = "出参", value = it, valueColor = TextDarkAlt)
+                    ToolDetailField(label = resultLabel, value = it, valueColor = TextDarkAlt)
                 }
                 toolCall.error?.takeIf { it.isNotBlank() }?.let {
-                    ToolDetailField(label = "错误", value = it, valueColor = ErrorRed)
+                    ToolDetailField(label = errorLabel, value = it, valueColor = ErrorRed)
                 }
                 toolCall.completedSteps.takeIf { it.isNotEmpty() }?.let { steps ->
                     ToolDetailField(
-                        label = "已完成步骤",
+                        label = completedStepsLabel,
                         value = steps.joinToString("\n") { step ->
                             buildString {
                                 step.index?.let { append(it).append(". ") }
@@ -578,7 +624,7 @@ private fun formatStep(toolCall: ToolCall): String? {
     val total = toolCall.totalSteps
     return when {
         current != null && total != null -> "($current/$total)"
-        current != null -> "(step $current)"
+        current != null -> "(第 $current 步)"
         total != null -> "(共 $total 步)"
         else -> null
     }
@@ -610,110 +656,190 @@ fun MarkdownMessageContent(content: String) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         blocks.forEach { block ->
             when (block) {
-                is MarkdownBlock.TextBlock -> {
-                    if (block.text.isNotBlank()) {
-                        Text(
-                            text = block.text,
-                            fontSize = 16.sp,
-                            color = TextBlack,
-                            lineHeight = 24.sp,
-                        )
-                    }
-                }
-
-                is MarkdownBlock.CodeBlock -> {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(CodeBlockBackground, RoundedCornerShape(10.dp))
-                            .padding(10.dp),
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                text = block.language.ifBlank { "code" },
-                                fontSize = 12.sp,
-                                color = CodeBlockLabel,
-                                modifier = Modifier.weight(1f),
-                            )
-                            IconButton(
-                                onClick = {
-                                    clipboardManager.setText(AnnotatedString(block.code))
-                                },
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Outlined.ContentCopy,
-                                    contentDescription = "复制代码",
-                                    tint = Color.White,
-                                )
-                            }
-                        }
-
-                        SelectionContainer {
-                            Text(
-                                text = block.code,
-                                fontSize = 13.sp,
-                                color = CodeBlockText,
-                                fontFamily = FontFamily.Monospace,
-                                lineHeight = 20.sp,
-                                modifier = Modifier.horizontalScroll(rememberScrollState()),
-                            )
-                        }
-                    }
-                }
+                is MarkdownBlock.Paragraph -> MarkdownInlineText(block.inlines)
+                is MarkdownBlock.Heading -> MarkdownHeading(block)
+                is MarkdownBlock.Quote -> MarkdownQuote(block.text)
+                is MarkdownBlock.BulletList -> MarkdownList(block.items, ordered = false)
+                is MarkdownBlock.OrderedList -> MarkdownList(block.items, ordered = true)
+                is MarkdownBlock.TableText -> MarkdownCodeLikeText(block.text, label = "表格")
+                is MarkdownBlock.CodeBlock -> MarkdownCodeBlock(block, onCopy = {
+                    clipboardManager.setText(AnnotatedString(block.code))
+                })
             }
         }
     }
 }
 
-private sealed interface MarkdownBlock {
-    data class TextBlock(val text: String) : MarkdownBlock
-    data class CodeBlock(
-        val language: String,
-        val code: String,
-    ) : MarkdownBlock
+@Composable
+private fun MarkdownHeading(block: MarkdownBlock.Heading) {
+    Text(
+        text = block.text,
+        fontSize = if (block.level == 1) 18.sp else 16.sp,
+        fontWeight = FontWeight.SemiBold,
+        color = TextBlack,
+        lineHeight = 24.sp,
+    )
 }
 
-private fun parseMarkdownBlocks(content: String): List<MarkdownBlock> {
-    if (!content.contains("```")) {
-        return listOf(MarkdownBlock.TextBlock(content))
+@Composable
+private fun MarkdownQuote(text: String) {
+    Text(
+        text = text,
+        fontSize = 14.sp,
+        color = MutedText,
+        lineHeight = 20.sp,
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(0.5.dp, DividerColor, RoundedCornerShape(8.dp))
+            .background(ThinkingCardBackground, RoundedCornerShape(8.dp))
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+    )
+}
+
+@Composable
+private fun MarkdownList(items: List<String>, ordered: Boolean) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        items.forEachIndexed { index, item ->
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    text = if (ordered) "${index + 1}." else "•",
+                    fontSize = 15.sp,
+                    color = MutedText,
+                )
+                MarkdownInlineText(
+                    inlines = parseMarkdownInlines(item),
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
     }
+}
 
-    val blocks = mutableListOf<MarkdownBlock>()
-    var cursor = 0
-
-    while (cursor < content.length) {
-        val codeStart = content.indexOf("```", cursor)
-        if (codeStart < 0) {
-            blocks.add(MarkdownBlock.TextBlock(content.substring(cursor)))
-            break
+@Composable
+private fun MarkdownCodeBlock(block: MarkdownBlock.CodeBlock, onCopy: () -> Unit) {
+    val defaultLanguage = stringResource(R.string.code_language_default)
+    val copyCode = stringResource(R.string.copy_code)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(CodeBlockBackground, RoundedCornerShape(10.dp))
+            .padding(10.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = block.language.ifBlank { defaultLanguage },
+                fontSize = 12.sp,
+                color = CodeBlockLabel,
+                modifier = Modifier.weight(1f),
+            )
+            IconButton(onClick = onCopy) {
+                Icon(
+                    imageVector = Icons.Outlined.ContentCopy,
+                    contentDescription = copyCode,
+                    tint = Color.White,
+                )
+            }
         }
 
-        if (codeStart > cursor) {
-            blocks.add(MarkdownBlock.TextBlock(content.substring(cursor, codeStart)))
-        }
-
-        val headerEnd = content.indexOf('\n', codeStart + 3)
-        if (headerEnd < 0) {
-            blocks.add(MarkdownBlock.TextBlock(content.substring(codeStart)))
-            break
-        }
-
-        val language = content.substring(codeStart + 3, headerEnd).trim()
-        val codeEnd = content.indexOf("```", headerEnd + 1)
-        if (codeEnd < 0) {
-            blocks.add(MarkdownBlock.TextBlock(content.substring(codeStart)))
-            break
-        }
-
-        val code = content.substring(headerEnd + 1, codeEnd).trimEnd()
-        blocks.add(MarkdownBlock.CodeBlock(language = language, code = code))
-        cursor = codeEnd + 3
+        MarkdownCodeText(text = block.code)
     }
+}
 
-    return blocks.ifEmpty { listOf(MarkdownBlock.TextBlock(content)) }
+@Composable
+private fun MarkdownCodeLikeText(text: String, label: String? = null) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(CodeBlockBackground, RoundedCornerShape(10.dp))
+            .padding(10.dp),
+    ) {
+        label?.let {
+            Text(text = it, fontSize = 12.sp, color = CodeBlockLabel)
+            Spacer(modifier = Modifier.height(6.dp))
+        }
+        MarkdownCodeText(text = text)
+    }
+}
+
+@Composable
+private fun MarkdownCodeText(text: String) {
+    SelectionContainer {
+        Text(
+            text = text,
+            fontSize = 13.sp,
+            color = CodeBlockText,
+            fontFamily = FontFamily.Monospace,
+            lineHeight = 20.sp,
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
+        )
+    }
+}
+
+@Composable
+private fun MarkdownInlineText(
+    inlines: List<MarkdownInline>,
+    modifier: Modifier = Modifier,
+) {
+    val uriHandler = LocalUriHandler.current
+    val linkOpenFailed = stringResource(R.string.link_open_failed)
+    val annotated = remember(inlines) { inlines.toAnnotatedString() }
+    ClickableText(
+        text = annotated,
+        modifier = modifier,
+        style = TextStyle(
+            fontSize = 16.sp,
+            color = TextBlack,
+            lineHeight = 24.sp,
+        ),
+        onClick = { offset ->
+            annotated
+                .getStringAnnotations(tag = "URL", start = offset, end = offset)
+                .firstOrNull()
+                ?.let {
+                    runCatching { uriHandler.openUri(it.item) }
+                        .onFailure { ToastUtil.show(linkOpenFailed, ToastType.ERROR) }
+                }
+        },
+    )
+}
+
+private fun List<MarkdownInline>.toAnnotatedString(): AnnotatedString {
+    val builder = AnnotatedString.Builder()
+    forEach { inline ->
+        when (inline) {
+            is MarkdownInline.Text -> builder.append(inline.text)
+            is MarkdownInline.Bold -> builder.withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
+                append(inline.text)
+            }
+            is MarkdownInline.Italic -> builder.withStyle(SpanStyle(fontStyle = FontStyle.Italic)) {
+                append(inline.text)
+            }
+            is MarkdownInline.Code -> builder.withStyle(
+                SpanStyle(
+                    fontFamily = FontFamily.Monospace,
+                    background = ThinkingCardBackground,
+                ),
+            ) {
+                append(inline.text)
+            }
+            is MarkdownInline.Link -> {
+                val start = builder.length
+                builder.withStyle(
+                    SpanStyle(
+                        color = BlueAccent,
+                        textDecoration = TextDecoration.Underline,
+                    ),
+                ) {
+                    append(inline.text)
+                }
+                builder.addStringAnnotation("URL", inline.url, start, builder.length)
+            }
+        }
+    }
+    return builder.toAnnotatedString()
 }
 
 @Composable
