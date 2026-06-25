@@ -551,7 +551,7 @@ class ChatViewModel(
                 prompt = prompt,
                 runId = stream.runId,
                 onEvent = streamEvent@ { event ->
-                if (activeStream !== stream) return@streamEvent
+                if (activeStream !== stream && pendingCancellation !== stream) return@streamEvent
                 lastEventAt = repo.now()
                 when (event) {
                     is ChatStreamEvent.StreamStarted -> {
@@ -915,17 +915,11 @@ class ChatViewModel(
         )
     }
 
-    /** 由页面生命周期调用；默认不允许外部副作用在用户离开后继续执行。 */
+    /** 页面进入后台时不再自动取消任务。打开外部 App（如飞书/微信）是正常业务
+     * 路径，不应误判为用户离开。取消仅由用户显式点击"停止"按钮触发。 */
     fun onAppBackgrounded() {
-        val stream = activeStream ?: pendingCancellation ?: return
-        if (cancellationJob?.isActive == true) return
-        requestRunCancellation(
-            stream = stream,
-            source = CancellationSource.APP_BACKGROUND,
-            trace = findMessageTrace(stream.assistantMessageId),
-            chatState = ChatState.CHAT_TOOL_CALLING,
-            taskComplexity = TaskComplexityLevel.UNKNOWN,
-        )
+        // 不再自动取消 —— 打开外部 App 会触发 ON_STOP 是正常业务路径。
+        // 保留此方法供未来可选集成使用。
     }
 
     private fun stopActiveRun(markAssistantCancelled: Boolean): Job? {
@@ -952,11 +946,9 @@ class ChatViewModel(
         taskComplexity: TaskComplexityLevel,
         serverMessage: String? = null,
     ): Job {
-        if (activeStream === stream) {
-            activeStream = null
-            streamJob?.cancel()
-            streamJob = null
-        }
+        // ✅ 不再抢先置空 activeStream 和取消 streamJob
+        // activeStream 继续存活，用于接收后端 terminal 事件
+        // streamJob 继续运行，直到后端发来 terminal 或 EOF
         pendingCancellation = stream
         rawStreamContent.remove(stream.assistantMessageId)
         streamInvocationIds.remove(stream.assistantMessageId)
@@ -1181,6 +1173,11 @@ class ChatViewModel(
         if (activeStream === stream) {
             activeStream = null
             _uiState.update { it.copy(canCancel = false) }
+        }
+        if (pendingCancellation === stream) {
+            pendingCancellation = null
+            cancellationJob?.cancel()
+            cancellationJob = null
         }
     }
 

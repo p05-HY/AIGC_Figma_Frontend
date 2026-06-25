@@ -565,7 +565,7 @@ class ChatViewModelTest {
     }
 
     @Test
-    fun appBackground_requestsCancellationOfTheActiveRun() = runTest {
+    fun appBackground_doesNotCancelActiveRun_whenAppGoesToBackground() = runTest {
         val provider = ScriptedProvider { _, _, onEvent ->
             onEvent(
                 ChatStreamEvent.Trace(
@@ -583,8 +583,9 @@ class ChatViewModelTest {
         viewModel.onAppBackgrounded()
         advanceUntilIdle()
 
-        assertEquals(listOf("run-1"), provider.cancelledRuns.map { it.second })
-        assertEquals(ChatSessionState.CANCELLED, viewModel.uiState.value.sessionState)
+        // ✅ 后台不应自动取消正在执行的任务（打开外部 App 是正常业务路径）
+        assertTrue(provider.cancelledRuns.isEmpty())
+        assertEquals(ChatSessionState.RESPONDING, viewModel.uiState.value.sessionState)
     }
 
     @Test

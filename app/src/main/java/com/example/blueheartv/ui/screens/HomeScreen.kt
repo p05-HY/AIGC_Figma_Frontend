@@ -24,8 +24,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
 import com.example.blueheartv.R
 import com.example.blueheartv.model.ChatAttachment
 import com.example.blueheartv.ui.components.*
@@ -48,7 +46,6 @@ fun HomeScreen(
     val listState = rememberLazyListState()
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
     val focusManager = LocalFocusManager.current
     val scope = rememberCoroutineScope()
     val actions = rememberHomeScreenActions(viewModel, snackbarHostState)
@@ -81,14 +78,6 @@ fun HomeScreen(
 
     LaunchedEffect(Unit) {
         viewModel.navigateToSettings.collect { onNavigateToSettings() }
-    }
-
-    DisposableEffect(lifecycleOwner, viewModel) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_STOP) viewModel.onAppBackgrounded()
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     val shouldAutoScroll by remember(uiState.messages.size, uiState.sessionState) {
