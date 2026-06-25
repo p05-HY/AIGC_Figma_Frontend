@@ -32,6 +32,23 @@ class AgentServerChatProvider(
         prompt: ChatPrompt,
         onEvent: (ChatStreamEvent) -> Unit,
     ) = withContext(Dispatchers.IO) {
-        client.streamRun(threadId, prompt, onEvent)
+        client.streamRun(threadId, prompt, onEvent = onEvent)
+    }
+
+    override suspend fun streamReplyWithRun(
+        threadId: String,
+        prompt: ChatPrompt,
+        runId: String,
+        onEvent: (ChatStreamEvent) -> Unit,
+    ) = withContext(Dispatchers.IO) {
+        client.streamRun(threadId, prompt, runId, onEvent)
+    }
+
+    override suspend fun cancelRun(threadId: String, runId: String): MobileRunCancellation = withContext(Dispatchers.IO) {
+        client.cancelRun(threadId, runId)
+    }
+
+    override suspend fun getRunStatus(threadId: String, runId: String): MobileRunStatus = withContext(Dispatchers.IO) {
+        client.getRunStatus(threadId, runId)
     }
 }

@@ -2,9 +2,9 @@ package com.example.blueheartv
 
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.os.Bundle
 import android.provider.Settings
+import android.util.Log
 import android.view.accessibility.AccessibilityManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -25,6 +25,8 @@ import com.example.blueheartv.chat.DeviceIdStore
 import com.example.blueheartv.control.AccessibilityAutoEnabler
 import com.example.blueheartv.control.AdbAccessibilityService
 import com.example.blueheartv.control.AdbWebSocketService
+import com.example.blueheartv.control.ShizukuPermissionChecker
+import com.example.blueheartv.control.ShizukuPermissionRequestResult
 import com.example.blueheartv.floating.FloatingBallService
 import com.example.blueheartv.navigation.AppNavGraph
 import com.example.blueheartv.system.SystemService
@@ -39,6 +41,11 @@ import rikka.shizuku.Shizuku
 class MainActivity : ComponentActivity() {
 
     private var permissionCheckTrigger = mutableIntStateOf(0)
+    private val shizukuPermissionChecker = ShizukuPermissionChecker(
+        isPreV11 = Shizuku::isPreV11,
+        checkSelfPermission = Shizuku::checkSelfPermission,
+        requestPermission = Shizuku::requestPermission,
+    )
 
     private val shizukuPermissionListener =
         Shizuku.OnRequestPermissionResultListener { requestCode, _ ->
@@ -71,13 +78,19 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun requestShizukuPermissionIfNeeded() {
-        if (Shizuku.isPreV11()) return
-        if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
-            Shizuku.requestPermission(SHIZUKU_REQUEST_CODE)
+        when (shizukuPermissionChecker.requestIfNeeded(SHIZUKU_REQUEST_CODE)) {
+            ShizukuPermissionRequestResult.BinderUnavailable -> {
+                Log.w(TAG, "Shizuku binder unavailable; ask user to start Shizuku first")
+                permissionCheckTrigger.intValue++
+            }
+            ShizukuPermissionRequestResult.Requested,
+            ShizukuPermissionRequestResult.AlreadyGranted,
+            ShizukuPermissionRequestResult.Unsupported -> Unit
         }
     }
 
     companion object {
+        private const val TAG = "MainActivity"
         const val SHIZUKU_REQUEST_CODE = 7001
         private val _pendingSessionId = MutableStateFlow<String?>(null)
         val pendingSessionId: StateFlow<String?> = _pendingSessionId.asStateFlow()
@@ -128,9 +141,7 @@ class MainActivity : ComponentActivity() {
                         !isAccessibilityServiceEnabled()
                     }
                     val needsShizuku = remember(triggerCount) {
-                        runCatching {
-                            Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED
-                        }.getOrDefault(true)
+                        shizukuPermissionChecker.needsPermission()
                     }
 
                     Column(

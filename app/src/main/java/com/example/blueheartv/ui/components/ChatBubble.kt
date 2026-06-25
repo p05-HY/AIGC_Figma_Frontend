@@ -362,12 +362,22 @@ fun AiBubble(
                         LoadingDots()
                     } else {
                         val isStreaming = message.deliveryState == com.example.blueheartv.model.MessageDeliveryState.STREAMING
-                        val displayText = rememberTypewriterText(message.content, isStreaming)
-                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            message.thinking?.takeIf { it.isNotBlank() }?.let {
-                                ThinkingCard(isStreaming = isStreaming)
+                        val displayText = rememberTypewriterText(
+                            message.content.ifBlank {
+                                when (message.deliveryState) {
+                                    com.example.blueheartv.model.MessageDeliveryState.STREAMING -> "正在处理..."
+                                    com.example.blueheartv.model.MessageDeliveryState.FAILED -> "响应失败，请重试"
+                                    else -> message.trace?.summary ?: "已收到回复"
+                                }
+                            },
+                            isStreaming,
+                        )
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            val traceVisible = BuildConfig.TRACE_V1_RENDER_ENABLED && message.trace != null
+                            if (traceVisible) {
+                                TraceTimeline(trace = requireNotNull(message.trace))
                             }
-                            message.toolCalls?.takeIf { it.isNotEmpty() }?.let { toolCalls ->
+                            message.toolCalls?.takeIf { it.isNotEmpty() && !traceVisible }?.let { toolCalls ->
                                 ToolCallCard(toolCalls = toolCalls)
                             }
                             if (enableTextSelection) {
@@ -414,34 +424,6 @@ fun AiBubble(
 }
 
 @Composable
-private fun ThinkingCard(isStreaming: Boolean) {
-    val streamingText = stringResource(R.string.thinking_streaming)
-    val titleText = stringResource(R.string.thinking_title)
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(ThinkingCardBackground, RoundedCornerShape(10.dp))
-            .border(0.5.dp, DividerColor, RoundedCornerShape(10.dp))
-            .padding(horizontal = 10.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            imageVector = Icons.Outlined.Psychology,
-            contentDescription = null,
-            modifier = Modifier.size(16.dp),
-            tint = MutedText,
-        )
-        Text(
-            text = if (isStreaming) streamingText else titleText,
-            fontSize = 13.sp,
-            color = MutedText,
-            modifier = Modifier.weight(1f),
-        )
-    }
-}
-
-@Composable
 private fun ToolCallCard(toolCalls: List<ToolCall>) {
     val summary = remember(toolCalls) { summarizeToolProgress(toolCalls) }
     Column(
@@ -483,22 +465,6 @@ private fun ToolCallCard(toolCalls: List<ToolCall>) {
 
 @Composable
 private fun ToolCallRow(toolCall: ToolCall) {
-    val hasRawDetail = !toolCall.args.isNullOrBlank() ||
-        !toolCall.result.isNullOrBlank() ||
-        !toolCall.error.isNullOrBlank() ||
-        !toolCall.message.isNullOrBlank() ||
-        !toolCall.phase.isNullOrBlank() ||
-        toolCall.currentStep != null ||
-        toolCall.totalSteps != null ||
-        toolCall.completedSteps.isNotEmpty()
-    val hasDetail = BuildConfig.SHOW_TECH_DEBUG_UI && hasRawDetail
-    var expanded by remember { mutableStateOf(false) }
-    val phaseLabel = stringResource(R.string.tool_detail_phase)
-    val messageLabel = stringResource(R.string.tool_detail_message)
-    val argsLabel = stringResource(R.string.tool_detail_args)
-    val resultLabel = stringResource(R.string.tool_detail_result)
-    val errorLabel = stringResource(R.string.tool_detail_error)
-    val completedStepsLabel = stringResource(R.string.tool_detail_completed_steps)
     val display = remember(toolCall) { displayToolCall(toolCall) }
 
     val dotColor = when (toolCall.status) {
@@ -510,8 +476,7 @@ private fun ToolCallRow(toolCall: ToolCall) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(
             modifier = Modifier
-                .fillMaxWidth()
-                .then(if (hasDetail) Modifier.clickable { expanded = !expanded } else Modifier),
+                .fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
@@ -545,49 +510,6 @@ private fun ToolCallRow(toolCall: ToolCall) {
                 fontSize = 11.sp,
                 color = dotColor,
             )
-            if (hasDetail) {
-                Icon(
-                    imageVector = if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
-                    contentDescription = if (expanded) "收起" else "展开",
-                    modifier = Modifier.size(16.dp),
-                    tint = MutedText,
-                )
-            }
-        }
-        if (expanded && hasDetail) {
-            Column(
-                modifier = Modifier.padding(start = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                toolCall.phase?.takeIf { it.isNotBlank() }?.let {
-                    ToolDetailField(label = phaseLabel, value = it, valueColor = TextDarkAlt)
-                }
-                toolCall.message?.takeIf { it.isNotBlank() }?.let {
-                    ToolDetailField(label = messageLabel, value = it, valueColor = TextDarkAlt)
-                }
-                toolCall.args?.takeIf { it.isNotBlank() }?.let {
-                    ToolDetailField(label = argsLabel, value = it, valueColor = TextDarkAlt)
-                }
-                toolCall.result?.takeIf { it.isNotBlank() }?.let {
-                    ToolDetailField(label = resultLabel, value = it, valueColor = TextDarkAlt)
-                }
-                toolCall.error?.takeIf { it.isNotBlank() }?.let {
-                    ToolDetailField(label = errorLabel, value = it, valueColor = ErrorRed)
-                }
-                toolCall.completedSteps.takeIf { it.isNotEmpty() }?.let { steps ->
-                    ToolDetailField(
-                        label = completedStepsLabel,
-                        value = steps.joinToString("\n") { step ->
-                            buildString {
-                                step.index?.let { append(it).append(". ") }
-                                append(step.name)
-                                if (step.status.isNotBlank()) append(" - ").append(step.status)
-                            }
-                        },
-                        valueColor = TextDarkAlt,
-                    )
-                }
-            }
         }
     }
 }
@@ -600,24 +522,6 @@ private fun formatStep(toolCall: ToolCall): String? {
         current != null -> "(第 $current 步)"
         total != null -> "(共 $total 步)"
         else -> null
-    }
-}
-
-@Composable
-private fun ToolDetailField(label: String, value: String, valueColor: Color) {
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(text = label, fontSize = 11.sp, color = MutedText)
-        Text(
-            text = value,
-            fontSize = 12.sp,
-            color = valueColor,
-            fontFamily = FontFamily.Monospace,
-            lineHeight = 16.sp,
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(ToolDetailBackground, RoundedCornerShape(6.dp))
-                .padding(horizontal = 8.dp, vertical = 6.dp),
-        )
     }
 }
 

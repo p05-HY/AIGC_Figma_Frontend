@@ -13,7 +13,8 @@ data class Message(
     val isUser: Boolean,
     val deliveryState: MessageDeliveryState = MessageDeliveryState.COMPLETED,
     val toolCalls: List<ToolCall>? = null,
-    val thinking: String? = null,
+    /** 仅存在于当前内存消息中；MVP 不写入 Room。 */
+    val trace: AssistantTrace? = null,
     val errorMessage: String? = null,
     val timestamp: Long = System.currentTimeMillis(),
 ) {
@@ -38,9 +39,6 @@ enum class ToolCallStatus {
 data class ToolCall(
     val label: String,
     val status: ToolCallStatus = ToolCallStatus.RUNNING,
-    val args: String? = null,
-    val result: String? = null,
-    val error: String? = null,
     val phase: String? = null,
     val message: String? = null,
     val toolName: String? = null,

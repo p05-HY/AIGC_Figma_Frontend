@@ -4,12 +4,22 @@ import com.example.blueheartv.chat.AgentServerConfigStore
 import com.example.blueheartv.chat.ChatPrompt
 import com.example.blueheartv.chat.ChatProvider
 import com.example.blueheartv.chat.ChatStreamEvent
+import com.example.blueheartv.chat.MobileRunCancellation
+import com.example.blueheartv.chat.MobileRunStatus
 import com.example.blueheartv.chat.RemoteChatThread
 import com.example.blueheartv.model.Message
 import com.example.blueheartv.model.MessageDeliveryState
+import com.example.blueheartv.model.ToolCallStatus
+import com.example.blueheartv.model.TraceEvent
+import com.example.blueheartv.model.TraceRunStatus
+import com.example.blueheartv.model.TraceStep
+import com.example.blueheartv.model.TraceStepStatus
 import com.example.blueheartv.test.MainDispatcherRule
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -228,7 +238,17 @@ class ChatViewModelTest {
                     totalSteps = 2,
                 )
             )
-            onEvent(ChatStreamEvent.ToolCallCompleted(label = "观察屏幕", result = "ok"))
+            onEvent(
+                ChatStreamEvent.TaskProgress(
+                    label = "观察屏幕",
+                    status = "completed",
+                    phase = "observe",
+                    toolName = "observe",
+                    progressKey = "observe-step",
+                    currentStep = 2,
+                    totalSteps = 2,
+                ),
+            )
             onEvent(ChatStreamEvent.Completed)
         }
         val viewModel = createViewModel(chatProvider = provider)
@@ -240,9 +260,195 @@ class ChatViewModelTest {
         val toolCalls = viewModel.uiState.value.messages.last().toolCalls.orEmpty()
         assertEquals(1, toolCalls.size)
         assertEquals("观察屏幕", toolCalls.single().label)
-        assertEquals("ok", toolCalls.single().result)
-        assertEquals(1, toolCalls.single().currentStep)
+        assertEquals(ToolCallStatus.COMPLETED, toolCalls.single().status)
+        assertEquals(2, toolCalls.single().currentStep)
         assertEquals(2, toolCalls.single().totalSteps)
+    }
+
+    @Test
+    fun streamStarted_updatesTemporaryPlaceholderOnly() = runTest {
+        val provider = ScriptedProvider { _, _, onEvent ->
+            onEvent(
+                ChatStreamEvent.StreamStarted(
+                    runId = "run-1",
+                    streamSeq = 1,
+                    message = "已接收请求，正在连接 Agent。",
+                ),
+            )
+            awaitCancellation()
+        }
+        val viewModel = createViewModel(chatProvider = provider)
+        advanceUntilIdle()
+
+        viewModel.onInputChanged("打开微信")
+        viewModel.sendMessage()
+        runCurrent()
+
+        val uiState = viewModel.uiState.value
+        val assistant = uiState.messages.last()
+        assertEquals("已接收请求，正在连接 Agent。", uiState.streamingStep)
+        assertEquals("", assistant.content)
+        assertNull(assistant.trace)
+        assertNull(assistant.toolCalls)
+        assertEquals(MessageDeliveryState.STREAMING, assistant.deliveryState)
+
+        viewModel.cancelActiveRun()
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun traceEvent_replacesLegacyToolCard_andTerminalControlsCompletion() = runTest {
+        val provider = ScriptedProvider { _, _, onEvent ->
+            onEvent(
+                ChatStreamEvent.TaskProgress(
+                    label = "观察屏幕",
+                    status = "running",
+                    phase = "phone_tool",
+                ),
+            )
+            onEvent(
+                ChatStreamEvent.Trace(
+                    TraceEvent.StepUpsert(
+                        runId = "run-1",
+                        eventId = "evt-1",
+                        seq = 1,
+                        step = TraceStep(
+                            id = "tool-1",
+                            kind = "tool",
+                            title = "观察屏幕",
+                            summary = "正在读取当前手机屏幕状态。",
+                            status = TraceStepStatus.RUNNING,
+                        ),
+                    ),
+                ),
+            )
+            onEvent(
+                ChatStreamEvent.Trace(
+                    TraceEvent.RunTerminal(
+                        runId = "run-1",
+                        eventId = "evt-2",
+                        seq = 2,
+                        status = TraceRunStatus.SUCCEEDED,
+                    ),
+                ),
+            )
+            onEvent(ChatStreamEvent.TextDelta("完成"))
+            onEvent(ChatStreamEvent.StreamEof(streamSeq = 5))
+        }
+
+        val viewModel = createViewModel(chatProvider = provider, traceRenderEnabled = true)
+        advanceUntilIdle()
+        viewModel.onInputChanged("帮我看看屏幕")
+        viewModel.sendMessage()
+        advanceUntilIdle()
+
+        val assistant = viewModel.uiState.value.messages.last()
+        assertEquals("完成", assistant.content)
+        assertEquals(TraceRunStatus.SUCCEEDED, assistant.trace?.runStatus)
+        assertNull(assistant.toolCalls)
+        assertEquals(MessageDeliveryState.COMPLETED, assistant.deliveryState)
+    }
+
+    @Test
+    fun traceEvent_keepsLegacyToolCardWhenRenderDisabled() = runTest {
+        val provider = ScriptedProvider { _, _, onEvent ->
+            onEvent(
+                ChatStreamEvent.TaskProgress(
+                    label = "观察屏幕",
+                    status = "running",
+                    phase = "phone_tool",
+                ),
+            )
+            onEvent(
+                ChatStreamEvent.Trace(
+                    TraceEvent.StepUpsert(
+                        runId = "run-1",
+                        eventId = "evt-1",
+                        seq = 1,
+                        step = TraceStep(
+                            id = "tool-1",
+                            kind = "tool",
+                            title = "观察屏幕",
+                            summary = "正在读取当前手机屏幕状态。",
+                            status = TraceStepStatus.RUNNING,
+                        ),
+                    ),
+                ),
+            )
+            onEvent(ChatStreamEvent.TextDelta("完成"))
+            onEvent(ChatStreamEvent.Completed)
+        }
+
+        val viewModel = createViewModel(chatProvider = provider, traceRenderEnabled = false)
+        advanceUntilIdle()
+        viewModel.onInputChanged("帮我看看屏幕")
+        viewModel.sendMessage()
+        advanceUntilIdle()
+
+        val assistant = viewModel.uiState.value.messages.last()
+        assertEquals("完成", assistant.content)
+        assertNotNull(assistant.trace)
+        assertNotNull(assistant.toolCalls)
+        assertEquals("观察屏幕", assistant.toolCalls!!.single().label)
+        assertEquals(MessageDeliveryState.COMPLETED, assistant.deliveryState)
+    }
+
+    @Test
+    fun plainTextStreamEofWithoutTrace_completesMessage() = runTest {
+        val provider = ScriptedProvider { _, _, onEvent ->
+            onEvent(ChatStreamEvent.TextDelta("纯文本回复"))
+            onEvent(ChatStreamEvent.StreamEof(streamSeq = 2))
+        }
+
+        val viewModel = createViewModel(chatProvider = provider)
+        advanceUntilIdle()
+        viewModel.onInputChanged("简单问题")
+        viewModel.sendMessage()
+        advanceUntilIdle()
+
+        val uiState = viewModel.uiState.value
+        val assistant = uiState.messages.last()
+        assertEquals("纯文本回复", assistant.content)
+        assertEquals(MessageDeliveryState.COMPLETED, assistant.deliveryState)
+        assertEquals(ChatSessionState.IDLE, uiState.sessionState)
+        assertNull(assistant.trace)
+    }
+
+    @Test
+    fun streamEofWithoutTraceTerminal_marksRunInterrupted() = runTest {
+        val provider = ScriptedProvider { _, _, onEvent ->
+            onEvent(
+                ChatStreamEvent.Trace(
+                    TraceEvent.StepUpsert(
+                        runId = "run-1",
+                        eventId = "evt-1",
+                        seq = 1,
+                        step = TraceStep(
+                            id = "tool-1",
+                            kind = "tool",
+                            title = "观察屏幕",
+                            summary = "正在读取当前手机屏幕状态。",
+                            status = TraceStepStatus.RUNNING,
+                        ),
+                    ),
+                ),
+            )
+            onEvent(ChatStreamEvent.StreamEof(streamSeq = 2))
+        }
+
+        val viewModel = createViewModel(chatProvider = provider)
+        advanceUntilIdle()
+        viewModel.onInputChanged("帮我看看屏幕")
+        viewModel.sendMessage()
+        advanceUntilIdle()
+
+        val uiState = viewModel.uiState.value
+        val assistant = uiState.messages.last()
+        assertEquals(TraceRunStatus.INTERRUPTED, assistant.trace?.runStatus)
+        assertEquals(MessageDeliveryState.FAILED, assistant.deliveryState)
+        assertEquals(ChatSessionState.ERROR, uiState.sessionState)
+        assertTrue(uiState.canRetry)
+        assertTrue(provider.cancelledRuns.isEmpty())
     }
 
     @Test
@@ -262,6 +468,148 @@ class ChatViewModelTest {
         assertTrue(uiState.canRetry)
         assertEquals("network down", uiState.lastError)
         assertEquals(MessageDeliveryState.FAILED, uiState.messages.last().deliveryState)
+        assertTrue(provider.cancelledRuns.isEmpty())
+    }
+
+    @Test
+    fun cancelActiveRun_stopsLocalStreamAndCancelsTheSameServerRun() = runTest {
+        val provider = ScriptedProvider { _, _, onEvent ->
+            onEvent(
+                ChatStreamEvent.Trace(
+                    TraceEvent.RunStarted(
+                        runId = "run-1",
+                        eventId = "evt-1",
+                        seq = 1,
+                        threadId = "thread-1",
+                    ),
+                ),
+            )
+            awaitCancellation()
+        }
+        val viewModel = createViewModel(chatProvider = provider)
+        advanceUntilIdle()
+
+        viewModel.onInputChanged("打开微信")
+        viewModel.sendMessage()
+        runCurrent()
+        assertTrue(viewModel.uiState.value.canCancel)
+
+        viewModel.cancelActiveRun()
+        advanceUntilIdle()
+
+        assertEquals(1, provider.cancelledRuns.size)
+        assertEquals("run-1", provider.cancelledRuns.single().second)
+        assertFalse(viewModel.uiState.value.canCancel)
+        assertEquals(ChatSessionState.CANCELLED, viewModel.uiState.value.sessionState)
+        assertEquals("已停止当前任务。", viewModel.uiState.value.messages.last().content)
+    }
+
+    @Test
+    fun streamTimeout_requestsServerCancellationBeforeItShowsATerminalUiState() = runTest {
+        var now = 1_000L
+        val provider = ScriptedProvider { _, _, onEvent ->
+            onEvent(
+                ChatStreamEvent.Trace(
+                    TraceEvent.RunStarted("run-1", "evt-1", 1, "thread-1"),
+                ),
+            )
+            awaitCancellation()
+        }
+        val viewModel = createViewModel(chatProvider = provider, timeProvider = { now })
+        advanceUntilIdle()
+        viewModel.onInputChanged("打开飞书")
+        viewModel.sendMessage()
+        runCurrent()
+        assertEquals(ChatSessionState.RESPONDING, viewModel.uiState.value.sessionState)
+        assertTrue(viewModel.uiState.value.canCancel)
+
+        now = 61_001L
+        advanceTimeBy(5_001)
+        runCurrent()
+        advanceUntilIdle()
+
+        assertEquals(listOf("run-1"), provider.cancelledRuns.map { it.second })
+        assertEquals(ChatSessionState.CANCELLED, viewModel.uiState.value.sessionState)
+        assertFalse(viewModel.uiState.value.canRetry)
+    }
+
+    @Test
+    fun unconfirmedCancellation_blocksTheNextPromptAndKeepsStopAvailable() = runTest {
+        val provider = ScriptedProvider(
+            cancellationBackendStatus = "cancel_requested",
+            polledBackendStatus = "running",
+            polledStatusTerminal = false,
+        ) { _, _, onEvent ->
+            onEvent(
+                ChatStreamEvent.Trace(
+                    TraceEvent.RunStarted("run-1", "evt-1", 1, "thread-1"),
+                ),
+            )
+            awaitCancellation()
+        }
+        val viewModel = createViewModel(chatProvider = provider)
+        advanceUntilIdle()
+        viewModel.onInputChanged("打开飞书")
+        viewModel.sendMessage()
+        runCurrent()
+
+        viewModel.cancelActiveRun()
+        advanceUntilIdle()
+
+        assertEquals(ChatSessionState.BACKEND_STILL_RUNNING, viewModel.uiState.value.sessionState)
+        assertTrue(viewModel.uiState.value.canCancel)
+        viewModel.onInputChanged("回复我 OK")
+        viewModel.sendMessage()
+        advanceUntilIdle()
+        assertEquals(1, provider.streamReplyCalls)
+    }
+
+    @Test
+    fun appBackground_requestsCancellationOfTheActiveRun() = runTest {
+        val provider = ScriptedProvider { _, _, onEvent ->
+            onEvent(
+                ChatStreamEvent.Trace(
+                    TraceEvent.RunStarted("run-1", "evt-1", 1, "thread-1"),
+                ),
+            )
+            awaitCancellation()
+        }
+        val viewModel = createViewModel(chatProvider = provider)
+        advanceUntilIdle()
+        viewModel.onInputChanged("打开飞书")
+        viewModel.sendMessage()
+        runCurrent()
+
+        viewModel.onAppBackgrounded()
+        advanceUntilIdle()
+
+        assertEquals(listOf("run-1"), provider.cancelledRuns.map { it.second })
+        assertEquals(ChatSessionState.CANCELLED, viewModel.uiState.value.sessionState)
+    }
+
+    @Test
+    fun deletingTheActiveSession_cancelsItsRunBeforeDeletingTheRemoteThread() = runTest {
+        var activeThreadId: String? = null
+        val provider = ScriptedProvider { threadId, _, onEvent ->
+            activeThreadId = threadId
+            onEvent(
+                ChatStreamEvent.Trace(
+                    TraceEvent.RunStarted("run-1", "evt-1", 1, threadId),
+                ),
+            )
+            awaitCancellation()
+        }
+        val viewModel = createViewModel(chatProvider = provider)
+        advanceUntilIdle()
+        viewModel.onInputChanged("打开飞书")
+        viewModel.sendMessage()
+        runCurrent()
+
+        viewModel.deleteSession(requireNotNull(activeThreadId))
+        advanceUntilIdle()
+
+        assertEquals(listOf("run-1"), provider.cancelledRuns.map { it.second })
+        assertEquals(listOf(requireNotNull(activeThreadId)), provider.deletedThreads)
     }
 
     @Test
@@ -314,6 +662,7 @@ class ChatViewModelTest {
     private fun createViewModel(
         chatProvider: ChatProvider = ScriptedProvider(),
         timeProvider: () -> Long = { System.currentTimeMillis() },
+        traceRenderEnabled: Boolean = false,
     ): ChatViewModel {
         val repo = ChatSessionRepository(
             timeProvider = timeProvider,
@@ -322,11 +671,16 @@ class ChatViewModelTest {
         return ChatViewModel(
             chatProvider = chatProvider,
             repo = repo,
+            traceRenderEnabled = traceRenderEnabled,
         )
     }
 
     private class ScriptedProvider(
         private val remoteThreads: List<RemoteChatThread> = emptyList(),
+        private val cancellationAccepted: Boolean = true,
+        private val cancellationBackendStatus: String = "cancel_requested",
+        private val polledBackendStatus: String = "cancelled",
+        private val polledStatusTerminal: Boolean = true,
         private val script: suspend (String, ChatPrompt, (ChatStreamEvent) -> Unit) -> Unit = { _, _, onEvent ->
             onEvent(ChatStreamEvent.Completed)
         },
@@ -335,6 +689,8 @@ class ChatViewModelTest {
             private set
         var streamReplyCalls: Int = 0
             private set
+        val cancelledRuns = mutableListOf<Pair<String, String>>()
+        val deletedThreads = mutableListOf<String>()
 
         override suspend fun createThread(titleHint: String?): RemoteChatThread {
             createThreadCalls += 1
@@ -349,7 +705,9 @@ class ChatViewModelTest {
 
         override suspend fun renameThread(threadId: String, title: String) = Unit
 
-        override suspend fun deleteThread(threadId: String) = Unit
+        override suspend fun deleteThread(threadId: String) {
+            deletedThreads += threadId
+        }
 
         override suspend fun streamReply(
             threadId: String,
@@ -358,6 +716,24 @@ class ChatViewModelTest {
         ) {
             streamReplyCalls += 1
             script(threadId, prompt, onEvent)
+        }
+
+        override suspend fun cancelRun(threadId: String, runId: String): MobileRunCancellation {
+            cancelledRuns += threadId to runId
+            return MobileRunCancellation(
+                runId,
+                accepted = cancellationAccepted,
+                backendStatus = cancellationBackendStatus,
+            )
+        }
+
+        override suspend fun getRunStatus(threadId: String, runId: String): MobileRunStatus {
+            return MobileRunStatus(
+                runId,
+                localStatus = if (polledStatusTerminal) "cancelled" else "active",
+                backendStatus = polledBackendStatus,
+                terminal = polledStatusTerminal,
+            )
         }
     }
 }

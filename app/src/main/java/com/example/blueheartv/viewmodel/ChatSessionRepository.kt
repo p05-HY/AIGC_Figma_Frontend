@@ -1,6 +1,7 @@
 package com.example.blueheartv.viewmodel
 
 import com.example.blueheartv.chat.RemoteChatThread
+import com.example.blueheartv.model.AssistantTrace
 import com.example.blueheartv.model.ChatHistory
 import com.example.blueheartv.model.Message
 import kotlinx.coroutines.CoroutineScope
@@ -201,6 +202,15 @@ class ChatSessionRepository(
     fun createId(): String = idProvider()
 
     fun now(): Long = timeProvider()
+
+    /** 持久化单条消息的 trace 字段到 Room，供页面切换后恢复。 */
+    internal fun persistTrace(messageId: String, trace: AssistantTrace) {
+        val active = getActiveSession() ?: return
+        val idx = active.messages.indexOfFirst { it.id == messageId }
+        if (idx < 0) return
+        active.messages[idx] = active.messages[idx].copy(trace = trace)
+        persistMessages(active)
+    }
 
     internal fun appendPromptMessages(
         userMessage: Message,

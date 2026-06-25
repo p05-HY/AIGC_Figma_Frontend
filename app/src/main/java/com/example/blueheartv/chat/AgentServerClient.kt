@@ -113,6 +113,7 @@ class AgentServerClient(
     fun streamRun(
         threadId: String,
         prompt: ChatPrompt,
+        mobileRunId: String? = null,
         onEvent: (ChatStreamEvent) -> Unit,
     ) {
         val body = JSONObject().apply {
@@ -124,7 +125,14 @@ class AgentServerClient(
             )
         }
 
-        val request = postRequest(url(ApiPaths.THREADS, threadId, ApiPaths.RUNS, ApiPaths.STREAM), body)
+        val requestBuilder = postRequest(
+            url(ApiPaths.MOBILE, ApiPaths.THREADS, threadId, ApiPaths.RUNS, ApiPaths.STREAM),
+            body,
+        ).newBuilder()
+        mobileRunId?.trim()?.takeIf { it.isNotBlank() }?.let {
+            requestBuilder.header("X-Mobile-Run-Id", it)
+        }
+        val request = requestBuilder.build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
                 val retryable = response.code == 408 || response.code == 429 || response.code in 500..599
@@ -147,7 +155,6 @@ class AgentServerClient(
     private fun parseSse(source: BufferedSource, onEvent: (ChatStreamEvent) -> Unit) {
         var eventName: String? = null
         val data = StringBuilder()
-        val activeNodes = linkedSetOf<String>()
         var parseErrorCount = 0
         var shouldStop = false
 
@@ -155,10 +162,15 @@ class AgentServerClient(
             if (shouldStop) return
             val payload = data.toString().trim()
             if (payload.isNotEmpty() && payload != "[DONE]") {
-                val ok = handleSseEvent(eventName.orEmpty(), payload, activeNodes, onEvent)
-                if (!ok) {
+                val safeEvent = parseSafeStreamEvent(eventName.orEmpty(), payload)
+                if (safeEvent != null) {
+                    onEvent(safeEvent)
+                    if (safeEvent is ChatStreamEvent.StreamEof || safeEvent is ChatStreamEvent.Error) {
+                        shouldStop = true
+                    }
+                } else if (eventName.isSafeFacadeEvent()) {
                     parseErrorCount += 1
-                    Log.w(TAG, "SSE parse error count=$parseErrorCount event=$eventName")
+                    logSseParseError(parseErrorCount, eventName)
                     if (parseErrorCount >= MAX_SSE_PARSE_ERRORS) {
                         onEvent(
                             ChatStreamEvent.Error(
@@ -187,299 +199,53 @@ class AgentServerClient(
         }
         flush()
         if (!shouldStop) {
-            onEvent(ChatStreamEvent.Completed)
+            // 网络 EOF 没有业务终态；ViewModel 会对已有 Trace 标记 interrupted。
+            onEvent(ChatStreamEvent.StreamEof())
         }
     }
 
-    private fun handleSseEvent(
-        eventName: String,
-        payload: String,
-        activeNodes: MutableSet<String>,
-        onEvent: (ChatStreamEvent) -> Unit,
-    ): Boolean {
-        if (eventName.isBlank()) return true
-        val json = runCatching { parseJson(payload) }.getOrNull() ?: return false
-        when {
-            eventName.contains("messages", ignoreCase = true) -> {
-                extractMessageDelta(json)?.takeIf { it.chunk.isNotEmpty() }?.let {
-                    onEvent(ChatStreamEvent.TextDelta(it.chunk, it.invocationId))
-                }
-                // AIMessage 携带的工具调用（入参）
-                extractToolCalls(json).forEach { (name, args) ->
-                    activeNodes.add(name)
-                    onEvent(ChatStreamEvent.ToolCallStarted(name, args))
-                }
-                // ToolMessage 携带的工具执行结果（出参/错误）
-                extractToolResult(json)?.let { result ->
-                    activeNodes.remove(result.name)
-                    if (result.isError) {
-                        onEvent(ChatStreamEvent.ToolCallFailed(result.name, result.content))
-                    } else {
-                        onEvent(ChatStreamEvent.ToolCallCompleted(result.name, result.content))
-                    }
-                }
-                extractNodeName(json)?.let { markNodeActive(it, activeNodes, onEvent) }
-            }
-
-            eventName.contains("tasks", ignoreCase = true) -> {
-                val node = extractNodeName(json) ?: return true
-                val taskResult = extractTaskOutcome(json)
-                when {
-                    taskResult?.isError == true -> {
-                        activeNodes.remove(node)
-                        onEvent(ChatStreamEvent.ToolCallFailed(node, taskResult.content))
-                    }
-
-                    taskResult != null -> {
-                        activeNodes.remove(node)
-                        onEvent(ChatStreamEvent.ToolCallCompleted(node, taskResult.content))
-                    }
-
-                    payload.contains("\"result\"") || payload.contains("\"error\"") -> {
-                        activeNodes.remove(node)
-                        onEvent(ChatStreamEvent.ToolCallCompleted(node))
-                    }
-
-                    else -> markNodeActive(node, activeNodes, onEvent)
-                }
-            }
-
-            eventName.contains("updates", ignoreCase = true) -> {
-                val obj = json as? JSONObject ?: return true
-                for (key in obj.keys()) {
-                    if (key !in activeNodes) onEvent(ChatStreamEvent.ToolCallStarted(key))
-                    activeNodes.remove(key)
-                    onEvent(ChatStreamEvent.ToolCallCompleted(key))
-                }
-            }
-
-            eventName.contains("custom", ignoreCase = true) -> {
-                val obj = json as? JSONObject ?: return true
-                when (obj.optString("type")) {
-                    "task_complexity" -> {
-                        onEvent(
-                            ChatStreamEvent.TaskComplexity(
-                                complexity = obj.optString("complexity").ifBlank { "simple" },
-                                trackSteps = obj.optBoolean("trackSteps", false),
-                                reason = obj.optString("reason"),
-                                message = obj.optString("message").ifBlank { null },
-                            )
-                        )
-                        return true
-                    }
-
-                    "task_progress" -> {
-                        val label = obj.optString("label")
-                            .ifBlank { obj.optString("toolName") }
-                            .ifBlank { obj.optString("progressKey") }
-                            .ifBlank { return true }
-                        onEvent(
-                            ChatStreamEvent.TaskProgress(
-                                label = label,
-                                status = obj.optString("status").ifBlank { "running" },
-                                phase = obj.optString("phase").ifBlank { "agent" },
-                                message = obj.optString("message").ifBlank { null },
-                                toolName = obj.optString("toolName").ifBlank { null },
-                                progressKey = obj.optString("progressKey").ifBlank { null },
-                                currentStep = obj.optionalInt("currentStep"),
-                                totalSteps = obj.optionalInt("totalSteps"),
-                                completedSteps = obj.optJSONArray("completedSteps").toProgressSteps(),
-                                error = obj.optString("error").ifBlank { null },
-                            )
-                        )
-                        return true
-                    }
-                }
-                val label = obj.optString("label").ifBlank { obj.optString("node") }.ifBlank { return true }
-                when (obj.optString("status")) {
-                    "completed", "done", "end" -> {
-                        activeNodes.remove(label)
-                        onEvent(ChatStreamEvent.ToolCallCompleted(label))
-                    }
-
-                    "failed", "error" -> {
-                        activeNodes.remove(label)
-                        onEvent(ChatStreamEvent.ToolCallFailed(label, obj.optString("error").ifBlank { null }))
-                    }
-
-                    else -> markNodeActive(label, activeNodes, onEvent)
-                }
-            }
-        }
-        return true
+    fun cancelRun(threadId: String, runId: String): MobileRunCancellation {
+        val request = postRequest(
+            url(ApiPaths.MOBILE, ApiPaths.THREADS, threadId, ApiPaths.RUNS, runId, "cancel"),
+            JSONObject(),
+        )
+        val payload = JSONObject(executeString(request))
+        val returnedRunId = payload.optString("runId").ifBlank { runId }
+        val accepted = payload.optString("status") == "cancellation_requested"
+        return MobileRunCancellation(
+            runId = returnedRunId,
+            accepted = accepted,
+            backendStatus = payload.optString("backendStatus").ifBlank { "unknown" },
+        )
     }
 
-    private fun markNodeActive(
-        node: String,
-        activeNodes: MutableSet<String>,
-        onEvent: (ChatStreamEvent) -> Unit,
-    ) {
-        if (activeNodes.add(node)) {
-            onEvent(ChatStreamEvent.ToolCallStarted(node))
-        }
+    fun getRunStatus(threadId: String, runId: String): MobileRunStatus {
+        val request = requestBuilder(
+            url(ApiPaths.MOBILE, ApiPaths.THREADS, threadId, ApiPaths.RUNS, runId, ApiPaths.STATUS),
+        ).get().build()
+        val payload = JSONObject(executeString(request))
+        return MobileRunStatus(
+            runId = payload.optString("runId").ifBlank { runId },
+            localStatus = payload.optString("status").ifBlank { "unknown" },
+            backendStatus = payload.optString("backendStatus").ifBlank { "unknown" },
+            terminal = payload.optBoolean("terminal", false),
+        )
     }
 
-    private fun extractMessageDelta(json: Any): MessageDelta? {
-        if (json is JSONArray && json.length() > 0) {
-            val chunk = json.optJSONObject(0) ?: return extractMessageDelta(json.opt(0))
-            val content = chunk.opt("content")
-                ?: chunk.optJSONObject("kwargs")?.opt("content")
-                ?: chunk.optJSONObject("message")?.opt("content")
-            val text = contentToText(content) ?: return null
-            return MessageDelta(
-                chunk = text,
-                invocationId = extractInvocationId(chunk, json.optJSONObject(1)),
-            )
-        }
-        val obj = json as? JSONObject ?: return null
-        val content = obj.opt("content")
-            ?: obj.optJSONObject("kwargs")?.opt("content")
-            ?: obj.optJSONObject("message")?.opt("content")
-        return contentToText(content)?.let {
-            MessageDelta(
-                chunk = it,
-                invocationId = extractInvocationId(obj, obj.optJSONObject("metadata")),
-            )
-        }
-    }
+    private fun String?.isSafeFacadeEvent(): Boolean =
+        this?.lowercase() in setOf(
+            "assistant.delta",
+            "trace.v1",
+            "task_progress",
+            "stream.started",
+            "stream.eof",
+            "stream.error",
+        )
 
-    private fun extractInvocationId(chunk: JSONObject, metadata: JSONObject?): String? {
-        return chunk.optString("id")
-            .ifBlank { chunk.optJSONObject("message")?.optString("id").orEmpty() }
-            .ifBlank { metadata?.optString("checkpoint_ns").orEmpty() }
-            .ifBlank { metadata?.optString("langgraph_checkpoint_ns").orEmpty() }
-            .ifBlank {
-                metadata?.let {
-                    val node = it.optString("langgraph_node")
-                    val step = it.optString("langgraph_step")
-                    if (node.isNotBlank() && step.isNotBlank()) "$node:$step" else ""
-                }.orEmpty()
-            }
-            .ifBlank { null }
-    }
-
-    private fun extractNodeName(json: Any): String? {
-        if (json is JSONArray) {
-            for (i in 0 until json.length()) {
-                extractNodeName(json.opt(i))?.let { return it }
-            }
-        }
-        val obj = json as? JSONObject ?: return null
-        return obj.optString("langgraph_node")
-            .ifBlank { obj.optString("node") }
-            .ifBlank { obj.optString("name") }
-            .ifBlank { obj.optJSONObject("metadata")?.optString("langgraph_node").orEmpty() }
-            .ifBlank { null }
-    }
-
-    private fun JSONObject.optionalInt(key: String): Int? {
-        if (!has(key) || isNull(key)) return null
-        return optInt(key)
-    }
-
-    private fun JSONArray?.toProgressSteps(): List<ChatStreamEvent.TaskProgressStep> {
-        if (this == null || length() == 0) return emptyList()
-        val steps = mutableListOf<ChatStreamEvent.TaskProgressStep>()
-        for (i in 0 until length()) {
-            val obj = optJSONObject(i) ?: continue
-            val name = obj.optString("name")
-                .ifBlank { obj.optString("label") }
-                .ifBlank { continue }
-            steps += ChatStreamEvent.TaskProgressStep(
-                index = obj.optionalInt("index"),
-                name = name,
-                status = obj.optString("status").ifBlank { "completed" },
-            )
-        }
-        return steps
-    }
-
-    private data class ToolResult(
-        val name: String,
-        val content: String?,
-        val isError: Boolean,
-    )
-
-    /** 取 messages-tuple 元组中的消息体（数组首元素或对象本身）。 */
-    private fun messageObject(json: Any): JSONObject? {
-        if (json is JSONArray) {
-            return json.optJSONObject(0) ?: json.opt(0) as? JSONObject
-        }
-        return json as? JSONObject
-    }
-
-    /** 从 AIMessage(chunk) 提取工具调用入参，返回 (工具名, 入参JSON文本) 列表。防御式多路径兜底。 */
-    private fun extractToolCalls(json: Any): List<Pair<String, String?>> {
-        val obj = messageObject(json) ?: return emptyList()
-        val kwargs = obj.optJSONObject("kwargs")
-        val calls = obj.optJSONArray("tool_calls")
-            ?: kwargs?.optJSONArray("tool_calls")
-            ?: obj.optJSONArray("tool_call_chunks")
-            ?: kwargs?.optJSONArray("tool_call_chunks")
-            ?: return emptyList()
-        return buildList {
-            for (i in 0 until calls.length()) {
-                val call = calls.optJSONObject(i) ?: continue
-                val name = call.optString("name").ifBlank { call.optString("function") }
-                if (name.isBlank()) continue
-                val argsText = when (val args = call.opt("args")) {
-                    null, JSONObject.NULL -> null
-                    is String -> args.ifBlank { null }
-                    else -> args.toString()
-                }
-                add(name to argsText)
-            }
-        }
-    }
-
-    /** 从 ToolMessage 提取工具执行结果（出参/错误）。仅当消息类型为 tool 时返回。 */
-    private fun extractToolResult(json: Any): ToolResult? {
-        val obj = messageObject(json) ?: return null
-        val kwargs = obj.optJSONObject("kwargs")
-        val type = obj.optString("type")
-            .ifBlank { obj.optString("role") }
-            .ifBlank { kwargs?.optString("type").orEmpty() }
-            .lowercase()
-        if (type != "tool" && !type.contains("toolmessage")) return null
-        val name = obj.optString("name")
-            .ifBlank { kwargs?.optString("name").orEmpty() }
-            .ifBlank { "tool" }
-        val content = contentToText(obj.opt("content") ?: kwargs?.opt("content"))?.ifBlank { null }
-        val status = obj.optString("status").ifBlank { kwargs?.optString("status").orEmpty() }
-        return ToolResult(name, content, status.equals("error", ignoreCase = true))
-    }
-
-    /** 从 tasks 流提取任务结果/错误内容。 */
-    private fun extractTaskOutcome(json: Any): ToolResult? {
-        fun jsonToText(value: Any?): String? = when (value) {
-            null, JSONObject.NULL -> null
-            is String -> value.ifBlank { null }
-            else -> contentToText(value)?.ifBlank { null } ?: value.toString()
-        }
-
-        fun scan(obj: JSONObject): ToolResult? {
-            val name = obj.optString("name")
-                .ifBlank { obj.optString("langgraph_node") }
-                .ifBlank { "task" }
-            if (obj.has("error") && !obj.isNull("error")) {
-                return ToolResult(name, jsonToText(obj.opt("error")), true)
-            }
-            if (obj.has("result") && !obj.isNull("result")) {
-                return ToolResult(name, jsonToText(obj.opt("result")), false)
-            }
-            return null
-        }
-
-        return when (json) {
-            is JSONObject -> scan(json)
-            is JSONArray -> {
-                for (i in 0 until json.length()) {
-                    (json.opt(i) as? JSONObject)?.let { scan(it)?.let { r -> return r } }
-                }
-                null
-            }
-
-            else -> null
+    /** 诊断日志不能让一条本应被丢弃的坏 SSE 帧中断整个流。 */
+    private fun logSseParseError(count: Int, eventName: String?) {
+        runCatching {
+            Log.w(TAG, "SSE parse error count=$count event=$eventName")
         }
     }
 

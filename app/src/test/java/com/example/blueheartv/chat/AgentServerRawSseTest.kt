@@ -20,7 +20,7 @@ class AgentServerRawSseTest {
 
         val threadId = createThread(baseUrl, apiKey)
         val connection = postJson(
-            url = agentUrl(baseUrl, "threads", threadId, "runs", "stream"),
+            url = agentUrl(baseUrl, "mobile", "threads", threadId, "runs", "stream"),
             apiKey = apiKey,
             body = """
                 {

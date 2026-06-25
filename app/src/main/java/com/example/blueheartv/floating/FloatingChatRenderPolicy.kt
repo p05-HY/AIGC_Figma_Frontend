@@ -21,10 +21,10 @@ internal fun List<Message>.toFloatingChatMessages(): List<Message> {
         when {
             message.isUser -> message
             message.content.isBlank() -> null
-            message.thinking == null && message.toolCalls == null -> message
+            message.toolCalls == null && message.trace == null -> message
             else -> message.copy(
-                thinking = null,
                 toolCalls = null,
+                trace = null,
             )
         }
     }
