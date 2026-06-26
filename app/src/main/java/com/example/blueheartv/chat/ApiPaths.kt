@@ -9,10 +9,12 @@ package com.example.blueheartv.chat
 object ApiPaths {
     // ---- REST 路径段（拼接到 BaseUrl 之后）----
     const val THREADS = "threads"
+    const val MOBILE = "mobile"
     const val SEARCH = "search"
     const val RUNS = "runs"
     const val STREAM = "stream"
     const val STATE = "state"
+    const val STATUS = "status"
 
     // ---- WebSocket 路径段 ----
     const val ADB_WS = "adb"

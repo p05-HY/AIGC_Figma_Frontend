@@ -1,24 +1,26 @@
 package com.example.blueheartv.chat
 
+import com.example.blueheartv.model.TraceEvent
+
 sealed interface ChatStreamEvent {
-    data class ToolCallStarted(
-        val label: String,
-        val args: String? = null,
-    ) : ChatStreamEvent
-
-    data class ToolCallCompleted(
-        val label: String,
-        val result: String? = null,
-    ) : ChatStreamEvent
-
-    data class ToolCallFailed(
-        val label: String,
-        val error: String? = null,
-    ) : ChatStreamEvent
-
     data class TextDelta(
         val chunk: String,
         val invocationId: String? = null,
+        val streamSeq: Long? = null,
+    ) : ChatStreamEvent
+
+    /** 来自安全 SSE 门面的用户可见执行轨迹，不承载原始工具数据。 */
+    data class Trace(
+        val event: TraceEvent,
+        val streamSeq: Long? = null,
+    ) : ChatStreamEvent
+
+    /** 安全 SSE 门面已接收请求并开始代理；不是业务 run.started。 */
+    data class StreamStarted(
+        val runId: String,
+        val message: String,
+        val streamSeq: Long? = null,
+        val threadId: String? = null,
     ) : ChatStreamEvent
 
     data class TaskComplexity(
@@ -38,7 +40,7 @@ sealed interface ChatStreamEvent {
         val currentStep: Int? = null,
         val totalSteps: Int? = null,
         val completedSteps: List<TaskProgressStep> = emptyList(),
-        val error: String? = null,
+        val streamSeq: Long? = null,
     ) : ChatStreamEvent
 
     data class TaskProgressStep(
@@ -49,8 +51,14 @@ sealed interface ChatStreamEvent {
 
     data object Completed : ChatStreamEvent
 
+    /** 安全门面明确发出的传输结束事件；它不等同于 Agent 执行成功。 */
+    data class StreamEof(
+        val streamSeq: Long? = null,
+    ) : ChatStreamEvent
+
     data class Error(
         val message: String,
         val retryable: Boolean = true,
+        val streamSeq: Long? = null,
     ) : ChatStreamEvent
 }

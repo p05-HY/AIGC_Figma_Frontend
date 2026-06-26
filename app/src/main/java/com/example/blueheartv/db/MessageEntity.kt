@@ -25,5 +25,7 @@ data class MessageEntity(
     val deliveryState: String,
     val errorMessage: String? = null,
     val toolCallsJson: String? = null,
+    val traceJson: String? = null,
+    val privacySanitized: Boolean = false,
     val orderIndex: Int,
 )

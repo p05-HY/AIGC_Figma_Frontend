@@ -2,6 +2,7 @@ package com.example.blueheartv.viewmodel
 
 import com.example.blueheartv.db.ChatDao
 import com.example.blueheartv.db.SessionEntity
+import com.example.blueheartv.db.sanitizeForStorage
 import com.example.blueheartv.db.toDomain
 import com.example.blueheartv.db.toEntity
 
@@ -14,7 +15,16 @@ class ChatSessionStore(
             .take(limit)
 
         return rows.map { row ->
-            val messages = row.messages.sortedBy { it.orderIndex }.map { it.toDomain() }
+            val sanitizedRows = row.messages.sortedBy { it.orderIndex }.map { message ->
+                if (message.privacySanitized) message else message.sanitizeForStorage()
+            }
+            val changedRows = sanitizedRows.filter { sanitized ->
+                row.messages.firstOrNull { it.id == sanitized.id } != sanitized
+            }
+            if (changedRows.isNotEmpty()) {
+                dao.upsertMessages(changedRows)
+            }
+            val messages = sanitizedRows.map { it.toDomain() }
             ConversationSession(
                 id = row.session.id,
                 title = row.session.title,

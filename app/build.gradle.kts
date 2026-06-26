@@ -13,6 +13,10 @@ kotlin {
     }
 }
 
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 val localProperties = Properties().apply {
     val localPropertiesFile = rootProject.file("local.properties")
     if (localPropertiesFile.exists()) {
@@ -31,6 +35,15 @@ val agentServerApiKey: String = localProperties.getProperty("AGENT_SERVER_API_KE
 // false=WS 走无参 /adb、/system（兼容尚未改造的现网后端，便于提前联调）。默认 true。
 val deviceIdInPath: String = localProperties.getProperty("DEVICE_ID_IN_PATH", "true")
 val showTechDebugUi: String = localProperties.getProperty("SHOW_TECH_DEBUG_UI", "false")
+val traceV1RenderEnabled = localProperties
+    .getProperty("TRACE_V1_RENDER_ENABLED", "false")
+    .trim()
+    .lowercase()
+    .also {
+        require(it == "true" || it == "false") {
+            "TRACE_V1_RENDER_ENABLED must be true or false"
+        }
+    }
 
 android {
     namespace = "com.example.blueheartv"
@@ -49,6 +62,7 @@ android {
         buildConfigField("String", "AGENT_SERVER_API_KEY", agentServerApiKey.toBuildConfigLiteral())
         buildConfigField("boolean", "DEVICE_ID_IN_PATH", deviceIdInPath.trim().ifBlank { "true" })
         buildConfigField("boolean", "SHOW_TECH_DEBUG_UI", showTechDebugUi.trim().ifBlank { "false" })
+        buildConfigField("boolean", "TRACE_V1_RENDER_ENABLED", traceV1RenderEnabled)
 
         vectorDrawables {
             useSupportLibrary = true
@@ -72,6 +86,9 @@ android {
         buildConfig = true
         compose = true
         aidl = true
+    }
+    sourceSets {
+        getByName("androidTest").assets.srcDir(file("$projectDir/schemas"))
     }
     packaging {
         resources {
@@ -107,12 +124,17 @@ dependencies {
 
     implementation("androidx.room:room-runtime:2.8.4")
     implementation("androidx.room:room-ktx:2.8.4")
+    // Room 2.8.4 的 schema 序列化运行时依赖 1.8.1；显式对齐应用与
+    // androidTest classpath，避免受 lifecycle 的旧传递版本影响。
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
     ksp("androidx.room:room-compiler:2.8.4")
 
     implementation("io.insert-koin:koin-android:4.2.1")
     implementation("io.insert-koin:koin-androidx-compose:4.2.1")
 
     testImplementation("junit:junit:4.13.2")
+    // Android 平台 org.json 在 JVM 单测中是方法桩；为流协议解析测试提供真实实现。
+    testImplementation("org.json:json:20230227")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
     testImplementation("androidx.arch.core:core-testing:2.2.0")
 
@@ -120,6 +142,7 @@ dependencies {
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    androidTestImplementation("androidx.room:room-testing:2.8.4")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")

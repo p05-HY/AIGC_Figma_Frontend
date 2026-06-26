@@ -2,6 +2,7 @@ package com.example.blueheartv.floating
 
 import com.example.blueheartv.model.Message
 import com.example.blueheartv.model.MessageDeliveryState
+import com.example.blueheartv.model.AssistantTrace
 import com.example.blueheartv.model.ToolCall
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -22,7 +23,7 @@ class FloatingChatRenderPolicyTest {
             content = "",
             isUser = false,
             deliveryState = MessageDeliveryState.STREAMING,
-            thinking = "正在分析用户位置",
+            trace = AssistantTrace(runId = "run-1"),
             toolCalls = listOf(ToolCall(label = "查询天气")),
         )
 
@@ -37,7 +38,7 @@ class FloatingChatRenderPolicyTest {
             id = "assistant-1",
             content = "今天多云，最高 28°C。",
             isUser = false,
-            thinking = "先定位，再查询天气。",
+            trace = AssistantTrace(runId = "run-1"),
             toolCalls = listOf(ToolCall(label = "查询天气")),
         )
 
@@ -45,7 +46,7 @@ class FloatingChatRenderPolicyTest {
 
         assertEquals(1, result.size)
         assertEquals(finalMessage.content, result.single().content)
-        assertNull(result.single().thinking)
+        assertNull(result.single().trace)
         assertNull(result.single().toolCalls)
     }
 

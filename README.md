@@ -117,6 +117,7 @@ Agent Server 配置支持两种方式：
 sdk.dir=你的 Android SDK 路径
 AGENT_SERVER_BASE_URL=http://127.0.0.1:8124
 AGENT_SERVER_API_KEY=你的 LangSmith API Key
+TRACE_V1_RENDER_ENABLED=false
 ```
 
 注意：

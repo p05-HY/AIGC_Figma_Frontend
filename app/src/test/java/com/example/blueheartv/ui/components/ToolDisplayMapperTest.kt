@@ -14,7 +14,6 @@ class ToolDisplayMapperTest {
             ToolCall(
                 label = "launch",
                 status = ToolCallStatus.RUNNING,
-                args = """{"package":"com.tencent.mm","activity":"LauncherUI"}""",
             ),
         )
 
@@ -29,7 +28,6 @@ class ToolDisplayMapperTest {
             ToolCall(
                 label = "tap",
                 status = ToolCallStatus.COMPLETED,
-                args = """{"x":453,"y":1892}""",
             ),
         )
 
@@ -44,7 +42,6 @@ class ToolDisplayMapperTest {
             ToolCall(
                 label = "mobile_agent_execute_intent",
                 status = ToolCallStatus.FAILED,
-                error = "Intent action android.intent.action.VIEW failed for package com.demo",
             ),
         )
 

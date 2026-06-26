@@ -45,6 +45,8 @@ fun BottomInputBar(
     onVoiceModeTap: () -> Unit = {},
     onSwipeToCancelling: () -> Unit = {},
     onSwipeBackToRecording: () -> Unit = {},
+    canCancel: Boolean = false,
+    onCancel: () -> Unit = {},
 ) {
     val submit = { if (sendEnabled) onSend() }
     val inputShape = RoundedCornerShape(28.dp)
@@ -143,22 +145,34 @@ fun BottomInputBar(
                 }
             }
 
-            EchoIconButton(
-                onClick = submit,
-                contentDescription = stringResource(R.string.action_send),
-                enabled = sendEnabled,
-                size = 40.dp,
-                containerColor = BrandPrimary,
-                disabledContainerColor = Color(0xFFE5E7EB),
-                contentColor = Color.White,
-                disabledContentColor = IconGray,
-            ) { tint ->
-                Icon(
-                    painter = painterResource(R.drawable.ic_send_arrow),
-                    contentDescription = null,
-                    tint = tint,
-                    modifier = Modifier.size(22.dp),
-                )
+            if (canCancel) {
+                EchoIconButton(
+                    onClick = onCancel,
+                    contentDescription = stringResource(R.string.action_stop_task),
+                    size = 40.dp,
+                    containerColor = Color(0xFFFFE8E8),
+                    contentColor = Color(0xFFC62828),
+                ) {
+                    Text(text = stringResource(R.string.action_stop), fontSize = 12.sp)
+                }
+            } else {
+                EchoIconButton(
+                    onClick = submit,
+                    contentDescription = stringResource(R.string.action_send),
+                    enabled = sendEnabled,
+                    size = 40.dp,
+                    containerColor = BrandPrimary,
+                    disabledContainerColor = Color(0xFFE5E7EB),
+                    contentColor = Color.White,
+                    disabledContentColor = IconGray,
+                ) { tint ->
+                    Icon(
+                        painter = painterResource(R.drawable.ic_send_arrow),
+                        contentDescription = null,
+                        tint = tint,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
             }
         }
     }

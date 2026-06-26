@@ -17,6 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -174,6 +175,19 @@ fun HomeScreen(
                     onAction = if (isConfigError) onNavigateToSettings else retryAction,
                 )
             }
+            if (uiState.sessionState in setOf(
+                    ChatSessionState.CANCELLING,
+                    ChatSessionState.TIMEOUT_WAITING_CANCEL,
+                    ChatSessionState.BACKEND_STILL_RUNNING,
+                )
+            ) {
+                ErrorRetryBar(
+                    message = lastError ?: uiState.streamingStep ?: "正在确认任务状态。",
+                    actionText = stringResource(R.string.action_stop),
+                    canAction = uiState.canCancel,
+                    onAction = { viewModel.cancelActiveRun() },
+                )
+            }
 
             GlassButtonRow(
                 buttons = listOf(
@@ -202,7 +216,11 @@ fun HomeScreen(
                 value = uiState.inputText,
                 onValueChange = { viewModel.onInputChanged(it) },
                 onSend = { sendCurrentMessage() },
-                sendEnabled = uiState.sessionState != ChatSessionState.RESPONDING &&
+                sendEnabled = uiState.sessionState in setOf(
+                    ChatSessionState.IDLE,
+                    ChatSessionState.CANCELLED,
+                    ChatSessionState.ERROR,
+                ) &&
                     (uiState.inputText.isNotBlank() || uiState.imageAttachments.isNotEmpty()),
                 onAttachClick = { actions.requestAttach() },
                 onMicClick = { actions.requestMic() },
@@ -214,6 +232,8 @@ fun HomeScreen(
                 onVoiceModeTap = { actions.requestMic() },
                 onSwipeToCancelling = { actions.setVoiceCancelling() },
                 onSwipeBackToRecording = { actions.setVoiceRecording() },
+                canCancel = uiState.canCancel,
+                onCancel = { viewModel.cancelActiveRun() },
             )
 
             Spacer(modifier = Modifier.height(8.dp))

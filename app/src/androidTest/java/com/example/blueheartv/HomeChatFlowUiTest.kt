@@ -46,8 +46,8 @@ class HomeChatFlowUiTest {
                     prompt: ChatPrompt,
                     onEvent: (ChatStreamEvent) -> Unit,
                 ) {
-                    onEvent(ChatStreamEvent.ToolCallStarted("获取当前位置"))
-                    onEvent(ChatStreamEvent.ToolCallCompleted("获取当前位置"))
+                    onEvent(ChatStreamEvent.TaskProgress(label = "获取当前位置", status = "running", phase = "phone_tool"))
+                    onEvent(ChatStreamEvent.TaskProgress(label = "获取当前位置", status = "completed", phase = "phone_tool"))
                     onEvent(ChatStreamEvent.TextDelta("这是回复正文"))
                     onEvent(ChatStreamEvent.Completed)
                 }
