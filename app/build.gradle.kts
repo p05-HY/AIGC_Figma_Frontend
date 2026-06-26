@@ -36,7 +36,7 @@ val agentServerApiKey: String = localProperties.getProperty("AGENT_SERVER_API_KE
 val deviceIdInPath: String = localProperties.getProperty("DEVICE_ID_IN_PATH", "true")
 val showTechDebugUi: String = localProperties.getProperty("SHOW_TECH_DEBUG_UI", "false")
 val traceV1RenderEnabled = localProperties
-    .getProperty("TRACE_V1_RENDER_ENABLED", "false")
+    .getProperty("TRACE_V1_RENDER_ENABLED", "true")
     .trim()
     .lowercase()
     .also {
