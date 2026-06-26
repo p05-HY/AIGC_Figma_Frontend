@@ -16,6 +16,7 @@ import com.example.blueheartv.model.TraceStep
 import com.example.blueheartv.model.TraceStepStatus
 import com.example.blueheartv.test.MainDispatcherRule
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.advanceTimeBy
@@ -347,6 +348,7 @@ class ChatViewModelTest {
         assertEquals(TraceRunStatus.SUCCEEDED, assistant.trace?.runStatus)
         assertNull(assistant.toolCalls)
         assertEquals(MessageDeliveryState.COMPLETED, assistant.deliveryState)
+        assertFalse(viewModel.uiState.value.canCancel)
     }
 
     @Test
@@ -581,11 +583,14 @@ class ChatViewModelTest {
         runCurrent()
 
         viewModel.onAppBackgrounded()
-        advanceUntilIdle()
+        runCurrent()
 
         // ✅ 后台不应自动取消正在执行的任务（打开外部 App 是正常业务路径）
         assertTrue(provider.cancelledRuns.isEmpty())
         assertEquals(ChatSessionState.RESPONDING, viewModel.uiState.value.sessionState)
+
+        viewModel.cancelActiveRun()
+        advanceUntilIdle()
     }
 
     @Test
@@ -660,6 +665,34 @@ class ChatViewModelTest {
         assertEquals(ChatState.CHAT_SIMPLE, uiState.chatState)
     }
 
+    @Test
+    fun selectHistory_usesCachedThreadBeforeSlowRemoteRefreshReturns() = runTest {
+        val provider = ScriptedProvider(
+            remoteThreads = listOf(
+                RemoteChatThread(
+                    id = "thread-1",
+                    title = "旧对话",
+                    updatedAtMillis = 2000L,
+                    messages = listOf(
+                        Message("m1", "旧问题", isUser = true),
+                        Message("m2", "旧回答", isUser = false),
+                    ),
+                ),
+            ),
+            loadThreadDelayMs = 1_000L,
+        )
+        val viewModel = createViewModel(chatProvider = provider)
+        advanceUntilIdle()
+        viewModel.startNewConversation()
+        assertEquals(emptyList<Message>(), viewModel.uiState.value.messages)
+
+        viewModel.selectHistory("thread-1")
+        runCurrent()
+
+        assertEquals(listOf("旧问题", "旧回答"), viewModel.uiState.value.messages.map { it.content })
+        assertFalse(viewModel.uiState.value.isDrawerOpen)
+    }
+
     private fun createViewModel(
         chatProvider: ChatProvider = ScriptedProvider(),
         timeProvider: () -> Long = { System.currentTimeMillis() },
@@ -682,6 +715,7 @@ class ChatViewModelTest {
         private val cancellationBackendStatus: String = "cancel_requested",
         private val polledBackendStatus: String = "cancelled",
         private val polledStatusTerminal: Boolean = true,
+        private val loadThreadDelayMs: Long = 0L,
         private val script: suspend (String, ChatPrompt, (ChatStreamEvent) -> Unit) -> Unit = { _, _, onEvent ->
             onEvent(ChatStreamEvent.Completed)
         },
@@ -701,6 +735,7 @@ class ChatViewModelTest {
         override suspend fun loadThreads(limit: Int): List<RemoteChatThread> = remoteThreads
 
         override suspend fun loadThread(threadId: String): RemoteChatThread? {
+            if (loadThreadDelayMs > 0L) delay(loadThreadDelayMs)
             return remoteThreads.firstOrNull { it.id == threadId }
         }
 

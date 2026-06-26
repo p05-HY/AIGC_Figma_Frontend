@@ -186,6 +186,7 @@ class ChatViewModel(
         get() = repo.getActiveSession()?.messages.isNullOrEmpty()
 
     fun startNewConversation() {
+        historyJob?.cancel()
         val cancellation = stopActiveRun(markAssistantCancelled = false)
         repo.clearActiveSession()
         publishActiveSession(
@@ -261,13 +262,26 @@ class ChatViewModel(
     fun selectHistory(historyId: String) {
         val cancellation = stopActiveRun(markAssistantCancelled = false)
         historyJob?.cancel()
+        val cached = repo.switchActive(historyId)
+        if (cached != null && cancellation == null) {
+            publishActiveSession(
+                chatState = deriveChatState(cached.messages),
+                sessionState = ChatSessionState.IDLE,
+                lastError = null,
+                canRetry = false,
+                retryPrompt = null,
+                closeDrawer = true,
+                keepInputText = true,
+                keepAttachments = true,
+            )
+        }
         historyJob = viewModelScope.launch {
             cancellation?.join()
-            val remote = chatProvider.loadThread(historyId)
+            val remote = runCatching { chatProvider.loadThread(historyId) }.getOrNull()
             val target = if (remote != null) {
                 repo.upsertRemoteThread(remote, makeActive = true)
             } else {
-                repo.switchActive(historyId)
+                cached ?: repo.switchActive(historyId)
             } ?: return@launch
             publishActiveSession(
                 chatState = deriveChatState(target.messages),
@@ -699,6 +713,9 @@ class ChatViewModel(
                             rawStreamContent.remove(assistantMessageId)
                             streamInvocationIds.remove(assistantMessageId)
                         }
+                        if (finalTrace?.hasTerminal == true) {
+                            finishActiveStream(stream)
+                        }
                         when {
                             finalTrace == null -> {
                                 finishActiveStream(stream)
@@ -1041,8 +1058,7 @@ class ChatViewModel(
         backendStatus: String,
         serverMessage: String?,
     ) {
-        pendingCancellation = null
-        cancellationJob = null
+        finishActiveStream(stream, cancelCancellationJob = false, cancelStreamJob = true)
         when (backendStatus) {
             "cancelled" -> {
                 val cancelledTrace = (trace ?: findMessageTrace(stream.assistantMessageId)
@@ -1122,6 +1138,7 @@ class ChatViewModel(
             )
             cancellationJob = null
             pendingCancellation = null
+            finishActiveStream(stream, cancelCancellationJob = false, cancelStreamJob = true)
             onStreamError(
                 threadId = stream.threadId,
                 assistantMessageId = stream.assistantMessageId,
@@ -1169,15 +1186,30 @@ class ChatViewModel(
             "cancel_request_failed", // 取消请求被上游拒绝
         )
 
-    private fun finishActiveStream(stream: ActiveStream) {
+    private fun finishActiveStream(
+        stream: ActiveStream,
+        cancelCancellationJob: Boolean = true,
+        cancelStreamJob: Boolean = false,
+    ) {
+        var cleared = false
         if (activeStream === stream) {
             activeStream = null
-            _uiState.update { it.copy(canCancel = false) }
+            if (cancelStreamJob) {
+                streamJob?.cancel()
+                streamJob = null
+            }
+            cleared = true
         }
         if (pendingCancellation === stream) {
             pendingCancellation = null
-            cancellationJob?.cancel()
+            if (cancelCancellationJob) {
+                cancellationJob?.cancel()
+            }
             cancellationJob = null
+            cleared = true
+        }
+        if (cleared) {
+            _uiState.update { it.copy(canCancel = false) }
         }
     }
 
