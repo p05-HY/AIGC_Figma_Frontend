@@ -619,7 +619,7 @@ class ChatViewModelTest {
     }
 
     @Test
-    fun repeatedModelInvocations_preserveStreamedOutput() = runTest {
+    fun repeatedModelInvocations_keepLatestOutputOnly() = runTest {
         val provider = ScriptedProvider { _, _, onEvent ->
             onEvent(ChatStreamEvent.TextDelta("thinking", invocationId = "model-1"))
             onEvent(ChatStreamEvent.TextDelta(" plan", invocationId = "model-1"))
@@ -636,7 +636,7 @@ class ChatViewModelTest {
 
         val uiState = viewModel.uiState.value
         assertEquals(2, uiState.messages.size)
-        assertEquals("thinking planfinal answer", uiState.messages.last().content)
+        assertEquals("final answer", uiState.messages.last().content)
         assertEquals(MessageDeliveryState.COMPLETED, uiState.messages.last().deliveryState)
     }
 

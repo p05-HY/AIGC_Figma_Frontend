@@ -660,6 +660,7 @@ class ChatViewModel(
                         val invocationId = event.invocationId ?: assistantMessageId
                         if (streamInvocationIds[assistantMessageId] != invocationId) {
                             streamInvocationIds[assistantMessageId] = invocationId
+                            rawStreamContent[assistantMessageId] = ""
                         }
                         val raw = (rawStreamContent[assistantMessageId] ?: "") + event.chunk
                         rawStreamContent[assistantMessageId] = raw
