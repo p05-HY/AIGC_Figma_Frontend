@@ -80,17 +80,21 @@ fun HomeScreen(
         viewModel.navigateToSettings.collect { onNavigateToSettings() }
     }
 
-    val shouldAutoScroll by remember(uiState.messages.size, uiState.sessionState) {
+    val conversationGroupCount = remember(uiState.messages) {
+        groupConversationMessages(uiState.messages).size
+    }
+
+    val shouldAutoScroll by remember(conversationGroupCount, uiState.sessionState) {
         derivedStateOf {
             val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
-            val total = uiState.messages.size
+            val total = conversationGroupCount
             total == 0 || lastVisible >= total - 3
         }
     }
 
-    LaunchedEffect(uiState.messages.size, uiState.messages.lastOrNull()?.content?.length, uiState.sessionState) {
-        if (uiState.messages.isNotEmpty() && shouldAutoScroll) {
-            listState.scrollToItem(uiState.messages.lastIndex)
+    LaunchedEffect(conversationGroupCount, uiState.messages.lastOrNull()?.content?.length, uiState.sessionState) {
+        if (conversationGroupCount > 0 && shouldAutoScroll) {
+            listState.scrollToItem(conversationGroupCount - 1)
         }
     }
 
@@ -145,8 +149,8 @@ fun HomeScreen(
                     SmallFloatingActionButton(
                         onClick = {
                             scope.launch {
-                                if (uiState.messages.isNotEmpty()) {
-                                    listState.animateScrollToItem(uiState.messages.lastIndex)
+                                if (conversationGroupCount > 0) {
+                                    listState.animateScrollToItem(conversationGroupCount - 1)
                                 }
                             }
                         },
@@ -451,3 +455,4 @@ private fun ChatContent(
         }
     }
 }
+
