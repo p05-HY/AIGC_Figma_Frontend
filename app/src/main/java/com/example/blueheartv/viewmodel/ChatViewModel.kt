@@ -660,7 +660,6 @@ class ChatViewModel(
                         val invocationId = event.invocationId ?: assistantMessageId
                         if (streamInvocationIds[assistantMessageId] != invocationId) {
                             streamInvocationIds[assistantMessageId] = invocationId
-                            rawStreamContent[assistantMessageId] = ""
                         }
                         val raw = (rawStreamContent[assistantMessageId] ?: "") + event.chunk
                         rawStreamContent[assistantMessageId] = raw
@@ -709,10 +708,6 @@ class ChatViewModel(
                         timeoutJob.cancel()
                         _uiState.update { it.copy(streamingStep = null) }
                         val finalTrace = trace
-                        if (finalTrace != null) {
-                            rawStreamContent.remove(assistantMessageId)
-                            streamInvocationIds.remove(assistantMessageId)
-                        }
                         if (finalTrace?.hasTerminal == true) {
                             finishActiveStream(stream)
                         }
