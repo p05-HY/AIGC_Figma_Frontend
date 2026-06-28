@@ -24,6 +24,14 @@ fun parseSafeStreamEvent(eventName: String, payload: String): ChatStreamEvent? {
         "assistant.delta" -> parseAssistantDelta(json)
         "task_progress" -> parseTaskProgress(json)
         "stream.started" -> parseStreamStarted(json)
+        "stream.heartbeat" -> if (json.optString("type") == "stream.heartbeat") {
+            ChatStreamEvent.Heartbeat(
+                runId = json.optString("runId").ifBlank { null },
+                streamSeq = json.optionalPositiveLong("streamSeq"),
+            )
+        } else {
+            null
+        }
         "stream.eof" -> if (json.optString("type") == "stream.eof") {
             ChatStreamEvent.StreamEof(streamSeq = json.optionalPositiveLong("streamSeq"))
         } else {
@@ -34,6 +42,9 @@ fun parseSafeStreamEvent(eventName: String, payload: String): ChatStreamEvent? {
                 message = json.optString("message").ifBlank { "服务连接中断，请稍后重试。" },
                 retryable = json.optBoolean("retryable", true),
                 streamSeq = json.optionalPositiveLong("streamSeq"),
+                terminalStatus = json.optString("terminalStatus").ifBlank { null },
+                terminalReason = json.optString("terminalReason").ifBlank { null },
+                cancelSource = json.optString("cancelSource").ifBlank { null },
             )
         } else {
             null
@@ -107,7 +118,14 @@ private fun parseTraceEvent(json: JSONObject): TraceEvent? {
         }
 
         "run.terminal" -> runStatus(json.requiredString("status") ?: return null)?.let { status ->
-            TraceEvent.RunTerminal(runId, eventId, seq, status)
+            TraceEvent.RunTerminal(
+                runId = runId,
+                eventId = eventId,
+                seq = seq,
+                status = status,
+                reason = json.optString("reason").ifBlank { null }?.bounded(128),
+                cancelSource = json.optString("cancelSource").ifBlank { null }?.bounded(64),
+            )
         }
 
         else -> null

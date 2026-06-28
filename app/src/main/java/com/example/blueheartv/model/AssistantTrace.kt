@@ -96,5 +96,7 @@ sealed interface TraceEvent {
         override val eventId: String,
         override val seq: Long,
         val status: TraceRunStatus,
+        val reason: String? = null,
+        val cancelSource: String? = null,
     ) : TraceEvent
 }

@@ -23,6 +23,11 @@ sealed interface ChatStreamEvent {
         val threadId: String? = null,
     ) : ChatStreamEvent
 
+    data class Heartbeat(
+        val runId: String? = null,
+        val streamSeq: Long? = null,
+    ) : ChatStreamEvent
+
     data class TaskComplexity(
         val complexity: String,
         val trackSteps: Boolean,
@@ -60,5 +65,8 @@ sealed interface ChatStreamEvent {
         val message: String,
         val retryable: Boolean = true,
         val streamSeq: Long? = null,
+        val terminalStatus: String? = null,
+        val terminalReason: String? = null,
+        val cancelSource: String? = null,
     ) : ChatStreamEvent
 }

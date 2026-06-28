@@ -93,11 +93,17 @@ class AgentServerSafeSseTest {
     @Test
     fun cancelAndStatus_useTheMobileFacadeAndParseBackendConfirmation() {
         val requests = mutableListOf<String>()
+        var cancelBody = ""
         val client = OkHttpClient.Builder()
             .addInterceptor { chain ->
                 requests += "${chain.request().method} ${chain.request().url.encodedPath}"
                 val body = when (chain.request().url.encodedPath.substringAfterLast('/')) {
-                    "cancel" -> """{"runId":"run-1","status":"cancellation_requested","backendStatus":"cancel_requested"}"""
+                    "cancel" -> {
+                        val requestBody = Buffer()
+                        chain.request().body?.writeTo(requestBody)
+                        cancelBody = requestBody.readUtf8()
+                        """{"runId":"run-1","threadId":"thread-1","status":"not_bound_but_fenced","backendRunId":null,"backendStatus":"unknown_not_bound","cancelSource":"frontend_timeout","terminalReason":"frontend_timeout"}"""
+                    }
                     "status" -> """{"runId":"run-1","status":"cancelled","backendStatus":"cancelled","terminal":true}"""
                     else -> error("unexpected request")
                 }
@@ -115,11 +121,15 @@ class AgentServerSafeSseTest {
             client = client,
         )
 
-        val cancellation = agentClient.cancelRun("thread-1", "run-1")
+        val cancellation = agentClient.cancelRun("thread-1", "run-1", cancelSource = "frontend_timeout")
         val status = agentClient.getRunStatus("thread-1", "run-1")
 
         assertTrue(cancellation.accepted)
-        assertEquals("cancel_requested", cancellation.backendStatus)
+        assertEquals("not_bound_but_fenced", cancellation.status)
+        assertEquals("unknown_not_bound", cancellation.backendStatus)
+        assertEquals("frontend_timeout", cancellation.cancelSource)
+        assertEquals("frontend_timeout", cancellation.terminalReason)
+        assertEquals("""{"cancelSource":"frontend_timeout"}""", cancelBody)
         assertTrue(status.terminal)
         assertEquals("cancelled", status.backendStatus)
         assertEquals(
@@ -129,6 +139,30 @@ class AgentServerSafeSseTest {
             ),
             requests,
         )
+    }
+
+    @Test
+    fun streamRun_keepsTerminalBeforeFollowingStreamError() {
+        val payload = """
+            event: stream.started
+            data: {"type":"stream.started","runId":"run-1","threadId":"thread-1","message":"已接收请求，正在连接 Agent。","streamSeq":1}
+
+            event: trace.v1
+            data: {"type":"trace.v1","version":1,"runId":"run-1","eventId":"evt-1","seq":1,"event":"run.terminal","status":"failed","reason":"upstream_ended_without_terminal","streamSeq":2}
+
+            event: stream.error
+            data: {"type":"stream.error","message":"任务未返回结束状态，已停止后续操作。","retryable":true,"terminalStatus":"failed","terminalReason":"upstream_ended_without_terminal","streamSeq":3}
+
+            event: stream.eof
+            data: {"type":"stream.eof","streamSeq":4}
+
+        """.trimIndent()
+
+        val events = streamEvents(payload.toResponseBody("text/event-stream".toMediaType()))
+
+        assertTrue(events[1] is ChatStreamEvent.Trace)
+        assertTrue(events[2] is ChatStreamEvent.Error)
+        assertFalse(events.any { it is ChatStreamEvent.StreamEof })
     }
 
     private fun streamEvents(body: ResponseBody): List<ChatStreamEvent> {
@@ -186,11 +220,14 @@ class AgentServerSafeSseTest {
             event: assistant.delta
             data: {"type":"assistant.delta","chunk":"答案","streamSeq":2}
 
+            event: stream.heartbeat
+            data: {"type":"stream.heartbeat","runId":"run-1","streamSeq":3}
+
             event: trace.v1
-            data: {"type":"trace.v1","version":1,"runId":"run-1","eventId":"evt-1","seq":1,"event":"run.terminal","status":"succeeded","streamSeq":3}
+            data: {"type":"trace.v1","version":1,"runId":"run-1","eventId":"evt-1","seq":1,"event":"run.terminal","status":"succeeded","streamSeq":4}
 
             event: stream.eof
-            data: {"type":"stream.eof","streamSeq":4}
+            data: {"type":"stream.eof","streamSeq":5}
 
         """.trimIndent()
     }

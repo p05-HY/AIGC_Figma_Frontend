@@ -1,8 +1,9 @@
 package com.example.blueheartv.chat
 
-import com.example.blueheartv.model.TraceStepStatus
 import com.example.blueheartv.model.TraceEvent
 import com.example.blueheartv.model.TraceDetailKind
+import com.example.blueheartv.model.TraceRunStatus
+import com.example.blueheartv.model.TraceStepStatus
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -93,12 +94,34 @@ class SafeTraceStreamTest {
         ) as ChatStreamEvent.TaskProgress
         val error = parseSafeStreamEvent(
             "stream.error",
-            """{"type":"stream.error","message":"断开","retryable":true,"streamSeq":4}""",
+            """{"type":"stream.error","message":"断开","retryable":true,"terminalStatus":"failed","terminalReason":"upstream_ended_without_terminal","cancelSource":"server_timeout","streamSeq":4}""",
         ) as ChatStreamEvent.Error
+        val heartbeat = parseSafeStreamEvent(
+            "stream.heartbeat",
+            """{"type":"stream.heartbeat","runId":"run-1","streamSeq":5}""",
+        ) as ChatStreamEvent.Heartbeat
 
         assertEquals(2L, assistant.streamSeq)
         assertEquals(3L, progress.streamSeq)
         assertEquals(4L, error.streamSeq)
+        assertEquals("failed", error.terminalStatus)
+        assertEquals("upstream_ended_without_terminal", error.terminalReason)
+        assertEquals("server_timeout", error.cancelSource)
+        assertEquals(5L, heartbeat.streamSeq)
+        assertEquals("run-1", heartbeat.runId)
+    }
+
+    @Test
+    fun runTerminal_keepsReasonAndCancelSourceWhenProvidedBySafeFacade() {
+        val event = parseSafeStreamEvent(
+            "trace.v1",
+            """{"type":"trace.v1","version":1,"runId":"run-1","eventId":"evt-1","seq":1,"event":"run.terminal","status":"failed","reason":"server_timeout","cancelSource":"frontend_timeout"}""",
+        ) as ChatStreamEvent.Trace
+
+        val terminal = event.event as TraceEvent.RunTerminal
+        assertEquals(TraceRunStatus.FAILED, terminal.status)
+        assertEquals("server_timeout", terminal.reason)
+        assertEquals("frontend_timeout", terminal.cancelSource)
     }
 
     @Test
