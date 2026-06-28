@@ -1,8 +1,10 @@
 package com.example.blueheartv.ui.screens
 
+import android.Manifest
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.speech.tts.TextToSpeech
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -11,14 +13,19 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.core.content.ContextCompat
 import com.example.blueheartv.R
 import com.example.blueheartv.util.*
 import com.example.blueheartv.viewmodel.ChatViewModel
 import com.example.blueheartv.telemetry.AppEventLogger
+import com.example.blueheartv.voice.InputMode
 import com.example.blueheartv.voice.MIN_VOICE_PCM_BYTES
 import com.example.blueheartv.voice.VOICE_PCM_FORMAT
 import com.example.blueheartv.voice.VOICE_PCM_SAMPLE_RATE
+import com.example.blueheartv.voice.VoiceHoldPermissionAction
 import com.example.blueheartv.voice.VoiceAudioRecorder
+import com.example.blueheartv.voice.VoiceInputPermissionPolicy
+import com.example.blueheartv.voice.VoiceMicPermissionAction
 import com.example.blueheartv.voice.VoiceRecordingState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -96,6 +103,13 @@ fun rememberHomeScreenActions(
 
     DisposableEffect(Unit) {
         onDispose { voiceRecorder.cancel() }
+    }
+
+    fun hasAudioPermission(): Boolean {
+        return ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.RECORD_AUDIO,
+        ) == PackageManager.PERMISSION_GRANTED
     }
 
     fun beginVoiceRecording() {
@@ -188,8 +202,12 @@ fun rememberHomeScreenActions(
     val attachPermissionHandler = rememberPermissionHandler(snackbarHostState) {
         filePickerLauncher.launch("image/*")
     }
-    val voicePermissionHandler = rememberPermissionHandler(snackbarHostState) {
-        beginVoiceRecording()
+    val enterVoiceModePermissionHandler = rememberPermissionHandler(snackbarHostState) {
+        viewModel.setInputMode(InputMode.VOICE)
+        ToastUtil.show("麦克风权限已开启，请按住说话", ToastType.SUCCESS)
+    }
+    val holdToSpeakPermissionHandler = rememberPermissionHandler(snackbarHostState) {
+        ToastUtil.show("麦克风权限已开启，请重新按住说话", ToastType.SUCCESS)
     }
     val calendarPermissionHandler = rememberPermissionHandler(snackbarHostState) {
         viewModel.sendQuickAction(promptTodaySchedule)
@@ -245,7 +263,21 @@ fun rememberHomeScreenActions(
                 )
             },
             requestMic = {
-                viewModel.toggleInputMode()
+                when (
+                    VoiceInputPermissionPolicy.onMicClick(
+                        currentMode = viewModel.uiState.value.inputMode,
+                        hasAudioPermission = hasAudioPermission(),
+                    )
+                ) {
+                    VoiceMicPermissionAction.ENTER_VOICE_MODE -> viewModel.setInputMode(InputMode.VOICE)
+                    VoiceMicPermissionAction.EXIT_VOICE_MODE -> viewModel.setInputMode(InputMode.TEXT)
+                    VoiceMicPermissionAction.REQUEST_AUDIO_PERMISSION -> enterVoiceModePermissionHandler(
+                        PermissionRequest(
+                            permissions = audioPermissions(),
+                            rationaleMessage = rationaleAudioInput,
+                        ),
+                    )
+                }
             },
             requestQuickAction = { index ->
                 val prompts = listOf(
@@ -286,12 +318,15 @@ fun rememberHomeScreenActions(
                 }
             },
             startVoiceRecording = {
-                voicePermissionHandler(
-                    PermissionRequest(
-                        permissions = audioPermissions(),
-                        rationaleMessage = rationaleAudioInput,
-                    ),
-                )
+                when (VoiceInputPermissionPolicy.onHoldStart(hasAudioPermission())) {
+                    VoiceHoldPermissionAction.START_RECORDING -> beginVoiceRecording()
+                    VoiceHoldPermissionAction.REQUEST_AUDIO_PERMISSION -> holdToSpeakPermissionHandler(
+                        PermissionRequest(
+                            permissions = audioPermissions(),
+                            rationaleMessage = rationaleAudioInput,
+                        ),
+                    )
+                }
             },
             stopVoiceRecording = {
                 finishVoiceRecording()

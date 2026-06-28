@@ -159,6 +159,10 @@ class ChatViewModel(
         _uiState.update { it.copy(inputText = text) }
     }
 
+    fun setInputMode(mode: InputMode) {
+        _uiState.update { it.copy(inputMode = mode) }
+    }
+
     fun toggleInputMode() {
         _uiState.update { state ->
             val newMode = if (state.inputMode == InputMode.TEXT) InputMode.VOICE else InputMode.TEXT
@@ -172,7 +176,10 @@ class ChatViewModel(
         _uiState.update { state ->
             val current = state.inputText.trimEnd()
             val next = if (current.isBlank()) recognized else "$current $recognized"
-            state.copy(inputText = next.take(2000))
+            state.copy(
+                inputText = next.take(2000),
+                inputMode = InputMode.TEXT,
+            )
         }
     }
 

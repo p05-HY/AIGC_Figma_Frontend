@@ -15,6 +15,7 @@ import com.example.blueheartv.model.TraceRunStatus
 import com.example.blueheartv.model.TraceStep
 import com.example.blueheartv.model.TraceStepStatus
 import com.example.blueheartv.test.MainDispatcherRule
+import com.example.blueheartv.voice.InputMode
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -90,7 +91,7 @@ class ChatViewModelTest {
     }
 
     @Test
-    fun sendVoiceText_fillsInputWithoutSendingMessage() = runTest {
+    fun sendVoiceText_returnsToTextModeForReviewWithoutSendingMessage() = runTest {
         val provider = ScriptedProvider { _, _, onEvent ->
             onEvent(ChatStreamEvent.TextDelta("should not run"))
             onEvent(ChatStreamEvent.Completed)
@@ -98,13 +99,31 @@ class ChatViewModelTest {
         val viewModel = createViewModel(chatProvider = provider)
         advanceUntilIdle()
 
+        viewModel.toggleInputMode()
+        assertEquals(InputMode.VOICE, viewModel.uiState.value.inputMode)
         viewModel.sendVoiceText("打开微信")
         advanceUntilIdle()
 
         assertEquals("打开微信", viewModel.uiState.value.inputText)
+        assertEquals(InputMode.TEXT, viewModel.uiState.value.inputMode)
         assertEquals(emptyList<Message>(), viewModel.uiState.value.messages)
         assertEquals(0, provider.createThreadCalls)
         assertEquals(0, provider.streamReplyCalls)
+    }
+
+    @Test
+    fun setInputMode_setsTheRequestedModeWithoutToggling() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        viewModel.setInputMode(InputMode.VOICE)
+        viewModel.setInputMode(InputMode.VOICE)
+
+        assertEquals(InputMode.VOICE, viewModel.uiState.value.inputMode)
+
+        viewModel.setInputMode(InputMode.TEXT)
+
+        assertEquals(InputMode.TEXT, viewModel.uiState.value.inputMode)
     }
 
     @Test
