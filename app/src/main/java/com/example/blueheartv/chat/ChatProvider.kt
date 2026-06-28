@@ -15,11 +15,21 @@ data class RemoteChatThread(
     val messages: List<Message>,
 )
 
+data class VoiceTranscriptionResult(
+    val text: String,
+    val provider: String,
+    val requestId: String? = null,
+    val durationMs: Long? = null,
+)
+
 /** 服务端取消请求的确认；accepted 仅表示请求已送达，不代表任务已经终止。 */
 data class MobileRunCancellation(
     val runId: String,
     val accepted: Boolean,
+    val status: String,
     val backendStatus: String,
+    val cancelSource: String? = null,
+    val terminalReason: String? = null,
 )
 
 /** 由移动安全门面查询的真实 LangGraph 运行状态。 */
@@ -41,6 +51,13 @@ interface ChatProvider {
 
     suspend fun deleteThread(threadId: String)
 
+    suspend fun transcribeVoice(
+        audio: ByteArray,
+        audioFormat: String = "pcm",
+        sampleRate: Int = 16000,
+        language: String = "zh-CN",
+    ): VoiceTranscriptionResult = throw UnsupportedOperationException("当前服务不支持语音转文字")
+
     suspend fun streamReply(
         threadId: String,
         prompt: ChatPrompt,
@@ -58,8 +75,18 @@ interface ChatProvider {
         onEvent: (ChatStreamEvent) -> Unit,
     ) = streamReply(threadId, prompt, onEvent)
 
-    suspend fun cancelRun(threadId: String, runId: String): MobileRunCancellation =
-        MobileRunCancellation(runId, accepted = false, backendStatus = "unavailable")
+    suspend fun cancelRun(
+        threadId: String,
+        runId: String,
+        cancelSource: String = "user",
+    ): MobileRunCancellation =
+        MobileRunCancellation(
+            runId,
+            accepted = false,
+            status = "unavailable",
+            backendStatus = "unavailable",
+            cancelSource = cancelSource,
+        )
 
     suspend fun getRunStatus(threadId: String, runId: String): MobileRunStatus =
         MobileRunStatus(runId, localStatus = "unknown", backendStatus = "unavailable", terminal = false)

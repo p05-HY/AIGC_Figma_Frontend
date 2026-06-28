@@ -10,6 +10,8 @@ object ApiPaths {
     // ---- REST 路径段（拼接到 BaseUrl 之后）----
     const val THREADS = "threads"
     const val MOBILE = "mobile"
+    const val ASR = "asr"
+    const val TRANSCRIBE = "transcribe"
     const val SEARCH = "search"
     const val RUNS = "runs"
     const val STREAM = "stream"

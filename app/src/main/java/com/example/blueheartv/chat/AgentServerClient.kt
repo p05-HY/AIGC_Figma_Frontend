@@ -8,6 +8,7 @@ import com.example.blueheartv.viewmodel.truncateTitle
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -110,6 +111,40 @@ class AgentServerClient(
         runCatching { executeString(requestBuilder(url(ApiPaths.THREADS, threadId)).delete().build()) }
     }
 
+    fun transcribeVoice(
+        audio: ByteArray,
+        audioFormat: String = "pcm",
+        sampleRate: Int = 16000,
+        language: String = "zh-CN",
+    ): VoiceTranscriptionResult {
+        require(audio.isNotEmpty()) { "录音内容为空" }
+        val normalizedFormat = audioFormat.trim().ifBlank { "pcm" }.lowercase()
+        val body = MultipartBody.Builder()
+            .setType(MultipartBody.FORM)
+            .addFormDataPart("format", normalizedFormat)
+            .addFormDataPart("sampleRate", sampleRate.toString())
+            .addFormDataPart("language", language)
+            .addFormDataPart(
+                "audio",
+                "speech.$normalizedFormat",
+                audio.toRequestBody("audio/$normalizedFormat".toMediaType()),
+            )
+            .build()
+        val request = requestBuilder(
+            url(ApiPaths.MOBILE, ApiPaths.ASR, ApiPaths.TRANSCRIBE),
+            jsonContentType = false,
+        )
+            .post(body)
+            .build()
+        val payload = JSONObject(executeString(request))
+        return VoiceTranscriptionResult(
+            text = payload.optString("text").trim(),
+            provider = payload.optString("provider").ifBlank { "unknown" },
+            requestId = payload.optString("requestId").ifBlank { null },
+            durationMs = if (payload.isNull("durationMs")) null else payload.optLong("durationMs"),
+        )
+    }
+
     fun streamRun(
         threadId: String,
         prompt: ChatPrompt,
@@ -204,18 +239,26 @@ class AgentServerClient(
         }
     }
 
-    fun cancelRun(threadId: String, runId: String): MobileRunCancellation {
+    fun cancelRun(threadId: String, runId: String, cancelSource: String = "user"): MobileRunCancellation {
         val request = postRequest(
             url(ApiPaths.MOBILE, ApiPaths.THREADS, threadId, ApiPaths.RUNS, runId, "cancel"),
-            JSONObject(),
+            JSONObject().put("cancelSource", cancelSource),
         )
         val payload = JSONObject(executeString(request))
         val returnedRunId = payload.optString("runId").ifBlank { runId }
-        val accepted = payload.optString("status") == "cancellation_requested"
+        val status = payload.optString("status").ifBlank { "unknown" }
+        val accepted = status in setOf(
+            "cancellation_requested",
+            "not_bound_but_fenced",
+            "already_terminal",
+        )
         return MobileRunCancellation(
             runId = returnedRunId,
             accepted = accepted,
+            status = status,
             backendStatus = payload.optString("backendStatus").ifBlank { "unknown" },
+            cancelSource = payload.optString("cancelSource").ifBlank { cancelSource },
+            terminalReason = payload.optString("terminalReason").ifBlank { null },
         )
     }
 
@@ -238,6 +281,7 @@ class AgentServerClient(
             "trace.v1",
             "task_progress",
             "stream.started",
+            "stream.heartbeat",
             "stream.eof",
             "stream.error",
         )
@@ -402,10 +446,12 @@ class AgentServerClient(
             .build()
     }
 
-    private fun requestBuilder(url: HttpUrl): Request.Builder {
+    private fun requestBuilder(url: HttpUrl, jsonContentType: Boolean = true): Request.Builder {
         val builder = Request.Builder()
             .url(url)
-            .addHeader("Content-Type", "application/json")
+        if (jsonContentType) {
+            builder.addHeader("Content-Type", "application/json")
+        }
         configProvider().apiKey.takeIf { it.isNotBlank() }?.let {
             builder.addHeader("X-Api-Key", it)
         }

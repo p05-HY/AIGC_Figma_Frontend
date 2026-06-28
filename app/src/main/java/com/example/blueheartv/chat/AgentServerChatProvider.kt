@@ -27,6 +27,15 @@ class AgentServerChatProvider(
         client.deleteThread(threadId)
     }
 
+    override suspend fun transcribeVoice(
+        audio: ByteArray,
+        audioFormat: String,
+        sampleRate: Int,
+        language: String,
+    ): VoiceTranscriptionResult = withContext(Dispatchers.IO) {
+        client.transcribeVoice(audio, audioFormat, sampleRate, language)
+    }
+
     override suspend fun streamReply(
         threadId: String,
         prompt: ChatPrompt,
@@ -44,8 +53,12 @@ class AgentServerChatProvider(
         client.streamRun(threadId, prompt, runId, onEvent)
     }
 
-    override suspend fun cancelRun(threadId: String, runId: String): MobileRunCancellation = withContext(Dispatchers.IO) {
-        client.cancelRun(threadId, runId)
+    override suspend fun cancelRun(
+        threadId: String,
+        runId: String,
+        cancelSource: String,
+    ): MobileRunCancellation = withContext(Dispatchers.IO) {
+        client.cancelRun(threadId, runId, cancelSource)
     }
 
     override suspend fun getRunStatus(threadId: String, runId: String): MobileRunStatus = withContext(Dispatchers.IO) {

@@ -217,7 +217,7 @@ private fun SuccessContent(text: String) {
         }
 
         Text(
-            text = "已发送",
+            text = "已填入输入框",
             fontSize = 13.sp,
             color = MutedText,
         )

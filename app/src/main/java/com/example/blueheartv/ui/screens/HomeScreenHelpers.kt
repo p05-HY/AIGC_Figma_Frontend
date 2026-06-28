@@ -1,13 +1,9 @@
 package com.example.blueheartv.ui.screens
 
-import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
-import android.content.ActivityNotFoundException
-import android.content.Intent
 import android.net.Uri
-import android.speech.RecognizerIntent
 import android.speech.tts.TextToSpeech
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -19,12 +15,13 @@ import com.example.blueheartv.R
 import com.example.blueheartv.util.*
 import com.example.blueheartv.viewmodel.ChatViewModel
 import com.example.blueheartv.telemetry.AppEventLogger
-import com.example.blueheartv.voice.SpeechRecognizerCallback
-import com.example.blueheartv.voice.SpeechRecognizerManager
-import com.example.blueheartv.voice.VoiceRecognitionDiagnostics
-import com.example.blueheartv.voice.VoiceRecognitionFallbackPolicy
+import com.example.blueheartv.voice.MIN_VOICE_PCM_BYTES
+import com.example.blueheartv.voice.VOICE_PCM_FORMAT
+import com.example.blueheartv.voice.VOICE_PCM_SAMPLE_RATE
+import com.example.blueheartv.voice.VoiceAudioRecorder
 import com.example.blueheartv.voice.VoiceRecordingState
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.util.*
 
 class HomeScreenActions(
@@ -93,120 +90,98 @@ fun rememberHomeScreenActions(
     var partialText by remember { mutableStateOf("") }
     var amplitudeDb by remember { mutableFloatStateOf(0f) }
     var resultText by remember { mutableStateOf("") }
-    var systemFallbackInProgress by remember { mutableStateOf(false) }
-
-    val speechManager = remember(context) { SpeechRecognizerManager(context) }
+    var voiceUploadInProgress by remember { mutableStateOf(false) }
+    val voiceRecorder = remember { VoiceAudioRecorder() }
+    val scope = rememberCoroutineScope()
 
     DisposableEffect(Unit) {
-        onDispose { speechManager.destroy() }
+        onDispose { voiceRecorder.cancel() }
     }
 
-    fun systemSpeechIntent(): Intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-        putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-        putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.CHINA.toLanguageTag())
-        putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, Locale.CHINA.toLanguageTag())
-        putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
-        putExtra(RecognizerIntent.EXTRA_PROMPT, "请说话...")
-    }
-
-    val systemSpeechLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult(),
-    ) { result ->
-        systemFallbackInProgress = false
-        val text = if (result.resultCode == Activity.RESULT_OK) {
-            result.data
-                ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
-                ?.firstOrNull()
-                .orEmpty()
-                .trim()
-        } else {
-            ""
-        }
+    fun beginVoiceRecording() {
+        if (voiceUploadInProgress || voiceRecorder.isRecording) return
+        partialText = ""
+        resultText = ""
         amplitudeDb = 0f
-        if (text.isNotBlank()) {
-            resultText = text
-            voiceRecordingState = VoiceRecordingState.SUCCESS
-            AppEventLogger.info("VoiceRecognition.system_result", "textLength=${text.length}")
-            viewModel.sendVoiceText(text)
+        val started = voiceRecorder.start(scope) { amplitude ->
+            amplitudeDb = amplitude
+        }
+        if (started) {
+            voiceRecordingState = VoiceRecordingState.RECORDING
+            AppEventLogger.info("VoiceRecognition.recording_started", "sampleRate=$VOICE_PCM_SAMPLE_RATE format=$VOICE_PCM_FORMAT")
         } else {
-            resultText = "系统语音识别未返回文本"
+            resultText = "录音启动失败"
             voiceRecordingState = VoiceRecordingState.FAILED
-            AppEventLogger.warning("VoiceRecognition.system_empty", "resultCode=${result.resultCode}")
+            ToastUtil.show("录音启动失败", ToastType.ERROR)
+            AppEventLogger.warning("VoiceRecognition.recording_start_failed", "AudioRecord initialization failed")
         }
     }
 
-    fun launchSystemSpeechFallback(reason: String, diagnostics: VoiceRecognitionDiagnostics) {
-        if (systemFallbackInProgress) return
-        val intent = systemSpeechIntent()
-        val canResolve = intent.resolveActivity(context.packageManager) != null
-        AppEventLogger.warning(
-            "VoiceRecognition.fallback",
-            "reason=$reason canResolve=$canResolve ${diagnostics.summary()}",
-        )
-        if (!canResolve) {
-            resultText = "设备未安装可用的系统语音识别界面"
-            voiceRecordingState = VoiceRecordingState.FAILED
-            return
-        }
-        systemFallbackInProgress = true
-        resultText = "正在打开系统语音识别..."
+    fun finishVoiceRecording() {
+        if (!voiceRecorder.isRecording) return
         voiceRecordingState = VoiceRecordingState.RECOGNIZING
-        ToastUtil.show("正在改用系统语音识别", ToastType.INFO)
-        runCatching { systemSpeechLauncher.launch(intent) }
-            .onFailure { error ->
-                systemFallbackInProgress = false
-                val message = if (error is ActivityNotFoundException) {
-                    "设备未安装可用的系统语音识别界面"
-                } else {
-                    "系统语音识别启动失败"
+        voiceUploadInProgress = true
+        scope.launch {
+            val audio = runCatching { voiceRecorder.stop() }
+                .getOrElse { error ->
+                    voiceUploadInProgress = false
+                    amplitudeDb = 0f
+                    resultText = "录音停止失败"
+                    voiceRecordingState = VoiceRecordingState.FAILED
+                    AppEventLogger.error("VoiceRecognition.recording_stop_failed", error.message ?: "unknown", error)
+                    return@launch
                 }
-                resultText = message
+            amplitudeDb = 0f
+            if (audio.size < MIN_VOICE_PCM_BYTES) {
+                voiceUploadInProgress = false
+                resultText = "录音时间过短"
                 voiceRecordingState = VoiceRecordingState.FAILED
-                AppEventLogger.error("VoiceRecognition.fallback_launch_failed", message, error)
-            }
-    }
-
-    val speechCallback = remember {
-        object : SpeechRecognizerCallback {
-            override fun onReadyForSpeech() {
-                voiceRecordingState = VoiceRecordingState.RECORDING
+                ToastUtil.show("录音时间过短", ToastType.ERROR)
+                AppEventLogger.warning("VoiceRecognition.audio_too_short", "bytes=${audio.size}")
+                return@launch
             }
 
-            override fun onPartialResult(text: String) {
-                partialText = text
-            }
-
-            override fun onFinalResult(text: String) {
-                amplitudeDb = 0f
-                if (text.isNotBlank()) {
+            runCatching {
+                viewModel.transcribeVoiceAudio(
+                    audio = audio,
+                    audioFormat = VOICE_PCM_FORMAT,
+                    sampleRate = VOICE_PCM_SAMPLE_RATE,
+                    language = Locale.CHINA.toLanguageTag(),
+                )
+            }.onSuccess { transcription ->
+                val text = transcription.text.trim()
+                if (text.isBlank()) {
+                    resultText = "语音识别未返回文本"
+                    voiceRecordingState = VoiceRecordingState.FAILED
+                    ToastUtil.show("语音识别未返回文本", ToastType.ERROR)
+                } else {
+                    viewModel.sendVoiceText(text)
                     resultText = text
                     voiceRecordingState = VoiceRecordingState.SUCCESS
-                    viewModel.sendVoiceText(text)
-                } else {
-                    val diagnostics = speechManager.diagnosticsSnapshot()
-                    launchSystemSpeechFallback("blank_final_result", diagnostics)
+                    ToastUtil.show("已填入输入框", ToastType.SUCCESS)
+                    AppEventLogger.info(
+                        "VoiceRecognition.aliyun_result",
+                        "textLength=${text.length} provider=${transcription.provider} requestId=${transcription.requestId.orEmpty()}",
+                    )
                 }
+            }.onFailure { error ->
+                val message = error.message?.takeIf { it.isNotBlank() } ?: "语音识别失败"
+                resultText = message
+                voiceRecordingState = VoiceRecordingState.FAILED
+                ToastUtil.show(message, ToastType.ERROR)
+                AppEventLogger.error("VoiceRecognition.aliyun_failed", message, error)
             }
-
-            override fun onError(errorCode: Int, message: String) {
-                amplitudeDb = 0f
-                val diagnostics = VoiceRecognitionFallbackPolicy.withCallbackError(
-                    callbackErrorCode = errorCode,
-                    callbackMessage = message,
-                    diagnostics = speechManager.diagnosticsSnapshot(),
-                )
-                if (VoiceRecognitionFallbackPolicy.shouldUseSystemRecognizer(errorCode, diagnostics)) {
-                    launchSystemSpeechFallback("direct_error_$errorCode", diagnostics)
-                } else {
-                    resultText = "$message（${diagnostics.summary()}）"
-                    voiceRecordingState = VoiceRecordingState.FAILED
-                }
-            }
-
-            override fun onRmsChanged(rmsdB: Float) {
-                amplitudeDb = rmsdB
-            }
+            voiceUploadInProgress = false
         }
+    }
+
+    fun cancelVoiceRecordingInternal() {
+        voiceRecorder.cancel()
+        voiceUploadInProgress = false
+        voiceRecordingState = VoiceRecordingState.IDLE
+        partialText = ""
+        amplitudeDb = 0f
+        resultText = ""
     }
 
     // Permission handlers
@@ -214,19 +189,7 @@ fun rememberHomeScreenActions(
         filePickerLauncher.launch("image/*")
     }
     val voicePermissionHandler = rememberPermissionHandler(snackbarHostState) {
-        if (!speechManager.isAvailable()) {
-            launchSystemSpeechFallback(
-                reason = "direct_recognizer_unavailable",
-                diagnostics = VoiceRecognitionDiagnostics(errorMessage = "SpeechRecognizer.isRecognitionAvailable=false"),
-            )
-            return@rememberPermissionHandler
-        }
-        speechManager.setCallback(speechCallback)
-        speechManager.startListening()
-        voiceRecordingState = VoiceRecordingState.RECORDING
-        partialText = ""
-        resultText = ""
-        systemFallbackInProgress = false
+        beginVoiceRecording()
     }
     val calendarPermissionHandler = rememberPermissionHandler(snackbarHostState) {
         viewModel.sendQuickAction(promptTodaySchedule)
@@ -331,20 +294,18 @@ fun rememberHomeScreenActions(
                 )
             },
             stopVoiceRecording = {
-                speechManager.stopListening()
-                voiceRecordingState = VoiceRecordingState.RECOGNIZING
+                finishVoiceRecording()
             },
             cancelVoiceRecording = {
-                speechManager.cancel()
-                voiceRecordingState = VoiceRecordingState.IDLE
-                partialText = ""
-                amplitudeDb = 0f
+                cancelVoiceRecordingInternal()
             },
             setVoiceCancelling = {
                 voiceRecordingState = VoiceRecordingState.CANCELLING
             },
             setVoiceRecording = {
-                voiceRecordingState = VoiceRecordingState.RECORDING
+                if (voiceRecorder.isRecording) {
+                    voiceRecordingState = VoiceRecordingState.RECORDING
+                }
             },
             voiceRecordingState = voiceRecordingStateState,
             partialText = partialTextState,

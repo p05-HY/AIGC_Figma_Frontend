@@ -90,6 +90,24 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun sendVoiceText_fillsInputWithoutSendingMessage() = runTest {
+        val provider = ScriptedProvider { _, _, onEvent ->
+            onEvent(ChatStreamEvent.TextDelta("should not run"))
+            onEvent(ChatStreamEvent.Completed)
+        }
+        val viewModel = createViewModel(chatProvider = provider)
+        advanceUntilIdle()
+
+        viewModel.sendVoiceText("打开微信")
+        advanceUntilIdle()
+
+        assertEquals("打开微信", viewModel.uiState.value.inputText)
+        assertEquals(emptyList<Message>(), viewModel.uiState.value.messages)
+        assertEquals(0, provider.createThreadCalls)
+        assertEquals(0, provider.streamReplyCalls)
+    }
+
+    @Test
     fun deleteUserMessage_thenUndo_restoresUserAndPairedAssistantMessages() = runTest {
         val provider = ScriptedProvider { _, prompt, onEvent ->
             onEvent(ChatStreamEvent.TextDelta("reply:${prompt.text}"))
@@ -474,6 +492,49 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun streamErrorAfterTerminal_usesTerminalStateWithoutRequestingAnotherCancel() = runTest {
+        val provider = ScriptedProvider { _, _, onEvent ->
+            onEvent(
+                ChatStreamEvent.Trace(
+                    TraceEvent.RunStarted("run-1", "evt-1", 1, "thread-1"),
+                ),
+            )
+            onEvent(
+                ChatStreamEvent.Trace(
+                    TraceEvent.RunTerminal(
+                        runId = "run-1",
+                        eventId = "evt-2",
+                        seq = 2,
+                        status = TraceRunStatus.FAILED,
+                        reason = "upstream_ended_without_terminal",
+                    ),
+                ),
+            )
+            onEvent(
+                ChatStreamEvent.Error(
+                    "任务未返回结束状态，已停止后续操作。",
+                    retryable = true,
+                    terminalStatus = "failed",
+                    terminalReason = "upstream_ended_without_terminal",
+                ),
+            )
+        }
+
+        val viewModel = createViewModel(chatProvider = provider)
+        advanceUntilIdle()
+        viewModel.onInputChanged("帮我看看屏幕")
+        viewModel.sendMessage()
+        advanceUntilIdle()
+
+        val uiState = viewModel.uiState.value
+        val assistant = uiState.messages.last()
+        assertEquals(ChatSessionState.ERROR, uiState.sessionState)
+        assertEquals("任务未返回结束状态，已停止后续操作。", uiState.lastError)
+        assertEquals(TraceRunStatus.FAILED, assistant.trace?.runStatus)
+        assertTrue(provider.cancelledRuns.isEmpty())
+    }
+
+    @Test
     fun cancelActiveRun_stopsLocalStreamAndCancelsTheSameServerRun() = runTest {
         val provider = ScriptedProvider { _, _, onEvent ->
             onEvent(
@@ -501,6 +562,7 @@ class ChatViewModelTest {
 
         assertEquals(1, provider.cancelledRuns.size)
         assertEquals("run-1", provider.cancelledRuns.single().second)
+        assertEquals("user", provider.cancelledRuns.single().third)
         assertFalse(viewModel.uiState.value.canCancel)
         assertEquals(ChatSessionState.CANCELLED, viewModel.uiState.value.sessionState)
         assertEquals("已停止当前任务。", viewModel.uiState.value.messages.last().content)
@@ -525,14 +587,82 @@ class ChatViewModelTest {
         assertEquals(ChatSessionState.RESPONDING, viewModel.uiState.value.sessionState)
         assertTrue(viewModel.uiState.value.canCancel)
 
-        now = 61_001L
+        now = 181_001L
         advanceTimeBy(5_001)
         runCurrent()
         advanceUntilIdle()
 
         assertEquals(listOf("run-1"), provider.cancelledRuns.map { it.second })
+        assertEquals(listOf("frontend_timeout"), provider.cancelledRuns.map { it.third })
         assertEquals(ChatSessionState.CANCELLED, viewModel.uiState.value.sessionState)
         assertFalse(viewModel.uiState.value.canRetry)
+    }
+
+    @Test
+    fun frontendTimeoutWithUnboundBackendRunShowsLocalFencedTimeoutInsteadOfUnconfirmedCancel() = runTest {
+        var now = 1_000L
+        val provider = ScriptedProvider(
+            cancellationStatus = "not_bound_but_fenced",
+            cancellationBackendStatus = "unknown_not_bound",
+            polledBackendStatus = "unknown_not_bound",
+            polledStatusTerminal = true,
+        ) { _, _, onEvent ->
+            onEvent(
+                ChatStreamEvent.Trace(
+                    TraceEvent.RunStarted("run-1", "evt-1", 1, "thread-1"),
+                ),
+            )
+            awaitCancellation()
+        }
+        val viewModel = createViewModel(chatProvider = provider, timeProvider = { now })
+        advanceUntilIdle()
+        viewModel.onInputChanged("请告诉我今天的天气情况和出行建议")
+        viewModel.sendMessage()
+        runCurrent()
+
+        now = 181_001L
+        advanceTimeBy(5_001)
+        advanceUntilIdle()
+
+        val uiState = viewModel.uiState.value
+        assertEquals(listOf("frontend_timeout"), provider.cancelledRuns.map { it.third })
+        assertEquals(ChatSessionState.ERROR, uiState.sessionState)
+        assertEquals("任务响应超时，本地已停止继续操作。", uiState.lastError)
+        assertFalse(uiState.lastError.orEmpty().contains("取消请求未被服务端确认"))
+    }
+
+    @Test
+    fun heartbeatKeepsLongTaskAliveBeyondOldSixtySecondIdleTimeout() = runTest {
+        var now = 1_000L
+        lateinit var push: (ChatStreamEvent) -> Unit
+        val provider = ScriptedProvider { _, _, onEvent ->
+            push = onEvent
+            onEvent(
+                ChatStreamEvent.Trace(
+                    TraceEvent.RunStarted("run-1", "evt-1", 1, "thread-1"),
+                ),
+            )
+            awaitCancellation()
+        }
+        val viewModel = createViewModel(chatProvider = provider, timeProvider = { now })
+        advanceUntilIdle()
+        viewModel.onInputChanged("执行长任务")
+        viewModel.sendMessage()
+        runCurrent()
+
+        now = 61_000L
+        push(ChatStreamEvent.Heartbeat(runId = "run-1", streamSeq = 2))
+        runCurrent()
+        now = 121_500L
+        advanceTimeBy(60_500L)
+        runCurrent()
+
+        assertTrue(provider.cancelledRuns.isEmpty())
+        assertEquals(ChatSessionState.RESPONDING, viewModel.uiState.value.sessionState)
+
+        viewModel.cancelActiveRun()
+        advanceTimeBy(10_500)
+        runCurrent()
     }
 
     @Test
@@ -547,7 +677,7 @@ class ChatViewModelTest {
                     TraceEvent.RunStarted("run-1", "evt-1", 1, "thread-1"),
                 ),
             )
-            awaitCancellation()
+            onEvent(ChatStreamEvent.Error("stream failed", retryable = true))
         }
         val viewModel = createViewModel(chatProvider = provider)
         advanceUntilIdle()
@@ -562,8 +692,14 @@ class ChatViewModelTest {
         assertTrue(viewModel.uiState.value.canCancel)
         viewModel.onInputChanged("回复我 OK")
         viewModel.sendMessage()
-        advanceUntilIdle()
+        runCurrent()
         assertEquals(1, provider.streamReplyCalls)
+
+        provider.polledBackendStatus = "cancelled"
+        provider.polledStatusTerminal = true
+        viewModel.cancelActiveRun()
+        advanceTimeBy(1_000)
+        runCurrent()
     }
 
     @Test
@@ -590,7 +726,8 @@ class ChatViewModelTest {
         assertEquals(ChatSessionState.RESPONDING, viewModel.uiState.value.sessionState)
 
         viewModel.cancelActiveRun()
-        advanceUntilIdle()
+        advanceTimeBy(10_500)
+        runCurrent()
     }
 
     @Test
@@ -712,9 +849,10 @@ class ChatViewModelTest {
     private class ScriptedProvider(
         private val remoteThreads: List<RemoteChatThread> = emptyList(),
         private val cancellationAccepted: Boolean = true,
+        private val cancellationStatus: String = "cancellation_requested",
         private val cancellationBackendStatus: String = "cancel_requested",
-        private val polledBackendStatus: String = "cancelled",
-        private val polledStatusTerminal: Boolean = true,
+        polledBackendStatus: String = "cancelled",
+        polledStatusTerminal: Boolean = true,
         private val loadThreadDelayMs: Long = 0L,
         private val script: suspend (String, ChatPrompt, (ChatStreamEvent) -> Unit) -> Unit = { _, _, onEvent ->
             onEvent(ChatStreamEvent.Completed)
@@ -724,8 +862,10 @@ class ChatViewModelTest {
             private set
         var streamReplyCalls: Int = 0
             private set
-        val cancelledRuns = mutableListOf<Pair<String, String>>()
+        val cancelledRuns = mutableListOf<Triple<String, String, String>>()
         val deletedThreads = mutableListOf<String>()
+        var polledBackendStatus: String = polledBackendStatus
+        var polledStatusTerminal: Boolean = polledStatusTerminal
 
         override suspend fun createThread(titleHint: String?): RemoteChatThread {
             createThreadCalls += 1
@@ -754,12 +894,19 @@ class ChatViewModelTest {
             script(threadId, prompt, onEvent)
         }
 
-        override suspend fun cancelRun(threadId: String, runId: String): MobileRunCancellation {
-            cancelledRuns += threadId to runId
+        override suspend fun cancelRun(
+            threadId: String,
+            runId: String,
+            cancelSource: String,
+        ): MobileRunCancellation {
+            cancelledRuns += Triple(threadId, runId, cancelSource)
             return MobileRunCancellation(
                 runId,
                 accepted = cancellationAccepted,
+                status = cancellationStatus,
                 backendStatus = cancellationBackendStatus,
+                cancelSource = cancelSource,
+                terminalReason = cancelSource,
             )
         }
 

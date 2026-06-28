@@ -8,6 +8,8 @@ import com.example.blueheartv.chat.AgentServerConfigStore
 import com.example.blueheartv.chat.ChatPrompt
 import com.example.blueheartv.chat.ChatProvider
 import com.example.blueheartv.chat.ChatStreamEvent
+import com.example.blueheartv.chat.MobileRunCancellation
+import com.example.blueheartv.chat.VoiceTranscriptionResult
 import com.example.blueheartv.util.DialogUtil
 import com.example.blueheartv.model.*
 import com.example.blueheartv.telemetry.AppEventLogger
@@ -81,7 +83,7 @@ data class HomeUiState(
 )
 
 private const val SEND_DEBOUNCE_MS = 500L
-private const val STREAMING_TIMEOUT_MS = 60_000L
+private const val STREAMING_TIMEOUT_MS = 180_000L
 private const val CANCEL_STATUS_POLL_INTERVAL_MS = 500L
 private const val CANCEL_STATUS_MAX_POLLS = 20
 
@@ -100,11 +102,20 @@ private data class ActiveStream(
 
 private enum class CancellationSource {
     USER,
-    TIMEOUT,
+    FRONTEND_TIMEOUT,
     STREAM_DISCONNECTED,
     STREAM_ERROR,
     APP_BACKGROUND,
     SESSION_DELETED,
+}
+
+private fun CancellationSource.serverValue(): String = when (this) {
+    CancellationSource.USER -> "user"
+    CancellationSource.FRONTEND_TIMEOUT -> "frontend_timeout"
+    CancellationSource.STREAM_DISCONNECTED -> "client_disconnected"
+    CancellationSource.STREAM_ERROR -> "stream_error"
+    CancellationSource.APP_BACKGROUND -> "client_disconnected"
+    CancellationSource.SESSION_DELETED -> "session_deleted"
 }
 
 class ChatViewModel(
@@ -156,9 +167,25 @@ class ChatViewModel(
     }
 
     fun sendVoiceText(text: String) {
-        if (text.isBlank()) return
-        _uiState.update { it.copy(inputText = text) }
-        sendMessage()
+        val recognized = text.trim()
+        if (recognized.isBlank()) return
+        _uiState.update { state ->
+            val current = state.inputText.trimEnd()
+            val next = if (current.isBlank()) recognized else "$current $recognized"
+            state.copy(inputText = next.take(2000))
+        }
+    }
+
+    suspend fun transcribeVoiceAudio(
+        audio: ByteArray,
+        audioFormat: String = "pcm",
+        sampleRate: Int = 16000,
+        language: String = "zh-CN",
+    ): VoiceTranscriptionResult {
+        if (!AgentServerConfigStore.snapshot().isConfigured) {
+            error("请先配置服务地址")
+        }
+        return chatProvider.transcribeVoice(audio, audioFormat, sampleRate, language)
     }
 
     fun addImageAttachment(attachment: ChatAttachment) {
@@ -538,7 +565,7 @@ class ChatViewModel(
                 toolCallStatus.toToolCallListOrNull()
             }
 
-        // 流式超时检测：60 秒无事件则认为卡住
+        // 流式空闲超时检测：服务端 safe-stream heartbeat 会刷新 lastEventAt。
         var lastEventAt = repo.now()
         var timeoutRunning = true
         val timeoutJob = viewModelScope.launch {
@@ -549,7 +576,7 @@ class ChatViewModel(
                     timeoutRunning = false
                     requestRunCancellation(
                         stream = stream,
-                        source = CancellationSource.TIMEOUT,
+                        source = CancellationSource.FRONTEND_TIMEOUT,
                         trace = trace,
                         chatState = if (hasToolCalling) ChatState.CHAT_TOOL_CALLING else ChatState.CHAT_SIMPLE,
                         taskComplexity = taskComplexity,
@@ -582,6 +609,10 @@ class ChatViewModel(
                                 errorMessage = null,
                             )
                         }
+                    }
+
+                    is ChatStreamEvent.Heartbeat -> {
+                        if (event.runId != null) stream.runId = event.runId
                     }
 
                     is ChatStreamEvent.Trace -> {
@@ -834,6 +865,45 @@ class ChatViewModel(
                         timeoutJob.cancel()
                         val chatState = if (hasToolCalling) ChatState.CHAT_TOOL_CALLING else ChatState.CHAT_SIMPLE
                         _uiState.update { it.copy(streamingStep = null) }
+                        val finalTrace = trace
+                        if (finalTrace?.hasTerminal == true) {
+                            finishActiveStream(stream)
+                            if (finalTrace.runStatus == TraceRunStatus.SUCCEEDED) {
+                                updateAssistantMessage(
+                                    assistantMessageId,
+                                    chatState,
+                                    ChatSessionState.IDLE,
+                                ) { msg ->
+                                    msg.copy(
+                                        content = msg.content.ifBlank { "任务已在服务端完成。" },
+                                        deliveryState = MessageDeliveryState.COMPLETED,
+                                        trace = finalTrace,
+                                        toolCalls = legacyToolCallsFor(finalTrace),
+                                        errorMessage = null,
+                                    )
+                                }
+                                _uiState.update {
+                                    it.copy(lastError = null, canRetry = false, canCancel = false)
+                                }
+                                _taskCompletionEvent.tryEmit(
+                                    TaskCompletionEvent(taskComplexity, success = true),
+                                )
+                            } else {
+                                onStreamError(
+                                    threadId = threadId,
+                                    assistantMessageId = assistantMessageId,
+                                    reason = event.message,
+                                    retryable = event.retryable,
+                                    chatState = chatState,
+                                    toolCalls = legacyToolCallsFor(finalTrace),
+                                    trace = finalTrace,
+                                )
+                                _taskCompletionEvent.tryEmit(
+                                    TaskCompletionEvent(taskComplexity, success = false),
+                                )
+                            }
+                            return@streamEvent
+                        }
                         // 如果没有任何 trace 事件到达，说明后端 Run 根本没启动。
                         // 此时取消后端 Run 毫无意义，直接进入 ERROR 状态让用户重试。
                         if (trace == null && !hasToolCalling) {
@@ -965,13 +1035,13 @@ class ChatViewModel(
         pendingCancellation = stream
         rawStreamContent.remove(stream.assistantMessageId)
         streamInvocationIds.remove(stream.assistantMessageId)
-        val waitingState = if (source == CancellationSource.TIMEOUT) {
+        val waitingState = if (source == CancellationSource.FRONTEND_TIMEOUT) {
             ChatSessionState.TIMEOUT_WAITING_CANCEL
         } else {
             ChatSessionState.CANCELLING
         }
         val waitingMessage = when (source) {
-            CancellationSource.TIMEOUT -> "响应超时，正在确认停止服务端任务。"
+            CancellationSource.FRONTEND_TIMEOUT -> "响应超时，正在确认停止服务端任务。"
             CancellationSource.APP_BACKGROUND -> "应用已转入后台，正在停止任务。"
             CancellationSource.STREAM_DISCONNECTED -> "连接中断，正在确认停止服务端任务。"
             CancellationSource.STREAM_ERROR -> "服务异常，正在确认停止服务端任务。"
@@ -997,17 +1067,22 @@ class ChatViewModel(
         }
         return viewModelScope.launch {
             val cancellation = runCatching {
-                chatProvider.cancelRun(stream.threadId, stream.runId)
+                chatProvider.cancelRun(stream.threadId, stream.runId, source.serverValue())
             }.getOrElse { error ->
                 AppEventLogger.warning(
                     "chat_cancel_request_failed",
                     "thread=${stream.threadId} run=${stream.runId} ${error.message ?: "unknown_error"}",
                 )
-                markBackendStillRunning(stream, chatState, trace, "取消请求未被服务端确认。")
+                markBackendStillRunning(stream, chatState, trace, "取消请求发送失败，请检查服务连接后重试。")
                 return@launch
             }
             if (!cancellation.accepted) {
-                markBackendStillRunning(stream, chatState, trace, "服务端未确认取消请求。")
+                markBackendStillRunning(
+                    stream,
+                    chatState,
+                    trace,
+                    cancellationRejectionMessage(cancellation),
+                )
                 return@launch
             }
             var backendStatus = cancellation.backendStatus
@@ -1096,8 +1171,10 @@ class ChatViewModel(
             }
 
             else -> {
-                val reason = serverMessage ?: if (backendStatus == "timeout") {
+                val reason = serverMessage ?: if (backendStatus == "timeout" || backendStatus == "server_timeout") {
                     "任务在服务端超时并已结束。"
+                } else if (backendStatus in locallyFencedBackendStatuses() && source == CancellationSource.FRONTEND_TIMEOUT) {
+                    "任务响应超时，本地已停止继续操作。"
                 } else {
                     "任务在服务端失败并已结束。"
                 }
@@ -1147,6 +1224,7 @@ class ChatViewModel(
             return
         }
         pendingCancellation = stream
+        cancellationJob = null
         updateAssistantMessage(stream.assistantMessageId, chatState, ChatSessionState.BACKEND_STILL_RUNNING) { message ->
             message.copy(
                 deliveryState = MessageDeliveryState.FAILED,
@@ -1176,11 +1254,27 @@ class ChatViewModel(
     private fun isTerminalBackendStatus(status: String): Boolean =
         status in setOf(
             "succeeded", "failed", "cancelled", "timeout",
+            "server_timeout",
+            "stream_closed",
+            "thread_busy",
+            "unknown_not_bound",
             // 服务端 safe_stream / cancel_mobile_run 返回的非运行中状态
             "not_started",           // upstream 从未启动 Run
             "cancel_unavailable",    // 无法联系上游 LangGraph
             "cancel_request_failed", // 取消请求被上游拒绝
         )
+
+    private fun locallyFencedBackendStatuses(): Set<String> = setOf(
+        "unknown_not_bound",
+        "stream_closed",
+        "not_started",
+    )
+
+    private fun cancellationRejectionMessage(cancellation: MobileRunCancellation): String =
+        when (cancellation.status) {
+            "not_found" -> "服务端未找到该任务，已停止本地等待。"
+            else -> "服务端拒绝取消请求：${cancellation.status}。"
+        }
 
     private fun finishActiveStream(
         stream: ActiveStream,
