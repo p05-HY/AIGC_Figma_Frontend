@@ -91,6 +91,52 @@ class AgentServerSafeSseTest {
     }
 
     @Test
+    fun streamRun_dispatchesInterleavedAssistantDeltaAndTraceInOrder() {
+        val payload = """
+            event: stream.started
+            data: {"type":"stream.started","runId":"run-1","threadId":"thread-1","message":"已接收请求，正在连接 Agent。","streamSeq":1}
+
+            event: assistant.delta
+            data: {"type":"assistant.delta","chunk":"北京","streamSeq":2}
+
+            event: trace.v1
+            data: {"type":"trace.v1","version":1,"runId":"run-1","eventId":"evt-1","seq":1,"event":"step.upsert","step":{"stepId":"weather-1","kind":"weather_query","title":"weather_query","summary":"正在查询北京天气","status":"running","visibleToUser":true},"streamSeq":3}
+
+            event: assistant.delta
+            data: {"type":"assistant.delta","chunk":"天气晴。","streamSeq":4}
+
+            event: trace.v1
+            data: {"type":"trace.v1","version":1,"runId":"run-1","eventId":"evt-2","seq":2,"event":"run.terminal","status":"succeeded","streamSeq":5}
+
+            event: stream.eof
+            data: {"type":"stream.eof","streamSeq":6}
+
+        """.trimIndent()
+
+        val events = streamEvents(payload.toResponseBody("text/event-stream".toMediaType()))
+
+        assertEquals(
+            listOf(
+                "started",
+                "delta:北京",
+                "trace",
+                "delta:天气晴。",
+                "trace",
+                "eof",
+            ),
+            events.map { event ->
+                when (event) {
+                    is ChatStreamEvent.StreamStarted -> "started"
+                    is ChatStreamEvent.TextDelta -> "delta:${event.chunk}"
+                    is ChatStreamEvent.Trace -> "trace"
+                    is ChatStreamEvent.StreamEof -> "eof"
+                    else -> "other"
+                }
+            },
+        )
+    }
+
+    @Test
     fun cancelAndStatus_useTheMobileFacadeAndParseBackendConfirmation() {
         val requests = mutableListOf<String>()
         var cancelBody = ""

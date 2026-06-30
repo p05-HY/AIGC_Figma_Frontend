@@ -2,6 +2,7 @@ package com.example.blueheartv.ui.components
 
 import com.example.blueheartv.model.TraceDetail
 import com.example.blueheartv.model.TraceDetailKind
+import com.example.blueheartv.model.TraceRunStatus
 import com.example.blueheartv.model.TraceStep
 import com.example.blueheartv.model.TraceStepStatus
 import org.junit.Assert.assertEquals
@@ -24,15 +25,15 @@ class TraceTimelineTest {
     }
 
     @Test
-    fun summaryPreview_isFourLinesUntilUserExpandsIt() {
-        assertEquals(4, traceSummaryMaxLines(expanded = false))
-        assertEquals(Int.MAX_VALUE, traceSummaryMaxLines(expanded = true))
+    fun summaryPreview_isTwoLinesUntilUserExpandsIt() {
+        assertEquals(2, traceSummaryMaxLines(expanded = false))
+        assertEquals(6, traceSummaryMaxLines(expanded = true))
     }
 
     @Test
-    fun detailPreview_isFourLinesUntilUserExpandsIt() {
-        assertEquals(4, traceDetailMaxLines(expanded = false))
-        assertEquals(Int.MAX_VALUE, traceDetailMaxLines(expanded = true))
+    fun detailPreview_isOneLineUntilUserExpandsIt() {
+        assertEquals(1, traceDetailMaxLines(expanded = false))
+        assertEquals(5, traceDetailMaxLines(expanded = true))
     }
 
     @Test
@@ -100,9 +101,77 @@ class TraceTimelineTest {
     @Test
     fun waitingForUserGuidance_makesManualResumeExplicit() {
         assertEquals(
-            "该操作需要你确认。我不会继续自动执行。请发送新消息说明继续、取消或换一种方式。",
+            "涉及发送、支付、授权或登录，需要你确认后继续。",
             waitingForUserGuidanceText(),
         )
+    }
+
+    @Test
+    fun waitingForUserStep_takesHeaderPriorityOverRunning() {
+        val trace = com.example.blueheartv.model.AssistantTrace(
+            runId = "run-1",
+            runStatus = TraceRunStatus.RUNNING,
+            steps = listOf(
+                traceStep(id = "running", title = "查询天气"),
+                traceStep(
+                    id = "approval",
+                    title = "等待你确认",
+                    parentId = null,
+                ).copy(status = TraceStepStatus.WAITING_FOR_USER),
+            ),
+        )
+
+        val status = effectiveTraceRunStatus(trace)
+
+        assertEquals(TraceRunStatus.WAITING_FOR_USER, status)
+        assertEquals("需要你确认", traceHeaderTitle(status))
+        assertEquals("等待确认", traceHeaderStatusText(status))
+    }
+
+    @Test
+    fun failedStep_takesHeaderPriorityOverWaiting() {
+        val trace = com.example.blueheartv.model.AssistantTrace(
+            runId = "run-1",
+            runStatus = TraceRunStatus.WAITING_FOR_USER,
+            steps = listOf(
+                traceStep(id = "approval", title = "等待你确认").copy(status = TraceStepStatus.WAITING_FOR_USER),
+                traceStep(id = "failed", title = "查询天气").copy(status = TraceStepStatus.FAILED),
+            ),
+        )
+
+        assertEquals(TraceRunStatus.FAILED, effectiveTraceRunStatus(trace))
+    }
+
+    @Test
+    fun copyMapper_mapsTechnicalToolsToUserFacingChinese() {
+        val step = traceStep(
+            id = "weather",
+            title = "weather_query",
+            parentId = null,
+        ).copy(kind = "life_service", summary = "")
+
+        assertEquals("查询天气", userFacingTraceTitle(step))
+        assertEquals("正在执行", userFacingTraceSummary(step))
+    }
+
+    @Test
+    fun internalDetailData_isHidden() {
+        val detail = TraceDetail(
+            id = "detail-raw",
+            kind = TraceDetailKind.TOOL_RESULT,
+            title = "Raw",
+            text = """{"tool_calls":[{"kwargs":{"api_key":"secret"}}]}""",
+        )
+
+        assertEquals(INTERNAL_TRACE_DATA_MESSAGE, userFacingDetailText(detail))
+    }
+
+    @Test
+    fun longSummary_isBoundedForCompactMobileLayout() {
+        val summary = "天气".repeat(180)
+        val step = traceStep(id = "long", title = "查询天气").copy(summary = summary)
+
+        assertTrue(userFacingTraceSummary(step).length <= 240)
     }
 
     private fun traceStep(

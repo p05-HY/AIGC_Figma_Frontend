@@ -21,7 +21,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -99,11 +98,12 @@ fun UserBubble(
     onEditConfirm: (String) -> Unit = {},
 ) {
     val bubbleShape = RoundedCornerShape(
-        topStart = 24.dp,
-        topEnd = 24.dp,
-        bottomStart = 24.dp,
-        bottomEnd = 10.dp,
+        topStart = 20.dp,
+        topEnd = 20.dp,
+        bottomStart = 20.dp,
+        bottomEnd = 6.dp,
     )
+    val colorScheme = MaterialTheme.colorScheme
 
     var showMenu by remember { mutableStateOf(false) }
     var isEditing by remember { mutableStateOf(false) }
@@ -145,14 +145,14 @@ fun UserBubble(
         verticalAlignment = Alignment.Bottom,
     ) {
         BoxWithConstraints {
-            val bubbleMaxWidth = (maxWidth * 0.78f).coerceIn(200.dp, 480.dp)
+            val bubbleMaxWidth = (maxWidth * 0.82f).coerceIn(200.dp, 480.dp)
             Column(horizontalAlignment = Alignment.End) {
                 Box {
                     Box(
                         modifier = Modifier
                             .widthIn(max = bubbleMaxWidth)
-                        .border(1.dp, BorderGray, bubbleShape)
-                        .background(SurfaceWhite, bubbleShape)
+                        .border(1.dp, colorScheme.outlineVariant.copy(alpha = 0.45f), bubbleShape)
+                        .background(colorScheme.primaryContainer.copy(alpha = 0.78f), bubbleShape)
                         .combinedClickable(
                             onClick = {},
                             onLongClick = { if (!isEditing) showMenu = true },
@@ -166,10 +166,10 @@ fun UserBubble(
                                 onValueChange = { editText = it },
                                 textStyle = TextStyle(
                                     fontSize = 16.sp,
-                                    color = TextDark,
+                                    color = colorScheme.onPrimaryContainer,
                                     lineHeight = 24.sp,
                                 ),
-                                cursorBrush = SolidColor(BlueAccent),
+                                cursorBrush = SolidColor(colorScheme.primary),
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .focusRequester(focusRequester),
@@ -213,7 +213,7 @@ fun UserBubble(
                             Text(
                                 text = message.content,
                                 fontSize = 16.sp,
-                                color = TextDark,
+                                color = colorScheme.onPrimaryContainer,
                                 lineHeight = 24.sp,
                             )
                         }
@@ -221,7 +221,7 @@ fun UserBubble(
                         Text(
                             text = message.content,
                             fontSize = 16.sp,
-                            color = TextDark,
+                            color = colorScheme.onPrimaryContainer,
                             lineHeight = 24.sp,
                         )
                     }
@@ -286,11 +286,12 @@ fun AiBubble(
     onDelete: (String) -> Unit = {},
 ) {
     val bubbleShape = RoundedCornerShape(
-        topStart = 24.dp,
-        topEnd = 24.dp,
-        bottomStart = 10.dp,
-        bottomEnd = 24.dp,
+        topStart = 20.dp,
+        topEnd = 20.dp,
+        bottomStart = 6.dp,
+        bottomEnd = 20.dp,
     )
+    val colorScheme = MaterialTheme.colorScheme
 
     var showMenu by remember { mutableStateOf(false) }
     var enableTextSelection by remember { mutableStateOf(false) }
@@ -342,14 +343,14 @@ fun AiBubble(
         Spacer(modifier = Modifier.width(8.dp))
 
         BoxWithConstraints {
-            val bubbleMaxWidth = (maxWidth * 0.85f).coerceIn(220.dp, 560.dp)
+            val bubbleMaxWidth = (maxWidth * 0.88f).coerceIn(220.dp, 560.dp)
             Column {
                 Box {
                     Box(
                         modifier = Modifier
                             .widthIn(max = bubbleMaxWidth)
-                        .shadow(2.dp, bubbleShape)
-                        .background(LightGray, bubbleShape)
+                        .border(1.dp, colorScheme.outlineVariant.copy(alpha = 0.36f), bubbleShape)
+                        .background(colorScheme.surfaceContainerLow.copy(alpha = 0.92f), bubbleShape)
                         .combinedClickable(
                             onClick = {},
                             onLongClick = {
@@ -362,30 +363,45 @@ fun AiBubble(
                         LoadingDots()
                     } else {
                         val isStreaming = message.deliveryState == com.example.blueheartv.model.MessageDeliveryState.STREAMING
+                        val traceVisible = BuildConfig.TRACE_V1_RENDER_ENABLED && message.trace != null
+                        val shouldShowAssistantText = message.content.isNotBlank() || !traceVisible
                         val displayText = rememberTypewriterText(
-                            message.content.ifBlank {
-                                when (message.deliveryState) {
-                                    com.example.blueheartv.model.MessageDeliveryState.STREAMING -> "正在处理..."
-                                    com.example.blueheartv.model.MessageDeliveryState.FAILED -> "响应失败，请重试"
-                                    else -> message.trace?.summary ?: "已收到回复"
+                            if (shouldShowAssistantText) {
+                                message.content.ifBlank {
+                                    when (message.deliveryState) {
+                                        com.example.blueheartv.model.MessageDeliveryState.STREAMING -> "Echo 正在输入..."
+                                        com.example.blueheartv.model.MessageDeliveryState.FAILED -> "响应失败，请重试"
+                                        else -> message.trace?.summary ?: "已收到回复"
+                                    }
                                 }
+                            } else {
+                                ""
                             },
                             isStreaming,
                         )
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            val traceVisible = BuildConfig.TRACE_V1_RENDER_ENABLED && message.trace != null
                             if (traceVisible) {
                                 TraceTimeline(trace = requireNotNull(message.trace))
                             }
                             message.toolCalls?.takeIf { it.isNotEmpty() && !traceVisible }?.let { toolCalls ->
                                 ToolCallCard(toolCalls = toolCalls)
                             }
-                            if (enableTextSelection) {
-                                SelectionContainer {
+                            if (shouldShowAssistantText && displayText.isNotBlank()) {
+                                if (enableTextSelection) {
+                                    SelectionContainer {
+                                        MarkdownMessageContent(content = displayText)
+                                    }
+                                } else {
                                     MarkdownMessageContent(content = displayText)
                                 }
-                            } else {
-                                MarkdownMessageContent(content = displayText)
+                            }
+                            if (isStreaming && message.content.isNotBlank()) {
+                                Text(
+                                    text = "Echo 正在输入...",
+                                    color = colorScheme.onSurfaceVariant,
+                                    fontSize = 12.sp,
+                                    lineHeight = 16.sp,
+                                )
                             }
                         }
                     }

@@ -13,6 +13,19 @@ import org.junit.Test
 class SafeTraceStreamTest {
 
     @Test
+    fun runStarted_isParsedAsTraceEvent() {
+        val event = parseSafeStreamEvent(
+            "trace.v1",
+            """{"type":"trace.v1","version":1,"runId":"run-1","threadId":"thread-1","eventId":"evt-start","seq":1,"event":"run.started","summary":"已接收请求，正在连接 Agent。"}""",
+        ) as ChatStreamEvent.Trace
+
+        val started = event.event as TraceEvent.RunStarted
+        assertEquals("run-1", started.runId)
+        assertEquals("thread-1", started.threadId)
+        assertEquals("已接收请求，正在连接 Agent。", started.summary)
+    }
+
+    @Test
     fun traceStep_usesOnlyWhitelistedSafeFields() {
         val event = parseSafeStreamEvent(
             eventName = "trace.v1",
@@ -45,6 +58,26 @@ class SafeTraceStreamTest {
         assertEquals("run-1", traceEvent.runId)
         assertEquals(TraceStepStatus.RUNNING, traceEvent.step.status)
         assertFalse(traceEvent.step.summary.contains("secret"))
+    }
+
+    @Test
+    fun assistantDeltaWithThinkIsRejected() {
+        val event = parseSafeStreamEvent(
+            "assistant.delta",
+            """{"type":"assistant.delta","chunk":"<think>hidden</think> final","streamSeq":2}""",
+        )
+
+        assertNull(event)
+    }
+
+    @Test
+    fun unknownSafeFacadeEventIsRejected() {
+        val event = parseSafeStreamEvent(
+            "trace.v1",
+            """{"type":"trace.v1","version":1,"runId":"run-1","eventId":"evt-unknown","seq":1,"event":"raw.langgraph","payload":{}}""",
+        )
+
+        assertNull(event)
     }
 
     @Test
