@@ -44,4 +44,39 @@ class ConversationGroupingTest {
 
         assertEquals("2025-01-15 13:26", text)
     }
+
+    @Test
+    fun chatListEntries_useStableKeysForHeadersAndMessages() {
+        val messages = listOf(
+            Message(id = "user-1", content = "你好", isUser = true, timestamp = 1_000L),
+            Message(id = "assistant-1", content = "你好呀", isUser = false, timestamp = 1_500L),
+        )
+
+        val entries = chatListEntries(groupConversationMessages(messages))
+
+        assertEquals(
+            listOf(
+                "header-conversation-user-1",
+                "message-user-1",
+                "message-assistant-1",
+            ),
+            entries.map { it.key },
+        )
+    }
+
+    @Test
+    fun shouldAutoFollowChatScroll_onlyWhenUserIsNearBottom() {
+        assertEquals(true, shouldAutoFollowChatScroll(lastVisibleIndex = -1, totalItems = 0))
+        assertEquals(true, shouldAutoFollowChatScroll(lastVisibleIndex = 7, totalItems = 10))
+        assertEquals(false, shouldAutoFollowChatScroll(lastVisibleIndex = 4, totalItems = 10))
+    }
+
+    @Test
+    fun streamingScrollBucket_throttlesContentLengthChanges() {
+        assertEquals(0, streamingScrollBucket(contentLength = 0))
+        assertEquals(0, streamingScrollBucket(contentLength = 239))
+        assertEquals(1, streamingScrollBucket(contentLength = 240))
+        assertEquals(1, streamingScrollBucket(contentLength = 479))
+        assertEquals(2, streamingScrollBucket(contentLength = 480))
+    }
 }

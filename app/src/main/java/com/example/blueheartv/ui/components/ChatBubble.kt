@@ -53,39 +53,12 @@ import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 import kotlin.time.Duration.Companion.milliseconds
 
-private const val TYPEWRITER_DELAY_MS = 35L
+internal fun streamingDisplayText(fullText: String, isStreaming: Boolean): String =
+    if (isStreaming) fullText else fullText
 
 @Composable
 fun rememberTypewriterText(fullText: String, isStreaming: Boolean): String {
-    var displayedLength by remember { mutableIntStateOf(0) }
-    val currentFullText by rememberUpdatedState(fullText)
-
-    LaunchedEffect(isStreaming) {
-        if (!isStreaming) {
-            displayedLength = currentFullText.length
-            return@LaunchedEffect
-        }
-        while (displayedLength < currentFullText.length) {
-            delay(TYPEWRITER_DELAY_MS.milliseconds)
-            val target = currentFullText.length
-            if (displayedLength < target) {
-                displayedLength++
-            }
-        }
-    }
-
-    LaunchedEffect(fullText) {
-        if (isStreaming && displayedLength < fullText.length) {
-            while (displayedLength < fullText.length) {
-                delay(TYPEWRITER_DELAY_MS.milliseconds)
-                displayedLength++
-            }
-        } else if (!isStreaming) {
-            displayedLength = fullText.length
-        }
-    }
-
-    return if (displayedLength >= fullText.length) fullText else fullText.substring(0, displayedLength)
+    return streamingDisplayText(fullText, isStreaming)
 }
 
 @OptIn(ExperimentalFoundationApi::class)

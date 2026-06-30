@@ -144,8 +144,7 @@ class ChatViewModel(
     private var pendingCancellation: ActiveStream? = null
     private var cancellationJob: Job? = null
     private var cancelAttemptCount: Int = 0
-    private val rawStreamContent = mutableMapOf<String, String>()
-    private val streamInvocationIds = mutableMapOf<String, String>()
+    private val streamTextAccumulator = StreamTextAccumulator()
 
     init {
         restoreSessions()
@@ -414,8 +413,7 @@ class ChatViewModel(
         val pending = pendingUndoMutation ?: return false
         if (pending.token != token) return false
         stopActiveRun(markAssistantCancelled = false)
-        rawStreamContent.clear()
-        streamInvocationIds.clear()
+        streamTextAccumulator.clearAll()
         pendingUndoMutation = null
         return restoreUndoSnapshot(pending.snapshot)
     }
@@ -588,6 +586,7 @@ class ChatViewModel(
                             assistantMessageId,
                             if (hasToolCalling) ChatState.CHAT_TOOL_CALLING else ChatState.CHAT_SIMPLE,
                             ChatSessionState.RESPONDING,
+                            refreshHistories = false,
                         ) { msg ->
                             msg.copy(
                                 deliveryState = MessageDeliveryState.STREAMING,
@@ -610,6 +609,7 @@ class ChatViewModel(
                             assistantMessageId,
                             ChatState.CHAT_TOOL_CALLING,
                             ChatSessionState.RESPONDING,
+                            refreshHistories = false,
                         ) { msg ->
                             msg.copy(
                                 deliveryState = MessageDeliveryState.STREAMING,
@@ -666,6 +666,7 @@ class ChatViewModel(
                             assistantMessageId,
                             ChatState.CHAT_TOOL_CALLING,
                             ChatSessionState.RESPONDING,
+                            refreshHistories = false,
                         ) { msg ->
                             msg.copy(
                                 deliveryState = MessageDeliveryState.STREAMING,
@@ -675,18 +676,17 @@ class ChatViewModel(
                     }
 
                     is ChatStreamEvent.TextDelta -> {
-                        val invocationId = event.invocationId ?: assistantMessageId
-                        if (streamInvocationIds[assistantMessageId] != invocationId) {
-                            streamInvocationIds[assistantMessageId] = invocationId
-                            rawStreamContent[assistantMessageId] = ""
-                        }
-                        val raw = (rawStreamContent[assistantMessageId] ?: "") + event.chunk
-                        rawStreamContent[assistantMessageId] = raw
+                        val raw = streamTextAccumulator.append(
+                            messageId = assistantMessageId,
+                            invocationId = event.invocationId,
+                            chunk = event.chunk,
+                        )
                         val chatState = if (hasToolCalling) ChatState.CHAT_TOOL_CALLING else ChatState.CHAT_SIMPLE
                         updateAssistantMessage(
                             assistantMessageId,
                             chatState,
                             ChatSessionState.RESPONDING,
+                            refreshHistories = false,
                         ) { msg ->
                             msg.copy(
                                 content = raw,
@@ -698,9 +698,8 @@ class ChatViewModel(
                     }
 
                     ChatStreamEvent.Completed -> {
+                        val raw = streamTextAccumulator.take(assistantMessageId)
                         finishActiveStream(stream)
-                        val raw = rawStreamContent.remove(assistantMessageId) ?: ""
-                        streamInvocationIds.remove(assistantMessageId)
                         val chatState = if (hasToolCalling) ChatState.CHAT_TOOL_CALLING else ChatState.CHAT_SIMPLE
                         trace?.let { repo.persistTrace(assistantMessageId, it) }
                         _uiState.update { it.copy(streamingStep = null) }
@@ -730,9 +729,8 @@ class ChatViewModel(
                         }
                         when {
                             finalTrace == null -> {
+                                val raw = streamTextAccumulator.take(assistantMessageId)
                                 finishActiveStream(stream)
-                                val raw = rawStreamContent.remove(assistantMessageId) ?: ""
-                                streamInvocationIds.remove(assistantMessageId)
                                 val chatState = if (hasToolCalling) ChatState.CHAT_TOOL_CALLING else ChatState.CHAT_SIMPLE
                                 if (raw.isBlank() && hasToolCalling) {
                                     onStreamError(
@@ -1015,8 +1013,7 @@ class ChatViewModel(
         // activeStream 继续存活，用于接收后端 terminal 事件
         // streamJob 继续运行，直到后端发来 terminal 或 EOF
         pendingCancellation = stream
-        rawStreamContent.remove(stream.assistantMessageId)
-        streamInvocationIds.remove(stream.assistantMessageId)
+        streamTextAccumulator.clear(stream.assistantMessageId)
         val waitingState = ChatSessionState.CANCELLING
         val waitingMessage = when (source) {
             CancellationSource.APP_BACKGROUND -> "应用已转入后台，正在停止任务。"
@@ -1274,6 +1271,7 @@ class ChatViewModel(
             cleared = true
         }
         if (cleared) {
+            streamTextAccumulator.clear(stream.assistantMessageId)
             _uiState.update { it.copy(canCancel = false) }
         }
     }
@@ -1307,6 +1305,7 @@ class ChatViewModel(
         assistantMessageId: String,
         chatState: ChatState,
         sessionState: ChatSessionState,
+        refreshHistories: Boolean = true,
         transform: (Message) -> Message,
     ) {
         val active = repo.updateMessage(assistantMessageId, transform) ?: return
@@ -1316,7 +1315,7 @@ class ChatViewModel(
                 chatState = chatState,
                 sessionState = sessionState,
                 messages = active.messages.toList(),
-                histories = repo.buildHistories(),
+                histories = if (refreshHistories) repo.buildHistories() else state.histories,
             )
         }
     }

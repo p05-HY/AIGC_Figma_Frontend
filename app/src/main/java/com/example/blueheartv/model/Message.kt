@@ -13,7 +13,7 @@ data class Message(
     val isUser: Boolean,
     val deliveryState: MessageDeliveryState = MessageDeliveryState.COMPLETED,
     val toolCalls: List<ToolCall>? = null,
-    /** 仅存在于当前内存消息中；MVP 不写入 Room。 */
+    /** 安全 Agent Trace；通过 Room 的 traceJson 字段持久化，恢复会话时可还原。 */
     val trace: AssistantTrace? = null,
     val errorMessage: String? = null,
     val timestamp: Long = System.currentTimeMillis(),

@@ -16,6 +16,7 @@ import com.example.blueheartv.model.TraceStep
 import com.example.blueheartv.model.TraceStepStatus
 import com.example.blueheartv.test.MainDispatcherRule
 import com.example.blueheartv.voice.InputMode
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -800,6 +801,34 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun manyStreamingDeltas_updateContentWithoutPersistingEveryChunk() = runTest {
+        val dao = FakeChatDao()
+        val store = ChatSessionStore(dao)
+        val provider = ScriptedProvider { _, _, onEvent ->
+            repeat(100) { index ->
+                onEvent(ChatStreamEvent.TextDelta("$index,", invocationId = "model-final"))
+            }
+            onEvent(ChatStreamEvent.Completed)
+        }
+        val viewModel = createViewModel(
+            chatProvider = provider,
+            store = store,
+            persistScope = this,
+        )
+        advanceUntilIdle()
+
+        viewModel.onInputChanged("stream")
+        viewModel.sendMessage()
+        advanceUntilIdle()
+
+        assertEquals((0 until 100).joinToString(separator = "") { "$it," }, viewModel.uiState.value.messages.last().content)
+        assertTrue(
+            "streaming chunks must not trigger one Room replace per delta",
+            dao.replaceMessagesCalls < 10,
+        )
+    }
+
+    @Test
     fun restoreSessions_loadsRemoteThreads() = runTest {
         val provider = ScriptedProvider(
             remoteThreads = listOf(
@@ -856,10 +885,14 @@ class ChatViewModelTest {
         chatProvider: ChatProvider = ScriptedProvider(),
         timeProvider: () -> Long = { System.currentTimeMillis() },
         traceRenderEnabled: Boolean = false,
+        store: ChatSessionStore? = null,
+        persistScope: CoroutineScope? = null,
     ): ChatViewModel {
         val repo = ChatSessionRepository(
             timeProvider = timeProvider,
             idProvider = { "id-${System.nanoTime()}" },
+            store = store,
+            persistScope = persistScope,
         )
         return ChatViewModel(
             chatProvider = chatProvider,

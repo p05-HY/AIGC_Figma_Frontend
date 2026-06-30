@@ -22,6 +22,23 @@ internal data class ConversationGroup(
     val messages: List<Message>,
 )
 
+internal sealed interface ChatListEntry {
+    val key: String
+
+    data class Header(
+        val groupId: String,
+        val timestamp: Long,
+    ) : ChatListEntry {
+        override val key: String = "header-$groupId"
+    }
+
+    data class MessageItem(
+        val message: Message,
+    ) : ChatListEntry {
+        override val key: String = "message-${message.id}"
+    }
+}
+
 private data class MutableConversationGroup(
     val id: String,
     val timestamp: Long,
@@ -51,6 +68,28 @@ internal fun groupConversationMessages(messages: List<Message>): List<Conversati
         )
     }
 }
+
+internal fun chatListEntries(groups: List<ConversationGroup>): List<ChatListEntry> =
+    buildList {
+        groups.forEach { group ->
+            add(ChatListEntry.Header(group.id, group.timestamp))
+            group.messages.forEach { message ->
+                add(ChatListEntry.MessageItem(message))
+            }
+        }
+    }
+
+internal fun shouldAutoFollowChatScroll(
+    lastVisibleIndex: Int,
+    totalItems: Int,
+    thresholdItems: Int = 3,
+): Boolean {
+    if (totalItems <= 0) return true
+    return lastVisibleIndex >= totalItems - thresholdItems
+}
+
+internal fun streamingScrollBucket(contentLength: Int, bucketSize: Int = 240): Int =
+    if (contentLength <= 0) 0 else contentLength / bucketSize
 
 internal fun formatConversationTimestamp(
     timestamp: Long,

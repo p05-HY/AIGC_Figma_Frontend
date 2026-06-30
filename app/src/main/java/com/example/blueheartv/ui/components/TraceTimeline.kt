@@ -27,6 +27,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -87,11 +88,13 @@ fun AgentTraceCard(
             }
         } else {
             layouts.forEach { layout ->
-                TraceStepCard(
-                    step = layout.step,
-                    depth = layout.depth,
-                    defaultExpanded = defaultTraceStepExpanded(layout.step.status),
-                )
+                key(layout.step.id) {
+                    TraceStepCard(
+                        step = layout.step,
+                        depth = layout.depth,
+                        defaultExpanded = defaultTraceStepExpanded(layout.step.status),
+                    )
+                }
             }
         }
     }
@@ -348,6 +351,20 @@ fun StreamingThinkingIndicator() {
             )
         }
     }
+}
+
+@Composable
+private fun ExpandableTraceText(text: String, stateKey: String) {
+    var expanded by rememberSaveable(stateKey) { mutableStateOf(false) }
+    Text(
+        text = text,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        fontSize = 12.sp,
+        lineHeight = 17.sp,
+        maxLines = traceSummaryMaxLines(expanded),
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.clickable { expanded = !expanded },
+    )
 }
 
 @Composable

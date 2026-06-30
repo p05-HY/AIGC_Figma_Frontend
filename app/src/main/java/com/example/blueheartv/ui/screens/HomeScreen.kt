@@ -35,6 +35,7 @@ import com.example.blueheartv.viewmodel.ChatState
 import com.example.blueheartv.viewmodel.ChatViewModel
 import com.example.blueheartv.viewmodel.HomeUiState
 import com.example.blueheartv.voice.VoiceRecordingState
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
@@ -80,21 +81,30 @@ fun HomeScreen(
         viewModel.navigateToSettings.collect { onNavigateToSettings() }
     }
 
-    val conversationGroupCount = remember(uiState.messages) {
-        groupConversationMessages(uiState.messages).size
+    val chatEntries = remember(uiState.messages) {
+        chatListEntries(groupConversationMessages(uiState.messages))
     }
-
-    val shouldAutoScroll by remember(conversationGroupCount, uiState.sessionState) {
-        derivedStateOf {
-            val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
-            val total = conversationGroupCount
-            total == 0 || lastVisible >= total - 3
+    val chatEntryCount = chatEntries.size
+    val lastMessage = uiState.messages.lastOrNull()
+    val streamingScrollTick = remember(lastMessage?.id, lastMessage?.content?.length, uiState.sessionState) {
+        if (uiState.sessionState == ChatSessionState.RESPONDING) {
+            streamingScrollBucket(lastMessage?.content?.length ?: 0)
+        } else {
+            0
         }
     }
 
-    LaunchedEffect(conversationGroupCount, uiState.messages.lastOrNull()?.content?.length, uiState.sessionState) {
-        if (conversationGroupCount > 0 && shouldAutoScroll) {
-            listState.scrollToItem(conversationGroupCount - 1)
+    val shouldAutoScroll by remember(chatEntryCount, uiState.sessionState) {
+        derivedStateOf {
+            val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+            shouldAutoFollowChatScroll(lastVisibleIndex = lastVisible, totalItems = chatEntryCount)
+        }
+    }
+
+    LaunchedEffect(chatEntryCount, lastMessage?.id, uiState.sessionState, streamingScrollTick) {
+        if (chatEntryCount > 0 && shouldAutoScroll) {
+            delay(80)
+            listState.scrollToItem(chatEntryCount - 1)
         }
     }
 
@@ -122,7 +132,7 @@ fun HomeScreen(
                     ChatState.CHAT_SIMPLE,
                     ChatState.CHAT_TOOL_CALLING,
                         -> ChatContent(
-                        uiState = uiState,
+                        chatEntries = chatEntries,
                         listState = listState,
                         onRefresh = { viewModel.retryLastMessage() },
                         onCopy = { actions.copyToClipboard(it) },
@@ -149,8 +159,8 @@ fun HomeScreen(
                     SmallFloatingActionButton(
                         onClick = {
                             scope.launch {
-                                if (conversationGroupCount > 0) {
-                                    listState.animateScrollToItem(conversationGroupCount - 1)
+                                if (chatEntryCount > 0) {
+                                    listState.animateScrollToItem(chatEntryCount - 1)
                                 }
                             }
                         },
@@ -413,7 +423,7 @@ private fun DefaultContent(uiState: HomeUiState, viewModel: ChatViewModel) {
 
 @Composable
 private fun ChatContent(
-    uiState: HomeUiState,
+    chatEntries: List<ChatListEntry>,
     listState: LazyListState,
     onRefresh: () -> Unit = {},
     onCopy: (String) -> Unit = {},
@@ -430,12 +440,11 @@ private fun ChatContent(
         contentPadding = PaddingValues(vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        val conversationGroups = groupConversationMessages(uiState.messages)
-        items(conversationGroups, key = { it.id }) { group ->
-            Column {
-                ConversationTimestampHeader(timestamp = group.timestamp)
-                Spacer(modifier = Modifier.height(8.dp))
-                group.messages.forEach { message ->
+        items(chatEntries, key = { it.key }) { entry ->
+            when (entry) {
+                is ChatListEntry.Header -> ConversationTimestampHeader(timestamp = entry.timestamp)
+                is ChatListEntry.MessageItem -> {
+                    val message = entry.message
                     if (message.isUser) {
                         UserBubble(
                             message = message,
