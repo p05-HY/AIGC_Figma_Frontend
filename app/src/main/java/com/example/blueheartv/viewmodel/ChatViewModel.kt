@@ -467,7 +467,6 @@ class ChatViewModel(
         if (prompt.isBlank() && attachments.isEmpty()) return false
         if (_uiState.value.sessionState in setOf(
                 ChatSessionState.RESPONDING,
-                ChatSessionState.TIMEOUT_WAITING_CANCEL,
                 ChatSessionState.CANCELLING,
                 ChatSessionState.BACKEND_STILL_RUNNING,
             )

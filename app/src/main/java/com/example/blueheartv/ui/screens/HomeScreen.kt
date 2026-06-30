@@ -181,7 +181,6 @@ fun HomeScreen(
             }
             if (uiState.sessionState in setOf(
                     ChatSessionState.CANCELLING,
-                    ChatSessionState.TIMEOUT_WAITING_CANCEL,
                     ChatSessionState.BACKEND_STILL_RUNNING,
                 )
             ) {
