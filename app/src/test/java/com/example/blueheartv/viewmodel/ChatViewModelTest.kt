@@ -304,7 +304,7 @@ class ChatViewModelTest {
     }
 
     @Test
-    fun streamStarted_updatesTemporaryPlaceholderOnly() = runTest {
+    fun streamStarted_initializesTraceCardImmediately() = runTest {
         val provider = ScriptedProvider { _, _, onEvent ->
             onEvent(
                 ChatStreamEvent.StreamStarted(
@@ -326,7 +326,8 @@ class ChatViewModelTest {
         val assistant = uiState.messages.last()
         assertEquals("已接收请求，正在连接 Agent。", uiState.streamingStep)
         assertEquals("", assistant.content)
-        assertNull(assistant.trace)
+        assertEquals("run-1", assistant.trace?.runId)
+        assertEquals("已接收请求，正在连接 Agent。", assistant.trace?.summary)
         assertNull(assistant.toolCalls)
         assertEquals(MessageDeliveryState.STREAMING, assistant.deliveryState)
 
@@ -386,6 +387,71 @@ class ChatViewModelTest {
         assertNull(assistant.toolCalls)
         assertEquals(MessageDeliveryState.COMPLETED, assistant.deliveryState)
         assertFalse(viewModel.uiState.value.canCancel)
+    }
+
+    @Test
+    fun interleavedTextDeltaAndTrace_updateSameAssistantMessageInRealTime() = runTest {
+        lateinit var push: (ChatStreamEvent) -> Unit
+        val provider = ScriptedProvider { _, _, onEvent ->
+            push = onEvent
+            awaitCancellation()
+        }
+        val viewModel = createViewModel(chatProvider = provider, traceRenderEnabled = true)
+        advanceUntilIdle()
+
+        viewModel.onInputChanged("查北京天气")
+        viewModel.sendMessage()
+        runCurrent()
+
+        push(
+            ChatStreamEvent.StreamStarted(
+                runId = "run-1",
+                threadId = "thread-1",
+                message = "已接收请求，正在连接 Agent。",
+                streamSeq = 1,
+            ),
+        )
+        runCurrent()
+        var assistant = viewModel.uiState.value.messages.last()
+        assertEquals("", assistant.content)
+        assertEquals("run-1", assistant.trace?.runId)
+
+        push(ChatStreamEvent.TextDelta("北京"))
+        runCurrent()
+        assistant = viewModel.uiState.value.messages.last()
+        assertEquals("北京", assistant.content)
+        assertEquals("run-1", assistant.trace?.runId)
+
+        push(
+            ChatStreamEvent.Trace(
+                TraceEvent.StepUpsert(
+                    runId = "run-1",
+                    eventId = "evt-1",
+                    seq = 1,
+                    step = TraceStep(
+                        id = "weather-1",
+                        kind = "weather_query",
+                        title = "weather_query",
+                        summary = "正在查询北京天气",
+                        status = TraceStepStatus.RUNNING,
+                    ),
+                ),
+                streamSeq = 3,
+            ),
+        )
+        runCurrent()
+        assistant = viewModel.uiState.value.messages.last()
+        assertEquals("北京", assistant.content)
+        assertEquals("weather-1", assistant.trace?.steps?.single()?.id)
+
+        push(ChatStreamEvent.TextDelta("天气晴。"))
+        runCurrent()
+        assistant = viewModel.uiState.value.messages.last()
+        assertEquals("北京天气晴。", assistant.content)
+        assertEquals("weather-1", assistant.trace?.steps?.single()?.id)
+
+        viewModel.cancelActiveRun()
+        advanceUntilIdle()
     }
 
     @Test

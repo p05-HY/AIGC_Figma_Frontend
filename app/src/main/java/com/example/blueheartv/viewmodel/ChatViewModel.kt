@@ -578,6 +578,11 @@ class ChatViewModel(
                     is ChatStreamEvent.StreamStarted -> {
                         stream.runId = event.runId
                         val message = event.message.ifBlank { "已接收请求，正在连接 Agent。" }
+                        trace = trace ?: AssistantTrace(
+                            runId = event.runId,
+                            threadId = event.threadId,
+                            summary = message,
+                        )
                         _uiState.update { it.copy(streamingStep = message) }
                         updateAssistantMessage(
                             assistantMessageId,
@@ -586,6 +591,8 @@ class ChatViewModel(
                         ) { msg ->
                             msg.copy(
                                 deliveryState = MessageDeliveryState.STREAMING,
+                                trace = trace,
+                                toolCalls = legacyToolCallsFor(),
                                 errorMessage = null,
                             )
                         }
