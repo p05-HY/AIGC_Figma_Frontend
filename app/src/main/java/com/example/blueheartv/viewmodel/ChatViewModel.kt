@@ -36,7 +36,6 @@ enum class ChatState {
 enum class ChatSessionState {
     IDLE,
     RESPONDING,
-    TIMEOUT_WAITING_CANCEL,
     CANCELLING,
     CANCELLED,
     BACKEND_STILL_RUNNING,
@@ -83,7 +82,6 @@ data class HomeUiState(
 )
 
 private const val SEND_DEBOUNCE_MS = 500L
-private const val STREAMING_TIMEOUT_MS = 180_000L
 private const val CANCEL_STATUS_POLL_INTERVAL_MS = 500L
 private const val CANCEL_STATUS_MAX_POLLS = 20
 
@@ -102,7 +100,6 @@ private data class ActiveStream(
 
 private enum class CancellationSource {
     USER,
-    FRONTEND_TIMEOUT,
     STREAM_DISCONNECTED,
     STREAM_ERROR,
     APP_BACKGROUND,
@@ -111,7 +108,6 @@ private enum class CancellationSource {
 
 private fun CancellationSource.serverValue(): String = when (this) {
     CancellationSource.USER -> "user"
-    CancellationSource.FRONTEND_TIMEOUT -> "frontend_timeout"
     CancellationSource.STREAM_DISCONNECTED -> "client_disconnected"
     CancellationSource.STREAM_ERROR -> "stream_error"
     CancellationSource.APP_BACKGROUND -> "client_disconnected"
@@ -572,27 +568,6 @@ class ChatViewModel(
                 toolCallStatus.toToolCallListOrNull()
             }
 
-        // 流式空闲超时检测：服务端 safe-stream heartbeat 会刷新 lastEventAt。
-        var lastEventAt = repo.now()
-        var timeoutRunning = true
-        val timeoutJob = viewModelScope.launch {
-            while (timeoutRunning) {
-                delay(5_000)
-                if (!timeoutRunning) return@launch
-                if (repo.now() - lastEventAt > STREAMING_TIMEOUT_MS) {
-                    timeoutRunning = false
-                    requestRunCancellation(
-                        stream = stream,
-                        source = CancellationSource.FRONTEND_TIMEOUT,
-                        trace = trace,
-                        chatState = if (hasToolCalling) ChatState.CHAT_TOOL_CALLING else ChatState.CHAT_SIMPLE,
-                        taskComplexity = taskComplexity,
-                    )
-                    return@launch
-                }
-            }
-        }
-
         try {
             chatProvider.streamReplyWithRun(
                 threadId = threadId,
@@ -600,7 +575,6 @@ class ChatViewModel(
                 runId = stream.runId,
                 onEvent = streamEvent@ { event ->
                 if (activeStream !== stream && pendingCancellation !== stream) return@streamEvent
-                lastEventAt = repo.now()
                 when (event) {
                     is ChatStreamEvent.StreamStarted -> {
                         stream.runId = event.runId
@@ -718,7 +692,6 @@ class ChatViewModel(
                     }
 
                     ChatStreamEvent.Completed -> {
-                        timeoutJob.cancel()
                         finishActiveStream(stream)
                         val raw = rawStreamContent.remove(assistantMessageId) ?: ""
                         streamInvocationIds.remove(assistantMessageId)
@@ -744,7 +717,6 @@ class ChatViewModel(
                     }
 
                     is ChatStreamEvent.StreamEof -> {
-                        timeoutJob.cancel()
                         _uiState.update { it.copy(streamingStep = null) }
                         val finalTrace = trace
                         if (finalTrace?.hasTerminal == true) {
@@ -869,7 +841,6 @@ class ChatViewModel(
                     }
 
                     is ChatStreamEvent.Error -> {
-                        timeoutJob.cancel()
                         val chatState = if (hasToolCalling) ChatState.CHAT_TOOL_CALLING else ChatState.CHAT_SIMPLE
                         _uiState.update { it.copy(streamingStep = null) }
                         val finalTrace = trace
@@ -943,10 +914,8 @@ class ChatViewModel(
             },
             )
         } catch (cancelled: CancellationException) {
-            timeoutJob.cancel()
             throw cancelled
         } catch (error: Exception) {
-            timeoutJob.cancel()
             AppEventLogger.error(
                 "chat_stream_exception",
                 "thread=$threadId assistantMessage=$assistantMessageId ${error.message ?: "unknown_error"}",
@@ -1042,13 +1011,8 @@ class ChatViewModel(
         pendingCancellation = stream
         rawStreamContent.remove(stream.assistantMessageId)
         streamInvocationIds.remove(stream.assistantMessageId)
-        val waitingState = if (source == CancellationSource.FRONTEND_TIMEOUT) {
-            ChatSessionState.TIMEOUT_WAITING_CANCEL
-        } else {
-            ChatSessionState.CANCELLING
-        }
+        val waitingState = ChatSessionState.CANCELLING
         val waitingMessage = when (source) {
-            CancellationSource.FRONTEND_TIMEOUT -> "响应超时，正在确认停止服务端任务。"
             CancellationSource.APP_BACKGROUND -> "应用已转入后台，正在停止任务。"
             CancellationSource.STREAM_DISCONNECTED -> "连接中断，正在确认停止服务端任务。"
             CancellationSource.STREAM_ERROR -> "服务异常，正在确认停止服务端任务。"
@@ -1180,8 +1144,6 @@ class ChatViewModel(
             else -> {
                 val reason = serverMessage ?: if (backendStatus == "timeout" || backendStatus == "server_timeout") {
                     "任务在服务端超时并已结束。"
-                } else if (backendStatus in locallyFencedBackendStatuses() && source == CancellationSource.FRONTEND_TIMEOUT) {
-                    "任务响应超时，本地已停止继续操作。"
                 } else {
                     "任务在服务端失败并已结束。"
                 }

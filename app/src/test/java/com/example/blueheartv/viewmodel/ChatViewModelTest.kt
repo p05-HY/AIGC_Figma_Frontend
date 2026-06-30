@@ -588,70 +588,7 @@ class ChatViewModelTest {
     }
 
     @Test
-    fun streamTimeout_requestsServerCancellationBeforeItShowsATerminalUiState() = runTest {
-        var now = 1_000L
-        val provider = ScriptedProvider { _, _, onEvent ->
-            onEvent(
-                ChatStreamEvent.Trace(
-                    TraceEvent.RunStarted("run-1", "evt-1", 1, "thread-1"),
-                ),
-            )
-            awaitCancellation()
-        }
-        val viewModel = createViewModel(chatProvider = provider, timeProvider = { now })
-        advanceUntilIdle()
-        viewModel.onInputChanged("打开飞书")
-        viewModel.sendMessage()
-        runCurrent()
-        assertEquals(ChatSessionState.RESPONDING, viewModel.uiState.value.sessionState)
-        assertTrue(viewModel.uiState.value.canCancel)
-
-        now = 181_001L
-        advanceTimeBy(5_001)
-        runCurrent()
-        advanceUntilIdle()
-
-        assertEquals(listOf("run-1"), provider.cancelledRuns.map { it.second })
-        assertEquals(listOf("frontend_timeout"), provider.cancelledRuns.map { it.third })
-        assertEquals(ChatSessionState.CANCELLED, viewModel.uiState.value.sessionState)
-        assertFalse(viewModel.uiState.value.canRetry)
-    }
-
-    @Test
-    fun frontendTimeoutWithUnboundBackendRunShowsLocalFencedTimeoutInsteadOfUnconfirmedCancel() = runTest {
-        var now = 1_000L
-        val provider = ScriptedProvider(
-            cancellationStatus = "not_bound_but_fenced",
-            cancellationBackendStatus = "unknown_not_bound",
-            polledBackendStatus = "unknown_not_bound",
-            polledStatusTerminal = true,
-        ) { _, _, onEvent ->
-            onEvent(
-                ChatStreamEvent.Trace(
-                    TraceEvent.RunStarted("run-1", "evt-1", 1, "thread-1"),
-                ),
-            )
-            awaitCancellation()
-        }
-        val viewModel = createViewModel(chatProvider = provider, timeProvider = { now })
-        advanceUntilIdle()
-        viewModel.onInputChanged("请告诉我今天的天气情况和出行建议")
-        viewModel.sendMessage()
-        runCurrent()
-
-        now = 181_001L
-        advanceTimeBy(5_001)
-        advanceUntilIdle()
-
-        val uiState = viewModel.uiState.value
-        assertEquals(listOf("frontend_timeout"), provider.cancelledRuns.map { it.third })
-        assertEquals(ChatSessionState.ERROR, uiState.sessionState)
-        assertEquals("任务响应超时，本地已停止继续操作。", uiState.lastError)
-        assertFalse(uiState.lastError.orEmpty().contains("取消请求未被服务端确认"))
-    }
-
-    @Test
-    fun heartbeatKeepsLongTaskAliveBeyondOldSixtySecondIdleTimeout() = runTest {
+    fun longTaskStaysAliveBeyondOldFrontendIdleTimeout() = runTest {
         var now = 1_000L
         lateinit var push: (ChatStreamEvent) -> Unit
         val provider = ScriptedProvider { _, _, onEvent ->
@@ -672,8 +609,8 @@ class ChatViewModelTest {
         now = 61_000L
         push(ChatStreamEvent.Heartbeat(runId = "run-1", streamSeq = 2))
         runCurrent()
-        now = 121_500L
-        advanceTimeBy(60_500L)
+        now = 241_500L
+        advanceTimeBy(180_500L)
         runCurrent()
 
         assertTrue(provider.cancelledRuns.isEmpty())
