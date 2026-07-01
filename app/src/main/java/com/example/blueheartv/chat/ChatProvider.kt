@@ -28,9 +28,29 @@ data class MobileRunCancellation(
     val accepted: Boolean,
     val status: String,
     val backendStatus: String,
+    val deviceStatus: String? = null,
+    val localFenced: Boolean = false,
+    val retryable: Boolean = false,
     val cancelSource: String? = null,
     val terminalReason: String? = null,
-)
+) {
+    val confirmedStopped: Boolean
+        get() = status in setOf(
+            "canceled_confirmed",
+            "already_terminal",
+            "not_bound_but_fenced",
+        )
+
+    val backendMayStillRun: Boolean
+        get() = status in setOf(
+            "backend_still_running",
+            "backend_run_not_bound",
+            "cancel_unavailable",
+            "cancel_request_failed",
+            "device_cancel_failed",
+            "local_fenced_only",
+        )
+}
 
 /** 由移动安全门面查询的真实 LangGraph 运行状态。 */
 data class MobileRunStatus(
@@ -85,6 +105,7 @@ interface ChatProvider {
             accepted = false,
             status = "unavailable",
             backendStatus = "unavailable",
+            retryable = true,
             cancelSource = cancelSource,
         )
 

@@ -11,7 +11,10 @@ import com.example.blueheartv.model.TraceRunStatus
  */
 fun reduceTrace(current: AssistantTrace?, event: TraceEvent): AssistantTrace {
     val trace = current ?: AssistantTrace(runId = event.runId)
-    if (trace.runId != event.runId || event.eventId in trace.seenEventIds || event.seq <= trace.lastSeq) {
+    if (trace.runId != event.runId || event.eventId in trace.seenEventIds) {
+        return trace
+    }
+    if (event !is TraceEvent.RunTerminal && event.seq <= trace.lastSeq) {
         return trace
     }
 
@@ -58,7 +61,7 @@ fun reduceTrace(current: AssistantTrace?, event: TraceEvent): AssistantTrace {
         )
     }
     return next.copy(
-        lastSeq = event.seq,
+        lastSeq = maxOf(trace.lastSeq, event.seq),
         seenEventIds = trace.seenEventIds + event.eventId,
     )
 }

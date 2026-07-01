@@ -7,6 +7,10 @@ sealed interface ChatStreamEvent {
         val chunk: String,
         val invocationId: String? = null,
         val streamSeq: Long? = null,
+        val runId: String? = null,
+        val threadId: String? = null,
+        val backendRunId: String? = null,
+        val timestamp: Long? = null,
     ) : ChatStreamEvent
 
     /** 来自安全 SSE 门面的用户可见执行轨迹，不承载原始工具数据。 */
@@ -21,11 +25,16 @@ sealed interface ChatStreamEvent {
         val message: String,
         val streamSeq: Long? = null,
         val threadId: String? = null,
+        val backendRunId: String? = null,
+        val timestamp: Long? = null,
     ) : ChatStreamEvent
 
     data class Heartbeat(
         val runId: String? = null,
+        val threadId: String? = null,
+        val backendRunId: String? = null,
         val streamSeq: Long? = null,
+        val timestamp: Long? = null,
     ) : ChatStreamEvent
 
     data class TaskComplexity(
@@ -33,6 +42,11 @@ sealed interface ChatStreamEvent {
         val trackSteps: Boolean,
         val reason: String,
         val message: String? = null,
+        val streamSeq: Long? = null,
+        val runId: String? = null,
+        val threadId: String? = null,
+        val backendRunId: String? = null,
+        val timestamp: Long? = null,
     ) : ChatStreamEvent
 
     data class TaskProgress(
@@ -46,6 +60,10 @@ sealed interface ChatStreamEvent {
         val totalSteps: Int? = null,
         val completedSteps: List<TaskProgressStep> = emptyList(),
         val streamSeq: Long? = null,
+        val runId: String? = null,
+        val threadId: String? = null,
+        val backendRunId: String? = null,
+        val timestamp: Long? = null,
     ) : ChatStreamEvent
 
     data class TaskProgressStep(
@@ -59,6 +77,10 @@ sealed interface ChatStreamEvent {
     /** 安全门面明确发出的传输结束事件；它不等同于 Agent 执行成功。 */
     data class StreamEof(
         val streamSeq: Long? = null,
+        val runId: String? = null,
+        val threadId: String? = null,
+        val backendRunId: String? = null,
+        val timestamp: Long? = null,
     ) : ChatStreamEvent
 
     data class Error(
@@ -68,5 +90,9 @@ sealed interface ChatStreamEvent {
         val terminalStatus: String? = null,
         val terminalReason: String? = null,
         val cancelSource: String? = null,
+        val runId: String? = null,
+        val threadId: String? = null,
+        val backendRunId: String? = null,
+        val timestamp: Long? = null,
     ) : ChatStreamEvent
 }

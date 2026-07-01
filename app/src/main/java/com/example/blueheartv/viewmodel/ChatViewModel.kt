@@ -10,6 +10,12 @@ import com.example.blueheartv.chat.ChatProvider
 import com.example.blueheartv.chat.ChatStreamEvent
 import com.example.blueheartv.chat.MobileRunCancellation
 import com.example.blueheartv.chat.VoiceTranscriptionResult
+import com.example.blueheartv.chat.stream.StreamEventDecision
+import com.example.blueheartv.chat.stream.StreamDropReason
+import com.example.blueheartv.chat.stream.StreamLifecycleDecision
+import com.example.blueheartv.chat.stream.StreamLifecycleState
+import com.example.blueheartv.chat.stream.StreamManager
+import com.example.blueheartv.chat.stream.StreamSession
 import com.example.blueheartv.util.DialogUtil
 import com.example.blueheartv.model.*
 import com.example.blueheartv.telemetry.AppEventLogger
@@ -25,7 +31,6 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import java.util.UUID
 
 enum class ChatState {
     DEFAULT,
@@ -79,23 +84,19 @@ data class HomeUiState(
     val inputMode: InputMode = InputMode.TEXT,
     val streamingStep: String? = null,
     val canCancel: Boolean = false,
+    val streamLifecycleState: StreamLifecycleState = StreamLifecycleState.IDLE,
 )
 
 private const val SEND_DEBOUNCE_MS = 500L
 private const val CANCEL_STATUS_POLL_INTERVAL_MS = 500L
 private const val CANCEL_STATUS_MAX_POLLS = 20
+private const val STREAM_ACTIVITY_TIMEOUT_MS = 90_000L
 
 private const val TAG = "ChatViewModel"
 
 private data class PendingUndoMutation(
     val token: Long,
     val snapshot: ConversationMutationSnapshot,
-)
-
-private data class ActiveStream(
-    val threadId: String,
-    val assistantMessageId: String,
-    var runId: String,
 )
 
 private enum class CancellationSource {
@@ -112,6 +113,15 @@ private fun CancellationSource.serverValue(): String = when (this) {
     CancellationSource.STREAM_ERROR -> "stream_error"
     CancellationSource.APP_BACKGROUND -> "client_disconnected"
     CancellationSource.SESSION_DELETED -> "session_deleted"
+}
+
+private fun ChatSessionState.defaultStreamLifecycleState(): StreamLifecycleState = when (this) {
+    ChatSessionState.IDLE -> StreamLifecycleState.IDLE
+    ChatSessionState.RESPONDING -> StreamLifecycleState.STREAMING
+    ChatSessionState.CANCELLING -> StreamLifecycleState.CANCELING
+    ChatSessionState.CANCELLED -> StreamLifecycleState.CANCELED
+    ChatSessionState.BACKEND_STILL_RUNNING -> StreamLifecycleState.CANCELED_WITH_UNCONFIRMED_BACKEND
+    ChatSessionState.ERROR -> StreamLifecycleState.FAILED
 }
 
 class ChatViewModel(
@@ -140,9 +150,9 @@ class ChatViewModel(
     private var lastSendAtMillis: Long = 0L
     private var nextUndoToken: Long = 0L
     private var pendingUndoMutation: PendingUndoMutation? = null
-    private var activeStream: ActiveStream? = null
-    private var pendingCancellation: ActiveStream? = null
+    private val streamManager = StreamManager()
     private var cancellationJob: Job? = null
+    private var streamTimeoutJob: Job? = null
     private var cancelAttemptCount: Int = 0
     private val streamTextAccumulator = StreamTextAccumulator()
 
@@ -254,6 +264,11 @@ class ChatViewModel(
             HomeUiState(
                 sessionState = if (cancellation == null) ChatSessionState.IDLE else ChatSessionState.CANCELLING,
                 streamingStep = if (cancellation == null) null else "正在停止关联任务。",
+                streamLifecycleState = if (cancellation == null) {
+                    StreamLifecycleState.IDLE
+                } else {
+                    StreamLifecycleState.CANCELING
+                },
             )
         }
         viewModelScope.launch {
@@ -339,9 +354,11 @@ class ChatViewModel(
     }
 
     fun deleteSession(sessionId: String) {
-        val cancellation = if (
-            activeStream?.threadId == sessionId || pendingCancellation?.threadId == sessionId
-        ) stopActiveRun(markAssistantCancelled = false) else null
+        val cancellation = if (streamManager.hasSessionOnThread(sessionId)) {
+            stopActiveRun(markAssistantCancelled = false)
+        } else {
+            null
+        }
         repo.deleteSession(sessionId)
         val active = repo.getActiveSession()
         _uiState.update { state ->
@@ -545,14 +562,17 @@ class ChatViewModel(
         assistantMessageId: String,
         prompt: ChatPrompt,
     ) {
-        val stream = ActiveStream(
+        val stream = streamManager.start(
             threadId = threadId,
             assistantMessageId = assistantMessageId,
-            runId = "run_${UUID.randomUUID().toString().replace("-", "")}",
         )
-        activeStream = stream
         cancelAttemptCount = 0
-        _uiState.update { it.copy(canCancel = true) }
+        _uiState.update {
+            it.copy(
+                canCancel = true,
+                streamLifecycleState = StreamLifecycleState.STARTING,
+            )
+        }
         val toolCallStatus = linkedMapOf<String, ToolCall>()
         var hasToolCalling = false
         var trace: AssistantTrace? = null
@@ -565,23 +585,153 @@ class ChatViewModel(
                 toolCallStatus.toToolCallListOrNull()
             }
 
+        fun scheduleActivityTimeout() {
+            val capturedVersion = stream.version
+            streamTimeoutJob?.cancel()
+            streamTimeoutJob = viewModelScope.launch {
+                delay(STREAM_ACTIVITY_TIMEOUT_MS)
+                val lifecycleDecision = streamManager.onHeartbeatTimeout(
+                    session = stream,
+                    capturedVersion = capturedVersion,
+                )
+                if (lifecycleDecision !is StreamLifecycleDecision.Interrupted) return@launch
+                val chatState = if (hasToolCalling) ChatState.CHAT_TOOL_CALLING else ChatState.CHAT_SIMPLE
+                val interruptedTrace = trace?.let(::interruptTrace)
+                streamTextAccumulator.take(assistantMessageId, runId = stream.accumulatorRunId)
+                finishActiveStream(stream, cancelStreamJob = true)
+                onStreamError(
+                    threadId = threadId,
+                    assistantMessageId = assistantMessageId,
+                    reason = "连接超时，当前回复未确认完成。请重试。",
+                    retryable = true,
+                    chatState = chatState,
+                    toolCalls = legacyToolCallsFor(interruptedTrace),
+                    trace = interruptedTrace,
+                    lastReceivedStreamSeq = stream.receivedStreamSeq,
+                    terminalStatus = "interrupted",
+                    streamLifecycleState = StreamLifecycleState.INTERRUPTED,
+                )
+                _taskCompletionEvent.tryEmit(
+                    TaskCompletionEvent(taskComplexity, success = false),
+                )
+            }
+        }
+
+        scheduleActivityTimeout()
+
+        fun finishFromTerminalTrace(finalTrace: AssistantTrace, chatState: ChatState) {
+            finishActiveStream(stream)
+            when (finalTrace.runStatus) {
+                TraceRunStatus.SUCCEEDED -> {
+                    updateAssistantMessage(assistantMessageId, chatState, ChatSessionState.IDLE) { msg ->
+                        msg.copy(
+                            content = msg.content.ifBlank { "任务已在服务端完成。" },
+                            deliveryState = MessageDeliveryState.COMPLETED,
+                            trace = finalTrace,
+                            toolCalls = legacyToolCallsFor(finalTrace),
+                            errorMessage = null,
+                            lastReceivedStreamSeq = stream.receivedStreamSeq,
+                            terminalStatus = finalTrace.terminalStatusName(),
+                        )
+                    }
+                    _uiState.update {
+                        it.copy(
+                            streamingStep = null,
+                            lastError = null,
+                            canRetry = false,
+                            canCancel = false,
+                            streamLifecycleState = StreamLifecycleState.DONE,
+                        )
+                    }
+                    _taskCompletionEvent.tryEmit(TaskCompletionEvent(taskComplexity, success = true))
+                }
+
+                TraceRunStatus.WAITING_FOR_USER -> {
+                    updateAssistantMessage(assistantMessageId, ChatState.CHAT_TOOL_CALLING, ChatSessionState.IDLE) { msg ->
+                        msg.copy(
+                            content = msg.content.ifBlank { "需要你处理后再继续。" },
+                            deliveryState = MessageDeliveryState.COMPLETED,
+                            trace = finalTrace,
+                            toolCalls = legacyToolCallsFor(finalTrace),
+                            errorMessage = null,
+                            lastReceivedStreamSeq = stream.receivedStreamSeq,
+                            terminalStatus = finalTrace.terminalStatusName(),
+                        )
+                    }
+                    _uiState.update {
+                        it.copy(
+                            streamingStep = null,
+                            lastError = null,
+                            canRetry = false,
+                            canCancel = false,
+                            streamLifecycleState = StreamLifecycleState.WAITING_FOR_USER,
+                        )
+                    }
+                    _taskCompletionEvent.tryEmit(TaskCompletionEvent(taskComplexity, success = false))
+                }
+
+                TraceRunStatus.FAILED,
+                TraceRunStatus.CANCELLED,
+                TraceRunStatus.INTERRUPTED,
+                TraceRunStatus.RUNNING -> {
+                    onStreamError(
+                        threadId = threadId,
+                        assistantMessageId = assistantMessageId,
+                        reason = if (finalTrace.runStatus == TraceRunStatus.CANCELLED) "任务已停止。" else "处理未能完成，请重试。",
+                        retryable = finalTrace.runStatus != TraceRunStatus.CANCELLED,
+                        chatState = chatState,
+                        toolCalls = legacyToolCallsFor(finalTrace),
+                        trace = finalTrace,
+                        lastReceivedStreamSeq = stream.receivedStreamSeq,
+                        terminalStatus = finalTrace.terminalStatusName(),
+                        streamLifecycleState = finalTrace.streamLifecycleState(),
+                    )
+                    _taskCompletionEvent.tryEmit(TaskCompletionEvent(taskComplexity, success = false))
+                }
+            }
+        }
+
         try {
             chatProvider.streamReplyWithRun(
                 threadId = threadId,
                 prompt = prompt,
                 runId = stream.runId,
                 onEvent = streamEvent@ { event ->
-                if (activeStream !== stream && pendingCancellation !== stream) return@streamEvent
+                when (val decision = streamManager.acceptEvent(stream, event)) {
+                    is StreamEventDecision.Dropped -> {
+                        val detail = "thread=${threadId.shortLogId()} assistantMessage=${assistantMessageId.shortLogId()} run=${stream.runId.shortLogId()} backendRun=${stream.backendRunId?.shortLogId() ?: "none"} event=${decision.eventType} reason=${decision.reason} streamSeq=${decision.streamSeq} last=${decision.lastReceivedStreamSeq}"
+                        if (decision.reason == StreamDropReason.STREAM_SEQ) {
+                            AppEventLogger.info("chat_stream_event_dropped", detail)
+                        } else {
+                            AppEventLogger.warning("chat_stream_event_dropped", detail)
+                        }
+                        return@streamEvent
+                    }
+
+                    is StreamEventDecision.Accepted -> {
+                        if (decision.terminalStatus != null) {
+                            AppEventLogger.info(
+                                "chat_stream_terminal_received",
+                                "thread=${threadId.shortLogId()} assistantMessage=${assistantMessageId.shortLogId()} run=${stream.runId.shortLogId()} backendRun=${stream.backendRunId?.shortLogId() ?: "none"} status=${decision.terminalStatus} streamSeq=${decision.streamSeq}",
+                            )
+                        }
+                    }
+                }
+                scheduleActivityTimeout()
                 when (event) {
                     is ChatStreamEvent.StreamStarted -> {
-                        stream.runId = event.runId
                         val message = event.message.ifBlank { "已接收请求，正在连接 Agent。" }
                         trace = trace ?: AssistantTrace(
                             runId = event.runId,
                             threadId = event.threadId,
                             summary = message,
                         )
-                        _uiState.update { it.copy(streamingStep = message) }
+                        _uiState.update {
+                            it.copy(
+                                streamingStep = message,
+                                streamLifecycleState = StreamLifecycleState.STREAMING,
+                            )
+                        }
                         updateAssistantMessage(
                             assistantMessageId,
                             if (hasToolCalling) ChatState.CHAT_TOOL_CALLING else ChatState.CHAT_SIMPLE,
@@ -593,18 +743,44 @@ class ChatViewModel(
                                 trace = trace,
                                 toolCalls = legacyToolCallsFor(),
                                 errorMessage = null,
+                                lastReceivedStreamSeq = stream.receivedStreamSeq,
+                                terminalStatus = null,
                             )
                         }
                     }
 
                     is ChatStreamEvent.Heartbeat -> {
-                        if (event.runId != null) stream.runId = event.runId
+                        _uiState.update { state ->
+                            if (state.sessionState == ChatSessionState.RESPONDING ||
+                                state.sessionState == ChatSessionState.CANCELLING
+                            ) {
+                                state.copy(
+                                    streamingStep = state.streamingStep ?: "仍在处理...",
+                                    streamLifecycleState = StreamLifecycleState.STREAMING,
+                                )
+                            } else {
+                                state
+                            }
+                        }
                     }
 
                     is ChatStreamEvent.Trace -> {
-                        stream.runId = event.event.runId
                         trace = reduceTrace(trace, event.event)
-                        _uiState.update { it.copy(streamingStep = "正在执行手机操作") }
+                        val finalTrace = trace
+                        if (event.event is TraceEvent.RunTerminal &&
+                            finalTrace?.hasTerminal == true &&
+                            finalTrace.runStatus != TraceRunStatus.FAILED
+                        ) {
+                            val chatState = if (hasToolCalling) ChatState.CHAT_TOOL_CALLING else ChatState.CHAT_SIMPLE
+                            finishFromTerminalTrace(finalTrace, chatState)
+                            return@streamEvent
+                        }
+                        _uiState.update {
+                            it.copy(
+                                streamingStep = "正在执行手机操作",
+                                streamLifecycleState = StreamLifecycleState.STREAMING,
+                            )
+                        }
                         updateAssistantMessage(
                             assistantMessageId,
                             ChatState.CHAT_TOOL_CALLING,
@@ -616,6 +792,8 @@ class ChatViewModel(
                                 trace = trace,
                                 // 只有新版 Trace UI 实际渲染时才隐藏旧进度卡。
                                 toolCalls = legacyToolCallsFor(),
+                                lastReceivedStreamSeq = stream.receivedStreamSeq,
+                                terminalStatus = trace.terminalStatusName(),
                             )
                         }
                     }
@@ -638,7 +816,12 @@ class ChatViewModel(
 
                     is ChatStreamEvent.TaskProgress -> {
                         hasToolCalling = true
-                        _uiState.update { it.copy(streamingStep = event.message ?: "正在执行 ${event.label}") }
+                        _uiState.update {
+                            it.copy(
+                                streamingStep = event.message ?: "正在执行 ${event.label}",
+                                streamLifecycleState = StreamLifecycleState.STREAMING,
+                            )
+                        }
                         val key = toolCallStatus.findToolCallKey(
                             label = event.label,
                             toolName = event.toolName,
@@ -671,6 +854,8 @@ class ChatViewModel(
                             msg.copy(
                                 deliveryState = MessageDeliveryState.STREAMING,
                                 toolCalls = legacyToolCallsFor(),
+                                lastReceivedStreamSeq = stream.receivedStreamSeq,
+                                terminalStatus = null,
                             )
                         }
                     }
@@ -678,6 +863,7 @@ class ChatViewModel(
                     is ChatStreamEvent.TextDelta -> {
                         val raw = streamTextAccumulator.append(
                             messageId = assistantMessageId,
+                            runId = stream.accumulatorRunId,
                             invocationId = event.invocationId,
                             chunk = event.chunk,
                         )
@@ -693,16 +879,23 @@ class ChatViewModel(
                                 deliveryState = MessageDeliveryState.STREAMING,
                                 toolCalls = legacyToolCallsFor(),
                                 trace = trace,
+                                lastReceivedStreamSeq = stream.receivedStreamSeq,
+                                terminalStatus = null,
                             )
                         }
                     }
 
                     ChatStreamEvent.Completed -> {
-                        val raw = streamTextAccumulator.take(assistantMessageId)
+                        val raw = streamTextAccumulator.take(assistantMessageId, runId = stream.accumulatorRunId)
                         finishActiveStream(stream)
                         val chatState = if (hasToolCalling) ChatState.CHAT_TOOL_CALLING else ChatState.CHAT_SIMPLE
                         trace?.let { repo.persistTrace(assistantMessageId, it) }
-                        _uiState.update { it.copy(streamingStep = null) }
+                        _uiState.update {
+                            it.copy(
+                                streamingStep = null,
+                                streamLifecycleState = StreamLifecycleState.DONE,
+                            )
+                        }
                         updateAssistantMessage(assistantMessageId, chatState, ChatSessionState.IDLE) { msg ->
                             msg.copy(
                                 content = raw.ifBlank { "我已经收到你的问题，但暂时没有生成内容。请再试一次。" },
@@ -710,6 +903,8 @@ class ChatViewModel(
                                 toolCalls = legacyToolCallsFor(),
                                 trace = trace,
                                 errorMessage = null,
+                                lastReceivedStreamSeq = stream.receivedStreamSeq,
+                                terminalStatus = "succeeded",
                             )
                         }
                         _uiState.update { it.copy(lastError = null, canRetry = false) }
@@ -722,48 +917,38 @@ class ChatViewModel(
                     }
 
                     is ChatStreamEvent.StreamEof -> {
+                        val lifecycleDecision = streamManager.onStreamEof(stream)
+                        if (lifecycleDecision is StreamLifecycleDecision.Ignore) {
+                            return@streamEvent
+                        }
                         _uiState.update { it.copy(streamingStep = null) }
                         val finalTrace = trace
                         if (finalTrace?.hasTerminal == true) {
                             finishActiveStream(stream)
+                        } else if (lifecycleDecision is StreamLifecycleDecision.Cleanup) {
+                            finishActiveStream(stream)
+                            return@streamEvent
                         }
                         when {
                             finalTrace == null -> {
-                                val raw = streamTextAccumulator.take(assistantMessageId)
+                                streamTextAccumulator.take(assistantMessageId, runId = stream.accumulatorRunId)
                                 finishActiveStream(stream)
                                 val chatState = if (hasToolCalling) ChatState.CHAT_TOOL_CALLING else ChatState.CHAT_SIMPLE
-                                if (raw.isBlank() && hasToolCalling) {
-                                    onStreamError(
-                                        threadId = threadId,
-                                        assistantMessageId = assistantMessageId,
-                                        reason = "服务连接中断，请稍后重试。",
-                                        retryable = true,
-                                        chatState = chatState,
-                                        toolCalls = legacyToolCallsFor(null),
-                                        trace = null,
-                                    )
-                                    _taskCompletionEvent.tryEmit(
-                                        TaskCompletionEvent(taskComplexity, success = false),
-                                    )
-                                } else {
-                                    updateAssistantMessage(
-                                        assistantMessageId,
-                                        chatState,
-                                        ChatSessionState.IDLE,
-                                    ) { msg ->
-                                        msg.copy(
-                                            content = raw.ifBlank { "我已经收到你的问题，但暂时没有生成内容。请再试一次。" },
-                                            deliveryState = MessageDeliveryState.COMPLETED,
-                                            toolCalls = legacyToolCallsFor(null),
-                                            trace = null,
-                                            errorMessage = null,
-                                        )
-                                    }
-                                    _uiState.update { it.copy(lastError = null, canRetry = false) }
-                                    _taskCompletionEvent.tryEmit(
-                                        TaskCompletionEvent(taskComplexity, success = true),
-                                    )
-                                }
+                                onStreamError(
+                                    threadId = threadId,
+                                    assistantMessageId = assistantMessageId,
+                                    reason = "连接中断，当前回复未确认完成。请重试。",
+                                    retryable = true,
+                                    chatState = chatState,
+                                    toolCalls = legacyToolCallsFor(null),
+                                    trace = null,
+                                    lastReceivedStreamSeq = stream.receivedStreamSeq,
+                                    terminalStatus = "interrupted",
+                                    streamLifecycleState = StreamLifecycleState.INTERRUPTED,
+                                )
+                                _taskCompletionEvent.tryEmit(
+                                    TaskCompletionEvent(taskComplexity, success = false),
+                                )
                             }
 
                             !finalTrace.hasTerminal -> {
@@ -777,6 +962,9 @@ class ChatViewModel(
                                     chatState = ChatState.CHAT_TOOL_CALLING,
                                     toolCalls = legacyToolCallsFor(interruptedTrace),
                                     trace = interruptedTrace,
+                                    lastReceivedStreamSeq = stream.receivedStreamSeq,
+                                    terminalStatus = "interrupted",
+                                    streamLifecycleState = StreamLifecycleState.INTERRUPTED,
                                 )
                                 _taskCompletionEvent.tryEmit(
                                     TaskCompletionEvent(taskComplexity, success = false),
@@ -796,6 +984,9 @@ class ChatViewModel(
                                     chatState = ChatState.CHAT_TOOL_CALLING,
                                     toolCalls = legacyToolCallsFor(finalTrace),
                                     trace = finalTrace,
+                                    lastReceivedStreamSeq = stream.receivedStreamSeq,
+                                    terminalStatus = finalTrace.terminalStatusName(),
+                                    streamLifecycleState = finalTrace.streamLifecycleState(),
                                 )
                                 _taskCompletionEvent.tryEmit(
                                     TaskCompletionEvent(taskComplexity, success = false),
@@ -814,9 +1005,17 @@ class ChatViewModel(
                                         trace = finalTrace,
                                         toolCalls = legacyToolCallsFor(finalTrace),
                                         errorMessage = null,
+                                        lastReceivedStreamSeq = stream.receivedStreamSeq,
+                                        terminalStatus = finalTrace.terminalStatusName(),
                                     )
                                 }
-                                _uiState.update { it.copy(lastError = null, canRetry = false) }
+                                _uiState.update {
+                                    it.copy(
+                                        lastError = null,
+                                        canRetry = false,
+                                        streamLifecycleState = StreamLifecycleState.WAITING_FOR_USER,
+                                    )
+                                }
                                 _taskCompletionEvent.tryEmit(
                                     TaskCompletionEvent(taskComplexity, success = false),
                                 )
@@ -834,9 +1033,17 @@ class ChatViewModel(
                                         trace = finalTrace,
                                         toolCalls = legacyToolCallsFor(finalTrace),
                                         errorMessage = null,
+                                        lastReceivedStreamSeq = stream.receivedStreamSeq,
+                                        terminalStatus = finalTrace.terminalStatusName(),
                                     )
                                 }
-                                _uiState.update { it.copy(lastError = null, canRetry = false) }
+                                _uiState.update {
+                                    it.copy(
+                                        lastError = null,
+                                        canRetry = false,
+                                        streamLifecycleState = StreamLifecycleState.DONE,
+                                    )
+                                }
                                 _taskCompletionEvent.tryEmit(
                                     TaskCompletionEvent(taskComplexity, success = true),
                                 )
@@ -862,10 +1069,17 @@ class ChatViewModel(
                                         trace = finalTrace,
                                         toolCalls = legacyToolCallsFor(finalTrace),
                                         errorMessage = null,
+                                        lastReceivedStreamSeq = stream.receivedStreamSeq,
+                                        terminalStatus = finalTrace.terminalStatusName(),
                                     )
                                 }
                                 _uiState.update {
-                                    it.copy(lastError = null, canRetry = false, canCancel = false)
+                                    it.copy(
+                                        lastError = null,
+                                        canRetry = false,
+                                        canCancel = false,
+                                        streamLifecycleState = StreamLifecycleState.DONE,
+                                    )
                                 }
                                 _taskCompletionEvent.tryEmit(
                                     TaskCompletionEvent(taskComplexity, success = true),
@@ -879,6 +1093,9 @@ class ChatViewModel(
                                     chatState = chatState,
                                     toolCalls = legacyToolCallsFor(finalTrace),
                                     trace = finalTrace,
+                                    lastReceivedStreamSeq = stream.receivedStreamSeq,
+                                    terminalStatus = finalTrace.terminalStatusName(),
+                                    streamLifecycleState = finalTrace.streamLifecycleState(),
                                 )
                                 _taskCompletionEvent.tryEmit(
                                     TaskCompletionEvent(taskComplexity, success = false),
@@ -898,6 +1115,9 @@ class ChatViewModel(
                                 chatState = chatState,
                                 toolCalls = null,
                                 trace = null,
+                                lastReceivedStreamSeq = stream.receivedStreamSeq,
+                                terminalStatus = event.terminalStatus ?: "failed",
+                                streamLifecycleState = StreamLifecycleState.FAILED,
                             )
                             _taskCompletionEvent.tryEmit(
                                 TaskCompletionEvent(taskComplexity, success = false),
@@ -910,8 +1130,8 @@ class ChatViewModel(
                             trace = trace,
                             chatState = chatState,
                             taskComplexity = taskComplexity,
-                            serverMessage = event.message,
-                        )
+                    serverMessage = event.message,
+                )
                         return@streamEvent
                     }
                 }
@@ -920,12 +1140,30 @@ class ChatViewModel(
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
-            AppEventLogger.error(
-                "chat_stream_exception",
-                "thread=$threadId assistantMessage=$assistantMessageId ${error.message ?: "unknown_error"}",
-                error,
-            )
             val chatState = if (hasToolCalling) ChatState.CHAT_TOOL_CALLING else ChatState.CHAT_SIMPLE
+            when (streamManager.onProviderException(stream)) {
+                StreamLifecycleDecision.Ignore -> return
+                is StreamLifecycleDecision.Cleanup -> {
+                    trace?.takeIf { it.hasTerminal }?.let { finalTrace ->
+                        AppEventLogger.info(
+                            "chat_stream_exception_after_terminal_ignored",
+                            "thread=${threadId.shortLogId()} assistantMessage=${assistantMessageId.shortLogId()} run=${stream.runId.shortLogId()} backendRun=${stream.backendRunId?.shortLogId() ?: "none"} terminal=${finalTrace.terminalStatusName()}",
+                        )
+                        finishFromTerminalTrace(finalTrace, chatState)
+                        return
+                    }
+                    finishActiveStream(stream)
+                    return
+                }
+                is StreamLifecycleDecision.Interrupted -> Unit
+            }
+            val errorSummary = (error.message ?: "unknown_error")
+                .replace(Regex("\\s+"), " ")
+                .take(160)
+            AppEventLogger.warning(
+                "chat_stream_exception",
+                "thread=${threadId.shortLogId()} assistantMessage=${assistantMessageId.shortLogId()} run=${stream.runId.shortLogId()} backendRun=${stream.backendRunId?.shortLogId() ?: "none"} errorType=${error.javaClass.simpleName} message=$errorSummary",
+            )
             // 如果没有任何事件到达，Run 从未启动，跳过 cancelRun。
             if (trace == null && !hasToolCalling) {
                 finishActiveStream(stream)
@@ -937,6 +1175,9 @@ class ChatViewModel(
                     chatState = chatState,
                     toolCalls = null,
                     trace = null,
+                    lastReceivedStreamSeq = stream.receivedStreamSeq,
+                    terminalStatus = "failed",
+                    streamLifecycleState = StreamLifecycleState.FAILED,
                 )
                 _taskCompletionEvent.tryEmit(
                     TaskCompletionEvent(taskComplexity, success = false),
@@ -967,7 +1208,7 @@ class ChatViewModel(
 
     /** 请求停止当前任务；只有服务端确认 terminal 后才显示“已停止”。 */
     fun cancelActiveRun() {
-        val stream = activeStream ?: pendingCancellation ?: return
+        val stream = streamManager.activeOrPendingSession() ?: return
         if (cancellationJob?.isActive == true) return
         requestRunCancellation(
             stream = stream,
@@ -986,7 +1227,7 @@ class ChatViewModel(
     }
 
     private fun stopActiveRun(markAssistantCancelled: Boolean): Job? {
-        val stream = activeStream ?: pendingCancellation
+        val stream = streamManager.activeOrPendingSession()
         if (stream == null) {
             _uiState.update { it.copy(canCancel = false) }
             return null
@@ -1002,18 +1243,17 @@ class ChatViewModel(
     }
 
     private fun requestRunCancellation(
-        stream: ActiveStream,
+        stream: StreamSession,
         source: CancellationSource,
         trace: AssistantTrace?,
         chatState: ChatState,
         taskComplexity: TaskComplexityLevel,
         serverMessage: String? = null,
     ): Job {
-        // ✅ 不再抢先置空 activeStream 和取消 streamJob
-        // activeStream 继续存活，用于接收后端 terminal 事件
+        // Stream 会话继续存活，用于接收后端 terminal 事件。
         // streamJob 继续运行，直到后端发来 terminal 或 EOF
-        pendingCancellation = stream
-        streamTextAccumulator.clear(stream.assistantMessageId)
+        streamManager.beginCancellation(stream)
+        streamTextAccumulator.clear(stream.assistantMessageId, runId = stream.accumulatorRunId)
         val waitingState = ChatSessionState.CANCELLING
         val waitingMessage = when (source) {
             CancellationSource.APP_BACKGROUND -> "应用已转入后台，正在停止任务。"
@@ -1028,6 +1268,8 @@ class ChatViewModel(
                 trace = trace ?: message.trace,
                 toolCalls = null,
                 errorMessage = waitingMessage,
+                lastReceivedStreamSeq = stream.receivedStreamSeq,
+                terminalStatus = null,
             )
         }
         _uiState.update {
@@ -1037,6 +1279,7 @@ class ChatViewModel(
                 lastError = null,
                 canRetry = false,
                 canCancel = false,
+                streamLifecycleState = StreamLifecycleState.CANCELING,
             )
         }
         return viewModelScope.launch {
@@ -1059,6 +1302,27 @@ class ChatViewModel(
                 )
                 return@launch
             }
+            if (cancellation.backendMayStillRun) {
+                markBackendStillRunning(
+                    stream,
+                    chatState,
+                    trace,
+                    cancellationUnconfirmedMessage(cancellation),
+                )
+                return@launch
+            }
+            if (cancellation.confirmedStopped) {
+                finishCancellation(
+                    stream = stream,
+                    source = source,
+                    trace = trace,
+                    chatState = chatState,
+                    taskComplexity = taskComplexity,
+                    backendStatus = cancellation.confirmedBackendStatus(),
+                    serverMessage = serverMessage,
+                )
+                return@launch
+            }
             var backendStatus = cancellation.backendStatus
             var terminal = isTerminalBackendStatus(backendStatus)
             var pollCount = 0
@@ -1070,7 +1334,7 @@ class ChatViewModel(
                 }.getOrNull()
                 if (status != null) {
                     backendStatus = status.backendStatus
-                    terminal = status.terminal || isTerminalBackendStatus(backendStatus)
+                    terminal = isTerminalBackendStatus(backendStatus)
                 }
             }
             if (terminal) {
@@ -1095,7 +1359,7 @@ class ChatViewModel(
     }
 
     private fun finishCancellation(
-        stream: ActiveStream,
+        stream: StreamSession,
         source: CancellationSource,
         trace: AssistantTrace?,
         chatState: ChatState,
@@ -1105,7 +1369,7 @@ class ChatViewModel(
     ) {
         finishActiveStream(stream, cancelCancellationJob = false, cancelStreamJob = true)
         when (backendStatus) {
-            "cancelled" -> {
+            "cancelled", "not_started" -> {
                 val cancelledTrace = (trace ?: findMessageTrace(stream.assistantMessageId)
                     ?: AssistantTrace(runId = stream.runId)).copy(
                     runStatus = TraceRunStatus.CANCELLED,
@@ -1118,6 +1382,8 @@ class ChatViewModel(
                         trace = cancelledTrace,
                         toolCalls = null,
                         errorMessage = null,
+                        lastReceivedStreamSeq = stream.receivedStreamSeq,
+                        terminalStatus = "cancelled",
                     )
                 }
                 _uiState.update {
@@ -1127,6 +1393,7 @@ class ChatViewModel(
                         lastError = null,
                         canRetry = false,
                         canCancel = false,
+                        streamLifecycleState = StreamLifecycleState.CANCELED,
                     )
                 }
             }
@@ -1139,9 +1406,18 @@ class ChatViewModel(
                         trace = trace ?: message.trace,
                         toolCalls = null,
                         errorMessage = null,
+                        lastReceivedStreamSeq = stream.receivedStreamSeq,
+                        terminalStatus = "succeeded",
                     )
                 }
-                _uiState.update { it.copy(sessionState = ChatSessionState.IDLE, streamingStep = null, canCancel = false) }
+                _uiState.update {
+                    it.copy(
+                        sessionState = ChatSessionState.IDLE,
+                        streamingStep = null,
+                        canCancel = false,
+                        streamLifecycleState = StreamLifecycleState.DONE,
+                    )
+                }
             }
 
             else -> {
@@ -1158,6 +1434,9 @@ class ChatViewModel(
                     chatState = chatState,
                     toolCalls = null,
                     trace = trace ?: findMessageTrace(stream.assistantMessageId),
+                    lastReceivedStreamSeq = stream.receivedStreamSeq,
+                    terminalStatus = backendStatus,
+                    streamLifecycleState = StreamLifecycleState.FAILED,
                 )
             }
         }
@@ -1169,7 +1448,7 @@ class ChatViewModel(
     }
 
     private fun markBackendStillRunning(
-        stream: ActiveStream,
+        stream: StreamSession,
         chatState: ChatState,
         trace: AssistantTrace?,
         reason: String,
@@ -1182,7 +1461,6 @@ class ChatViewModel(
                 "thread=${stream.threadId} run=${stream.runId} attempts=$cancelAttemptCount",
             )
             cancellationJob = null
-            pendingCancellation = null
             finishActiveStream(stream, cancelCancellationJob = false, cancelStreamJob = true)
             onStreamError(
                 threadId = stream.threadId,
@@ -1192,10 +1470,13 @@ class ChatViewModel(
                 chatState = chatState,
                 toolCalls = null,
                 trace = trace,
+                lastReceivedStreamSeq = stream.receivedStreamSeq,
+                terminalStatus = "failed",
+                streamLifecycleState = StreamLifecycleState.FAILED,
             )
             return
         }
-        pendingCancellation = stream
+        streamManager.beginCancellation(stream)
         cancellationJob = null
         updateAssistantMessage(stream.assistantMessageId, chatState, ChatSessionState.BACKEND_STILL_RUNNING) { message ->
             message.copy(
@@ -1203,6 +1484,8 @@ class ChatViewModel(
                 trace = trace ?: message.trace,
                 toolCalls = null,
                 errorMessage = reason,
+                lastReceivedStreamSeq = stream.receivedStreamSeq,
+                terminalStatus = "backend_still_running",
             )
         }
         _uiState.update {
@@ -1212,6 +1495,7 @@ class ChatViewModel(
                 lastError = reason,
                 canRetry = false,
                 canCancel = true,
+                streamLifecycleState = StreamLifecycleState.CANCELED_WITH_UNCONFIRMED_BACKEND,
             )
         }
         AppEventLogger.warning(
@@ -1223,24 +1507,54 @@ class ChatViewModel(
     private fun findMessageTrace(messageId: String): AssistantTrace? =
         repo.getActiveSession()?.messages?.firstOrNull { it.id == messageId }?.trace
 
+    private fun AssistantTrace.terminalStatusName(): String? =
+        if (!hasTerminal) null else runStatus.terminalStatusName()
+
+    private fun TraceRunStatus.terminalStatusName(): String =
+        when (this) {
+            TraceRunStatus.RUNNING -> "running"
+            TraceRunStatus.SUCCEEDED -> "succeeded"
+            TraceRunStatus.FAILED -> "failed"
+            TraceRunStatus.CANCELLED -> "cancelled"
+            TraceRunStatus.WAITING_FOR_USER -> "waiting_for_user"
+            TraceRunStatus.INTERRUPTED -> "interrupted"
+        }
+
+    private fun AssistantTrace.streamLifecycleState(): StreamLifecycleState =
+        when (runStatus) {
+            TraceRunStatus.SUCCEEDED -> StreamLifecycleState.DONE
+            TraceRunStatus.CANCELLED -> StreamLifecycleState.CANCELED
+            TraceRunStatus.WAITING_FOR_USER -> StreamLifecycleState.WAITING_FOR_USER
+            TraceRunStatus.INTERRUPTED -> StreamLifecycleState.INTERRUPTED
+            TraceRunStatus.FAILED -> StreamLifecycleState.FAILED
+            TraceRunStatus.RUNNING -> StreamLifecycleState.STREAMING
+        }
+
     private fun isTerminalBackendStatus(status: String): Boolean =
         status in setOf(
             "succeeded", "failed", "cancelled", "timeout",
             "server_timeout",
             "stream_closed",
             "thread_busy",
-            "unknown_not_bound",
-            // 服务端 safe_stream / cancel_mobile_run 返回的非运行中状态
             "not_started",           // upstream 从未启动 Run
-            "cancel_unavailable",    // 无法联系上游 LangGraph
-            "cancel_request_failed", // 取消请求被上游拒绝
         )
 
-    private fun locallyFencedBackendStatuses(): Set<String> = setOf(
-        "unknown_not_bound",
-        "stream_closed",
-        "not_started",
-    )
+    private fun MobileRunCancellation.confirmedBackendStatus(): String =
+        when (status) {
+            "local_fenced_only", "not_bound_but_fenced" -> "not_started"
+            else -> backendStatus
+        }
+
+    private fun cancellationUnconfirmedMessage(cancellation: MobileRunCancellation): String =
+        when (cancellation.status) {
+            "backend_still_running" -> "已停止本地接收，但服务端任务仍可能运行。请再次停止。"
+            "backend_run_not_bound" -> "已停止本地接收，但无法确认绑定的服务端任务已停止。请再次停止。"
+            "cancel_unavailable" -> "已停止本地接收，但暂时无法联系服务端确认任务停止。请稍后重试。"
+            "cancel_request_failed" -> "服务端取消请求失败，任务可能仍在运行。请再次停止。"
+            "device_cancel_failed" -> "已停止本地接收，但手机端取消确认失败，任务可能仍在运行。"
+            "local_fenced_only" -> "已停止本地接收，但服务端任务尚未确认结束。请再次停止。"
+            else -> "无法确认服务端任务已停止。请再次停止。"
+        }
 
     private fun cancellationRejectionMessage(cancellation: MobileRunCancellation): String =
         when (cancellation.status) {
@@ -1249,29 +1563,27 @@ class ChatViewModel(
         }
 
     private fun finishActiveStream(
-        stream: ActiveStream,
+        stream: StreamSession,
         cancelCancellationJob: Boolean = true,
         cancelStreamJob: Boolean = false,
     ) {
-        var cleared = false
-        if (activeStream === stream) {
-            activeStream = null
-            if (cancelStreamJob) {
-                streamJob?.cancel()
-                streamJob = null
-            }
-            cleared = true
+        val wasActive = streamManager.activeSession === stream
+        val wasPendingCancellation = streamManager.pendingCancellation === stream
+        val cleared = streamManager.finish(stream)
+        if (wasActive && cancelStreamJob) {
+            streamJob?.cancel()
+            streamJob = null
         }
-        if (pendingCancellation === stream) {
-            pendingCancellation = null
+        if (wasPendingCancellation) {
             if (cancelCancellationJob) {
                 cancellationJob?.cancel()
             }
             cancellationJob = null
-            cleared = true
         }
         if (cleared) {
-            streamTextAccumulator.clear(stream.assistantMessageId)
+            streamTextAccumulator.clear(stream.assistantMessageId, runId = stream.accumulatorRunId)
+            streamTimeoutJob?.cancel()
+            streamTimeoutJob = null
             _uiState.update { it.copy(canCancel = false) }
         }
     }
@@ -1284,6 +1596,9 @@ class ChatViewModel(
         chatState: ChatState,
         toolCalls: List<ToolCall>?,
         trace: AssistantTrace? = null,
+        lastReceivedStreamSeq: Long? = null,
+        terminalStatus: String? = null,
+        streamLifecycleState: StreamLifecycleState = StreamLifecycleState.FAILED,
     ) {
         updateAssistantMessage(assistantMessageId, chatState, ChatSessionState.ERROR) { msg ->
             msg.copy(
@@ -1292,9 +1607,17 @@ class ChatViewModel(
                 toolCalls = toolCalls,
                 trace = trace ?: msg.trace,
                 errorMessage = reason,
+                lastReceivedStreamSeq = lastReceivedStreamSeq ?: msg.lastReceivedStreamSeq,
+                terminalStatus = terminalStatus ?: msg.terminalStatus ?: "failed",
             )
         }
-        _uiState.update { it.copy(lastError = reason, canRetry = retryable) }
+        _uiState.update {
+            it.copy(
+                lastError = reason,
+                canRetry = retryable,
+                streamLifecycleState = streamLifecycleState,
+            )
+        }
         AppEventLogger.warning(
             "chat_stream_error",
             "thread=$threadId assistantMessage=$assistantMessageId chatState=$chatState retryable=$retryable reason=$reason",
@@ -1342,8 +1665,9 @@ class ChatViewModel(
                 lastError = lastError,
                 canRetry = canRetry,
                 retryPrompt = retryPrompt,
-                canCancel = activeStream != null,
+                canCancel = streamManager.activeSession != null,
                 histories = repo.buildHistories(),
+                streamLifecycleState = sessionState.defaultStreamLifecycleState(),
             )
         }
     }
@@ -1371,6 +1695,7 @@ class ChatViewModel(
                         lastError = null,
                         canRetry = false,
                         retryPrompt = null,
+                        streamLifecycleState = StreamLifecycleState.IDLE,
                     )
                 }
             }
@@ -1397,6 +1722,7 @@ class ChatViewModel(
                         lastError = null,
                         canRetry = false,
                         retryPrompt = null,
+                        streamLifecycleState = StreamLifecycleState.IDLE,
                     )
                 }
             }.onFailure { error ->
@@ -1445,4 +1771,7 @@ class ChatViewModel(
             else -> ToolCallStatus.RUNNING
         }
     }
+
+    private fun String.shortLogId(): String =
+        if (length <= 12) this else "${take(6)}...${takeLast(4)}"
 }

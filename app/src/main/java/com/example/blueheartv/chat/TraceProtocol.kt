@@ -12,6 +12,8 @@ private const val MAX_TRACE_EVENT_BYTES = 4 * 1024
 private const val MAX_TRACE_TITLE_CHARS = 48
 private const val MAX_TRACE_SUMMARY_CHARS = 240
 private const val MAX_TRACE_DETAIL_TEXT_CHARS = 500
+private val THINK_OPEN_TAG = Regex("<\\s*think\\s*>", RegexOption.IGNORE_CASE)
+private val THINK_CLOSE_TAG = Regex("<\\s*/\\s*think\\s*>", RegexOption.IGNORE_CASE)
 
 /** 对安全门面输出做白名单解析。任何未知字段与未识别事件都会被忽略。 */
 fun parseSafeStreamEvent(eventName: String, payload: String): ChatStreamEvent? {
@@ -23,17 +25,27 @@ fun parseSafeStreamEvent(eventName: String, payload: String): ChatStreamEvent? {
         }
         "assistant.delta" -> parseAssistantDelta(json)
         "task_progress" -> parseTaskProgress(json)
+        "task_complexity" -> parseTaskComplexity(json)
         "stream.started" -> parseStreamStarted(json)
         "stream.heartbeat" -> if (json.optString("type") == "stream.heartbeat") {
             ChatStreamEvent.Heartbeat(
                 runId = json.optString("runId").ifBlank { null },
+                threadId = json.optString("threadId").ifBlank { null },
+                backendRunId = json.optString("backendRunId").ifBlank { null },
                 streamSeq = json.optionalPositiveLong("streamSeq"),
+                timestamp = json.optionalPositiveLong("timestamp"),
             )
         } else {
             null
         }
         "stream.eof" -> if (json.optString("type") == "stream.eof") {
-            ChatStreamEvent.StreamEof(streamSeq = json.optionalPositiveLong("streamSeq"))
+            ChatStreamEvent.StreamEof(
+                streamSeq = json.optionalPositiveLong("streamSeq"),
+                runId = json.optString("runId").ifBlank { null },
+                threadId = json.optString("threadId").ifBlank { null },
+                backendRunId = json.optString("backendRunId").ifBlank { null },
+                timestamp = json.optionalPositiveLong("timestamp"),
+            )
         } else {
             null
         }
@@ -45,6 +57,10 @@ fun parseSafeStreamEvent(eventName: String, payload: String): ChatStreamEvent? {
                 terminalStatus = json.optString("terminalStatus").ifBlank { null },
                 terminalReason = json.optString("terminalReason").ifBlank { null },
                 cancelSource = json.optString("cancelSource").ifBlank { null },
+                runId = json.optString("runId").ifBlank { null },
+                threadId = json.optString("threadId").ifBlank { null },
+                backendRunId = json.optString("backendRunId").ifBlank { null },
+                timestamp = json.optionalPositiveLong("timestamp"),
             )
         } else {
             null
@@ -100,7 +116,7 @@ private fun parseTraceEvent(json: JSONObject): TraceEvent? {
             val kind = detailKind(detail.requiredString("kind") ?: return null) ?: return null
             val title = detail.requiredString("title") ?: return null
             val text = detail.requiredString("text") ?: return null
-            if ("<think" in text.lowercase()) return null
+            if (text.containsThinkMarkup()) return null
             TraceEvent.StepDetailAppend(
                 runId = runId,
                 eventId = eventId,
@@ -134,12 +150,15 @@ private fun parseTraceEvent(json: JSONObject): TraceEvent? {
 
 private fun parseAssistantDelta(json: JSONObject): ChatStreamEvent.TextDelta? {
     if (json.optString("type") != "assistant.delta") return null
-    val chunk = json.requiredString("chunk") ?: return null
-    if ("<think" in chunk.lowercase()) return null
+    val chunk = sanitizeAssistantDelta(json.requiredString("chunk") ?: return null) ?: return null
     return ChatStreamEvent.TextDelta(
         chunk = chunk,
         invocationId = json.optString("invocationId").ifBlank { null },
         streamSeq = json.optionalPositiveLong("streamSeq"),
+        runId = json.optString("runId").ifBlank { null },
+        threadId = json.optString("threadId").ifBlank { null },
+        backendRunId = json.optString("backendRunId").ifBlank { null },
+        timestamp = json.optionalPositiveLong("timestamp"),
     )
 }
 
@@ -157,6 +176,28 @@ private fun parseTaskProgress(json: JSONObject): ChatStreamEvent.TaskProgress? {
         currentStep = json.optionalNonNegativeInt("currentStep"),
         totalSteps = json.optionalNonNegativeInt("totalSteps"),
         streamSeq = json.optionalPositiveLong("streamSeq"),
+        runId = json.optString("runId").ifBlank { null },
+        threadId = json.optString("threadId").ifBlank { null },
+        backendRunId = json.optString("backendRunId").ifBlank { null },
+        timestamp = json.optionalPositiveLong("timestamp"),
+    )
+}
+
+private fun parseTaskComplexity(json: JSONObject): ChatStreamEvent.TaskComplexity? {
+    if (json.optString("type") != "task_complexity") return null
+    val complexity = json.requiredString("complexity") ?: return null
+    val reason = json.requiredString("reason") ?: return null
+    if (!json.has("trackSteps")) return null
+    return ChatStreamEvent.TaskComplexity(
+        complexity = complexity.bounded(32),
+        trackSteps = json.optBoolean("trackSteps"),
+        reason = reason.bounded(64),
+        message = json.optString("message").ifBlank { null }?.bounded(MAX_TRACE_SUMMARY_CHARS),
+        streamSeq = json.optionalPositiveLong("streamSeq"),
+        runId = json.optString("runId").ifBlank { null },
+        threadId = json.optString("threadId").ifBlank { null },
+        backendRunId = json.optString("backendRunId").ifBlank { null },
+        timestamp = json.optionalPositiveLong("timestamp"),
     )
 }
 
@@ -168,6 +209,8 @@ private fun parseStreamStarted(json: JSONObject): ChatStreamEvent.StreamStarted?
         message = json.optString("message").ifBlank { "已接收请求，正在连接 Agent。" },
         streamSeq = json.optionalPositiveLong("streamSeq"),
         threadId = json.optString("threadId").ifBlank { null },
+        backendRunId = json.optString("backendRunId").ifBlank { null },
+        timestamp = json.optionalPositiveLong("timestamp"),
     )
 }
 
@@ -179,6 +222,20 @@ private fun JSONObject.optionalNonNegativeInt(key: String): Int? =
 
 private fun JSONObject.optionalPositiveLong(key: String): Long? =
     if (has(key) && !isNull(key)) optLong(key).takeIf { it > 0L } else null
+
+private fun sanitizeAssistantDelta(chunk: String): String? {
+    if (THINK_OPEN_TAG.containsMatchIn(chunk)) return null
+    if (chunk.contains("<think", ignoreCase = true)) return null
+    val cleaned = THINK_CLOSE_TAG.replace(chunk, "")
+    if (cleaned.containsThinkMarkup()) return null
+    return cleaned.takeIf { it.isNotEmpty() }
+}
+
+private fun String.containsThinkMarkup(): Boolean =
+    THINK_OPEN_TAG.containsMatchIn(this) ||
+        THINK_CLOSE_TAG.containsMatchIn(this) ||
+        contains("<think", ignoreCase = true) ||
+        contains("</think", ignoreCase = true)
 
 private fun String.bounded(limit: Int): String =
     if (length <= limit) this else take(limit - 1) + "…"

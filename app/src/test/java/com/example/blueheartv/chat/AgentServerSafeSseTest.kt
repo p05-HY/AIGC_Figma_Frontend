@@ -137,7 +137,7 @@ class AgentServerSafeSseTest {
     }
 
     @Test
-    fun cancelAndStatus_useTheMobileFacadeAndParseBackendConfirmation() {
+    fun cancelAndStatus_useTheMobileFacadeAndParseStructuredCancellation() {
         val requests = mutableListOf<String>()
         var cancelBody = ""
         val client = OkHttpClient.Builder()
@@ -148,7 +148,7 @@ class AgentServerSafeSseTest {
                         val requestBody = Buffer()
                         chain.request().body?.writeTo(requestBody)
                         cancelBody = requestBody.readUtf8()
-                        """{"runId":"run-1","threadId":"thread-1","status":"not_bound_but_fenced","backendRunId":null,"backendStatus":"unknown_not_bound","cancelSource":"frontend_timeout","terminalReason":"frontend_timeout"}"""
+                        """{"runId":"run-1","threadId":"thread-1","status":"local_fenced_only","backendRunId":null,"backendStatus":"not_started","deviceStatus":"not_bound","localFenced":true,"retryable":false,"cancelSource":"frontend_timeout","terminalReason":"frontend_timeout"}"""
                     }
                     "status" -> """{"runId":"run-1","status":"cancelled","backendStatus":"cancelled","terminal":true}"""
                     else -> error("unexpected request")
@@ -171,8 +171,11 @@ class AgentServerSafeSseTest {
         val status = agentClient.getRunStatus("thread-1", "run-1")
 
         assertTrue(cancellation.accepted)
-        assertEquals("not_bound_but_fenced", cancellation.status)
-        assertEquals("unknown_not_bound", cancellation.backendStatus)
+        assertEquals("local_fenced_only", cancellation.status)
+        assertEquals("not_started", cancellation.backendStatus)
+        assertEquals("not_bound", cancellation.deviceStatus)
+        assertTrue(cancellation.localFenced)
+        assertFalse(cancellation.retryable)
         assertEquals("frontend_timeout", cancellation.cancelSource)
         assertEquals("frontend_timeout", cancellation.terminalReason)
         assertEquals("""{"cancelSource":"frontend_timeout"}""", cancelBody)

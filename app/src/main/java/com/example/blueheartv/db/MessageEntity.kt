@@ -26,6 +26,8 @@ data class MessageEntity(
     val errorMessage: String? = null,
     val toolCallsJson: String? = null,
     val traceJson: String? = null,
+    val lastReceivedStreamSeq: Long = 0L,
+    val terminalStatus: String? = null,
     val privacySanitized: Boolean = false,
     val orderIndex: Int,
 )

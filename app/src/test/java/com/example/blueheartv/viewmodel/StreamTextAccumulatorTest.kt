@@ -29,6 +29,30 @@ class StreamTextAccumulatorTest {
     }
 
     @Test
+    fun append_stripsStandaloneClosingThinkTagAcrossChunks() {
+        val accumulator = StreamTextAccumulator()
+
+        val first = accumulator.append("assistant-1", runId = "run-1", invocationId = "model-final", chunk = "</")
+        val second = accumulator.append("assistant-1", runId = "run-1", invocationId = "model-final", chunk = "think>最终")
+
+        assertEquals("", first)
+        assertEquals("最终", second)
+        assertEquals("最终", accumulator.take("assistant-1", runId = "run-1"))
+    }
+
+    @Test
+    fun append_isIsolatedByRunIdAndMessageId() {
+        val accumulator = StreamTextAccumulator()
+
+        accumulator.append("assistant-1", runId = "old-run", invocationId = "model-final", chunk = "old")
+        val current = accumulator.append("assistant-1", runId = "new-run", invocationId = "model-final", chunk = "new")
+
+        assertEquals("new", current)
+        assertEquals("old", accumulator.take("assistant-1", runId = "old-run"))
+        assertEquals("new", accumulator.take("assistant-1", runId = "new-run"))
+    }
+
+    @Test
     fun clearAll_removesActiveStreams() {
         val accumulator = StreamTextAccumulator()
         accumulator.append("assistant-1", invocationId = null, chunk = "one")

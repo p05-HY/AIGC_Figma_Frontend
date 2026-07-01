@@ -248,6 +248,13 @@ class AgentServerClient(
         val returnedRunId = payload.optString("runId").ifBlank { runId }
         val status = payload.optString("status").ifBlank { "unknown" }
         val accepted = status in setOf(
+            "canceled_confirmed",
+            "local_fenced_only",
+            "backend_still_running",
+            "backend_run_not_bound",
+            "cancel_unavailable",
+            "cancel_request_failed",
+            "device_cancel_failed",
             "cancellation_requested",
             "not_bound_but_fenced",
             "already_terminal",
@@ -257,6 +264,9 @@ class AgentServerClient(
             accepted = accepted,
             status = status,
             backendStatus = payload.optString("backendStatus").ifBlank { "unknown" },
+            deviceStatus = payload.optString("deviceStatus").ifBlank { null },
+            localFenced = payload.optBoolean("localFenced", false),
+            retryable = payload.optBoolean("retryable", false),
             cancelSource = payload.optString("cancelSource").ifBlank { cancelSource },
             terminalReason = payload.optString("terminalReason").ifBlank { null },
         )

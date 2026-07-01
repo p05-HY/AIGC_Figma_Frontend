@@ -24,6 +24,8 @@ fun MessageEntity.toDomain(): Message {
         errorMessage = errorMessage,
         toolCalls = toolCallsJson?.let { parseToolCalls(it) },
         trace = traceJson?.let { parseTrace(it) },
+        lastReceivedStreamSeq = lastReceivedStreamSeq,
+        terminalStatus = terminalStatus,
     )
 }
 
@@ -37,6 +39,8 @@ fun Message.toEntity(sessionId: String, orderIndex: Int): MessageEntity {
         errorMessage = errorMessage,
         toolCallsJson = toolCalls?.let { serializeToolCalls(it) },
         traceJson = trace?.let { serializeTrace(it) },
+        lastReceivedStreamSeq = lastReceivedStreamSeq,
+        terminalStatus = terminalStatus,
         privacySanitized = true,
         orderIndex = orderIndex,
     )

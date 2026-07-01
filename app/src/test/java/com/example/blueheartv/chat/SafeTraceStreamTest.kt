@@ -71,6 +71,17 @@ class SafeTraceStreamTest {
     }
 
     @Test
+    fun assistantDeltaWithStandaloneClosingThinkTagIsCleaned() {
+        val event = parseSafeStreamEvent(
+            "assistant.delta",
+            """{"type":"assistant.delta","chunk":"abc</THINK>def","streamSeq":2}""",
+        ) as ChatStreamEvent.TextDelta
+
+        assertEquals("abcdef", event.chunk)
+        assertEquals(2L, event.streamSeq)
+    }
+
+    @Test
     fun unknownSafeFacadeEventIsRejected() {
         val event = parseSafeStreamEvent(
             "trace.v1",
@@ -119,29 +130,60 @@ class SafeTraceStreamTest {
     fun streamSeq_isRetainedForAllSafeFacadeEvents() {
         val assistant = parseSafeStreamEvent(
             "assistant.delta",
-            """{"type":"assistant.delta","chunk":"答案","streamSeq":2}""",
+            """{"type":"assistant.delta","chunk":"答案","runId":"run-1","threadId":"thread-1","backendRunId":"backend-1","timestamp":1710000000000,"streamSeq":2}""",
         ) as ChatStreamEvent.TextDelta
         val progress = parseSafeStreamEvent(
             "task_progress",
-            """{"type":"task_progress","label":"观察屏幕","status":"running","phase":"observe","streamSeq":3}""",
+            """{"type":"task_progress","label":"观察屏幕","status":"running","phase":"observe","runId":"run-1","threadId":"thread-1","streamSeq":3}""",
         ) as ChatStreamEvent.TaskProgress
         val error = parseSafeStreamEvent(
             "stream.error",
-            """{"type":"stream.error","message":"断开","retryable":true,"terminalStatus":"failed","terminalReason":"upstream_ended_without_terminal","cancelSource":"server_timeout","streamSeq":4}""",
+            """{"type":"stream.error","message":"断开","retryable":true,"terminalStatus":"failed","terminalReason":"upstream_ended_without_terminal","cancelSource":"server_timeout","runId":"run-1","threadId":"thread-1","backendRunId":"backend-1","streamSeq":4}""",
         ) as ChatStreamEvent.Error
         val heartbeat = parseSafeStreamEvent(
             "stream.heartbeat",
-            """{"type":"stream.heartbeat","runId":"run-1","streamSeq":5}""",
+            """{"type":"stream.heartbeat","runId":"run-1","threadId":"thread-1","streamSeq":5}""",
         ) as ChatStreamEvent.Heartbeat
+        val complexity = parseSafeStreamEvent(
+            "task_complexity",
+            """{"type":"task_complexity","complexity":"simple","trackSteps":false,"reason":"one_tool","runId":"run-1","threadId":"thread-1","streamSeq":6}""",
+        ) as ChatStreamEvent.TaskComplexity
 
         assertEquals(2L, assistant.streamSeq)
+        assertEquals("run-1", assistant.runId)
+        assertEquals("thread-1", assistant.threadId)
+        assertEquals("backend-1", assistant.backendRunId)
+        assertEquals(1710000000000L, assistant.timestamp)
         assertEquals(3L, progress.streamSeq)
+        assertEquals("run-1", progress.runId)
+        assertEquals("thread-1", progress.threadId)
         assertEquals(4L, error.streamSeq)
+        assertEquals("run-1", error.runId)
+        assertEquals("thread-1", error.threadId)
+        assertEquals("backend-1", error.backendRunId)
         assertEquals("failed", error.terminalStatus)
         assertEquals("upstream_ended_without_terminal", error.terminalReason)
         assertEquals("server_timeout", error.cancelSource)
         assertEquals(5L, heartbeat.streamSeq)
         assertEquals("run-1", heartbeat.runId)
+        assertEquals("thread-1", heartbeat.threadId)
+        assertEquals(6L, complexity.streamSeq)
+        assertEquals("run-1", complexity.runId)
+        assertEquals("thread-1", complexity.threadId)
+    }
+
+    @Test
+    fun streamEof_retainsIdentityFieldsForLifecycleFence() {
+        val event = parseSafeStreamEvent(
+            "stream.eof",
+            """{"type":"stream.eof","runId":"run-1","threadId":"thread-1","backendRunId":"backend-1","timestamp":1710000000001,"streamSeq":7}""",
+        ) as ChatStreamEvent.StreamEof
+
+        assertEquals("run-1", event.runId)
+        assertEquals("thread-1", event.threadId)
+        assertEquals("backend-1", event.backendRunId)
+        assertEquals(1710000000001L, event.timestamp)
+        assertEquals(7L, event.streamSeq)
     }
 
     @Test
@@ -192,6 +234,33 @@ class SafeTraceStreamTest {
         assertEquals(TraceDetailKind.TOOL_RESULT, traceEvent.detail.kind)
         assertEquals("工具结果", traceEvent.detail.title)
         assertFalse(traceEvent.detail.text.contains("secret"))
+    }
+
+    @Test
+    fun stepDetailAppendWithThinkMarkupIsRejected() {
+        val event = parseSafeStreamEvent(
+            "trace.v1",
+            """
+                {
+                  "type":"trace.v1",
+                  "version":1,
+                  "runId":"run-1",
+                  "eventId":"evt-detail-1",
+                  "seq":2,
+                  "event":"step.detail.append",
+                  "stepId":"step-1",
+                  "detail":{
+                    "detailId":"detail-1",
+                    "kind":"tool_result",
+                    "title":"工具结果",
+                    "text":"</think>已完成",
+                    "visibleToUser":true
+                  }
+                }
+            """.trimIndent(),
+        )
+
+        assertNull(event)
     }
 
     @Test
