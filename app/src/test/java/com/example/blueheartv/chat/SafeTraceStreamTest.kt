@@ -93,6 +93,18 @@ class SafeTraceStreamTest {
     }
 
     @Test
+    fun assistantDeltaMapsKnownPackageNamesForUserVisibleText() {
+        val event = parseSafeStreamEvent(
+            "assistant.delta",
+            """{"type":"assistant.delta","chunk":"我看到飞书的包名是 com.ss.android.lark，正在再次尝试打开。","streamSeq":2}""",
+        ) as ChatStreamEvent.TextDelta
+
+        assertTrue(event.chunk.contains("飞书"))
+        assertFalse(event.chunk.contains("com.ss.android.lark"))
+        assertFalse(event.chunk.contains("包名"))
+    }
+
+    @Test
     fun unknownSafeFacadeEventIsRejected() {
         val event = parseSafeStreamEvent(
             "trace.v1",

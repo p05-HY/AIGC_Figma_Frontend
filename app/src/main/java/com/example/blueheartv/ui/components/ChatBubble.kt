@@ -357,6 +357,7 @@ fun AiBubble(
                                 TraceTimeline(
                                     trace = requireNotNull(message.trace),
                                     isLiveMessage = message.isLoading,
+                                    displayContext = message.content,
                                 )
                             }
                             message.toolCalls?.takeIf { it.isNotEmpty() && !traceVisible }?.let { toolCalls ->
@@ -429,12 +430,40 @@ internal fun shouldRenderAssistantTrace(
 ): Boolean {
     val trace = message.trace ?: return false
     if (!traceRenderEnabled) return false
+    if (message.content.isNotBlank() && trace.isTextOnlyPlaceholderTrace()) return false
     val isPlainCompletedPlaceholder =
         message.deliveryState == com.example.blueheartv.model.MessageDeliveryState.COMPLETED &&
             message.content.isNotBlank() &&
             !trace.hasTerminal &&
             trace.steps.none { it.visibleToUser }
     return !isPlainCompletedPlaceholder
+}
+
+private fun com.example.blueheartv.model.AssistantTrace.isTextOnlyPlaceholderTrace(): Boolean {
+    if (runStatus !in setOf(
+            com.example.blueheartv.model.TraceRunStatus.RUNNING,
+            com.example.blueheartv.model.TraceRunStatus.SUCCEEDED,
+        )
+    ) {
+        return false
+    }
+    val visibleSteps = steps.filter { it.visibleToUser }
+    if (visibleSteps.isEmpty()) return true
+    return visibleSteps.none { step ->
+        val key = "${step.kind} ${step.title} ${step.summary}".lowercase()
+        key.contains("phone_action") ||
+            key.contains("launch") ||
+            key.contains("open_app") ||
+            key.contains("tap") ||
+            key.contains("swipe") ||
+            key.contains("type") ||
+            key.contains("observe") ||
+            key.contains("weather_query") ||
+            key.contains("system") ||
+            key.contains("life_service") ||
+            key.contains("office") ||
+            key.contains("approval")
+    }
 }
 
 @Composable

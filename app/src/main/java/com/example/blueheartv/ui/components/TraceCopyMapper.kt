@@ -20,6 +20,7 @@ private val internalTraceMarkers = listOf(
     "stream.heartbeat",
     "stream.eof",
     "stream.error",
+    "run.terminal",
     "task_progress",
     "task_complexity",
     "tool_calls",
@@ -110,13 +111,13 @@ private fun statusSummaryFallback(status: TraceStepStatus): String = when (statu
 
 private fun traceKindCopy(kind: String): String? = when (kind.normalizedTraceKey()) {
     "vision", "observation", "observe" -> "观察屏幕"
-    "phone_action" -> "执行手机操作"
+    "phone_action" -> "操作手机"
     "system" -> "系统能力"
     "life_service" -> "生活服务"
     "office" -> "办公协作"
     "approval" -> "等待确认"
-    "tool" -> "工具调用"
-    "generic" -> "执行操作"
+    "tool" -> "使用工具"
+    "generic" -> "处理步骤"
     "error" -> "错误"
     else -> null
 }
@@ -125,9 +126,9 @@ private fun traceDetailKindCopy(kind: TraceDetailKind): String? = when (kind) {
     TraceDetailKind.REASONING_SUMMARY -> "理解"
     TraceDetailKind.PLAN -> "计划"
     TraceDetailKind.DECISION -> "判断"
-    TraceDetailKind.TOOL_CALL -> "调用"
-    TraceDetailKind.TOOL_ARGS_SUMMARY -> "参数"
-    TraceDetailKind.TOOL_RESULT -> "结果"
+    TraceDetailKind.TOOL_CALL -> "动作"
+    TraceDetailKind.TOOL_ARGS_SUMMARY -> "目标"
+    TraceDetailKind.TOOL_RESULT -> "进展"
     TraceDetailKind.OBSERVATION -> "观察"
     TraceDetailKind.RETRY -> "重试"
     TraceDetailKind.WARNING -> "提醒"
@@ -143,7 +144,7 @@ private fun traceToolCopy(value: String): String? = when (value.normalizedTraceK
     "back" -> "返回上一级"
     "home" -> "回到桌面"
     "wait" -> "等待页面"
-    "execute_phone_todo" -> "执行手机操作"
+    "execute_phone_todo" -> "操作手机"
     "weather_query" -> "查询天气"
     "amap_mcp_tool" -> "调用高德服务"
     "external_tools_status" -> "检查外部工具"

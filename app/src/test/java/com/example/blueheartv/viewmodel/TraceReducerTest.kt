@@ -55,6 +55,26 @@ class TraceReducerTest {
     }
 
     @Test
+    fun terminalEventStoresReasonAndCancelSourceForUiStatusCopy() {
+        val running = reduceTrace(null, stepEvent(seq = 1))
+        val cancelled = reduceTrace(
+            running,
+            TraceEvent.RunTerminal(
+                runId = "run-1",
+                eventId = "evt-terminal-2",
+                seq = 2,
+                status = TraceRunStatus.CANCELLED,
+                reason = "stream_error",
+                cancelSource = "stream_error",
+            ),
+        )
+
+        assertEquals(TraceRunStatus.CANCELLED, cancelled.runStatus)
+        assertEquals("stream_error", cancelled.terminalReason)
+        assertEquals("stream_error", cancelled.cancelSource)
+    }
+
+    @Test
     fun interruptTrace_doesNotOverrideTerminalStatus() {
         val succeeded = reduceTrace(
             reduceTrace(null, stepEvent(seq = 1)),

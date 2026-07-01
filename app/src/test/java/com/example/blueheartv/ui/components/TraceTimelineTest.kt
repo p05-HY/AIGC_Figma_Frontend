@@ -38,12 +38,12 @@ class TraceTimelineTest {
             com.example.blueheartv.model.AssistantTrace(runId = "run-3"),
         )
 
-        assertEquals("已完成", succeeded.title)
-        assertEquals("已完成 1 个步骤", succeeded.subtitle)
+        assertEquals("已完成 · 1 个步骤", succeeded.title)
+        assertEquals("", succeeded.subtitle)
         assertFalse(succeeded.defaultExpanded)
-        assertEquals("已停止", canceled.title)
+        assertEquals("已停止 · 任务已由你停止", canceled.title)
         assertFalse(canceled.defaultExpanded)
-        assertEquals("正在处理", running.title)
+        assertEquals("正在处理 · 正在准备任务", running.title)
         assertTrue(running.defaultExpanded)
     }
 
@@ -197,19 +197,34 @@ class TraceTimelineTest {
             ),
         )
 
-        assertEquals("执行失败", failed.title)
+        assertEquals("执行失败 · 某一步未能完成", failed.title)
         assertTrue(failed.defaultExpanded)
-        assertEquals("连接中断", interrupted.title)
+        assertEquals("连接中断 · 当前任务未确认完成", interrupted.title)
         assertTrue(interrupted.defaultExpanded)
-        assertEquals("等待确认", waiting.title)
+        assertEquals("等待确认 · 需要你确认后继续", waiting.title)
         assertTrue(waiting.defaultExpanded)
     }
 
     @Test
-    fun activeFailureAndWaitingSteps_areExpandedByDefault() {
-        assertTrue(defaultTraceStepExpanded(TraceStepStatus.RUNNING))
-        assertTrue(defaultTraceStepExpanded(TraceStepStatus.FAILED))
-        assertTrue(defaultTraceStepExpanded(TraceStepStatus.WAITING_FOR_USER))
+    fun nonUserCancelledTrace_isNotShownAsUserStoppedTask() {
+        val trace = traceDisplayState(
+            com.example.blueheartv.model.AssistantTrace(
+                runId = "run-cancelled",
+                runStatus = TraceRunStatus.CANCELLED,
+                hasTerminal = true,
+                terminalReason = "stream_error",
+                cancelSource = "stream_error",
+            ),
+        )
+
+        assertEquals("执行失败 · 服务异常，任务未确认完成", trace.title)
+    }
+
+    @Test
+    fun stepDetails_areHiddenByDefaultEvenForActiveSteps() {
+        assertFalse(defaultTraceStepExpanded(TraceStepStatus.RUNNING))
+        assertFalse(defaultTraceStepExpanded(TraceStepStatus.FAILED))
+        assertFalse(defaultTraceStepExpanded(TraceStepStatus.WAITING_FOR_USER))
     }
 
     @Test
@@ -378,6 +393,218 @@ class TraceTimelineTest {
 
         assertEquals("查询天气", userFacingTraceTitle(step))
         assertEquals("正在执行", userFacingTraceSummary(step))
+    }
+
+    @Test
+    fun displayMapper_productizesOpenAppStepsWithKnownApps() {
+        val wechat = traceStep(
+            id = "open-wechat",
+            title = "launch",
+        ).copy(
+            summary = "已发起打开应用操作。",
+            details = listOf(
+                TraceDetail(
+                    id = "wechat-args",
+                    kind = TraceDetailKind.TOOL_ARGS_SUMMARY,
+                    title = "参数",
+                    text = "尝试打开 com.tencent.mm。",
+                ),
+            ),
+        )
+        val lark = traceStep(
+            id = "open-lark",
+            title = "打开应用",
+        ).copy(summary = "尝试打开 com.ss.android.lark。")
+        val settings = traceStep(
+            id = "open-settings",
+            title = "open_app",
+        ).copy(summary = "try open system settings")
+
+        val displays = traceStepDisplayModels(listOf(wechat, lark, settings))
+
+        assertEquals("打开微信", displays[0].title)
+        assertTrue(displays[0].summary.contains("微信"))
+        assertFalse(displays[0].summary.contains("com.tencent.mm"))
+        assertTrue(displays[0].detailLines.none { it.contains("com.tencent.mm") })
+        assertEquals("打开飞书", displays[1].title)
+        assertEquals("打开系统设置", displays[2].title)
+    }
+
+    @Test
+    fun displayMapper_usesPromptContextToProductizeGenericOpenAppSteps() {
+        val step = traceStep(
+            id = "open-wechat",
+            title = "launch",
+        ).copy(
+            summary = "尝试打开目标应用。",
+            status = TraceStepStatus.RUNNING,
+        )
+
+        val display = traceStepDisplayModels(
+            steps = listOf(step),
+            displayContext = "帮我打开微信",
+        ).single()
+
+        assertEquals("打开微信", display.title)
+        assertEquals("正在打开微信。", display.summary)
+        assertTrue(display.detailLines.none { it.contains("目标应用") })
+    }
+
+    @Test
+    fun displayMapper_usesAssistantContextToProductizeKnownPackageWithoutShowingPackage() {
+        val step = traceStep(
+            id = "open-lark",
+            title = "打开应用",
+        ).copy(summary = "尝试打开目标应用。")
+
+        val display = traceStepDisplayModels(
+            steps = listOf(step),
+            displayContext = "我找到了 com.ss.android.lark，正在重新尝试打开。",
+        ).single()
+
+        val rendered = buildString {
+            append(display.title)
+            append(display.summary)
+            display.detailLines.forEach(::append)
+        }
+
+        assertEquals("打开飞书", display.title)
+        assertTrue(rendered.contains("飞书"))
+        assertFalse(rendered.contains("com.ss.android.lark"))
+        assertFalse(rendered.contains("目标应用"))
+    }
+
+    @Test
+    fun displayMapper_usesFallbackWhenAppCannotBeIdentified() {
+        val display = traceStepDisplayModels(
+            listOf(
+                traceStep(id = "open-unknown", title = "launch")
+                    .copy(summary = "尝试打开目标应用。"),
+            ),
+        ).single()
+
+        assertEquals("打开目标应用", display.title)
+        assertEquals("已发起打开操作。", display.summary)
+    }
+
+    @Test
+    fun displayMapper_doesNotExposeInternalEventNamesOrRawPackages() {
+        val display = traceStepDisplayModels(
+            listOf(
+                traceStep(id = "raw", title = "execute_phone_todo").copy(
+                    kind = "trace.v1",
+                    summary = "assistant.delta stream.eof execute_phone_todo com.unknown.secret raw result",
+                    details = listOf(
+                        TraceDetail(
+                            id = "raw-detail",
+                            kind = TraceDetailKind.TOOL_RESULT,
+                            title = "结果",
+                            text = "Traceback Authorization token screenshot base64 UI tree",
+                        ),
+                    ),
+                ),
+            ),
+        ).single()
+
+        val renderedText = buildString {
+            append(display.title)
+            append(display.summary)
+            display.detailLines.forEach(::append)
+        }
+
+        assertFalse(renderedText.contains("trace.v1"))
+        assertFalse(renderedText.contains("assistant.delta"))
+        assertFalse(renderedText.contains("stream.eof"))
+        assertFalse(renderedText.contains("execute_phone_todo"))
+        assertFalse(renderedText.contains("com.unknown.secret"))
+        assertFalse(renderedText.contains("Traceback"))
+        assertFalse(renderedText.contains("Authorization"))
+        assertFalse(renderedText.contains("base64"))
+    }
+
+    @Test
+    fun displayMapper_avoidsRepeatedGenericStepTitles() {
+        val displays = traceStepDisplayModels(
+            listOf(
+                traceStep(id = "analysis", title = "分析请求")
+                    .copy(kind = "generic", summary = "已完成请求处理。"),
+                traceStep(id = "phone", title = "执行手机操作")
+                    .copy(kind = "phone_action", summary = "已发起打开应用操作。"),
+                traceStep(id = "generic", title = "执行操作")
+                    .copy(kind = "generic", summary = "已完成受控操作。"),
+            ),
+        )
+
+        val titles = displays.map { it.title }
+
+        assertEquals(listOf("理解需求", "打开目标应用", "处理完成"), titles)
+        assertEquals(titles.toSet().size, titles.size)
+        assertFalse(titles.contains("执行操作"))
+        assertFalse(titles.contains("执行手机操作"))
+    }
+
+    @Test
+    fun displayMapper_doesNotInventPhoneCompletionForSimpleConversation() {
+        val displays = traceStepDisplayModels(
+            steps = listOf(
+                traceStep(id = "analysis", title = "分析请求")
+                    .copy(kind = "summary", summary = "已完成请求处理。", status = TraceStepStatus.SUCCEEDED),
+                traceStep(id = "terminal", title = "执行操作")
+                    .copy(kind = "generic", summary = "已完成受控操作。", status = TraceStepStatus.SUCCEEDED),
+            ),
+            displayContext = "回复我 OK",
+        )
+
+        val rendered = buildString {
+            displays.forEach {
+                append(it.title)
+                append(it.summary)
+                it.detailLines.forEach(::append)
+            }
+        }
+
+        assertFalse(rendered.contains("手机操作"))
+        assertFalse(rendered.contains("受控操作"))
+        assertFalse(rendered.contains("确认完成"))
+        assertFalse(rendered.contains("打开目标应用"))
+        assertFalse(rendered.contains("execute_phone_todo"))
+    }
+
+    @Test
+    fun displayMapper_keepsDetailLinesLightweightAndProductized() {
+        val display = traceStepDisplayModels(
+            listOf(
+                traceStep(id = "open-wechat", title = "launch").copy(
+                    details = listOf(
+                        TraceDetail(
+                            id = "call",
+                            kind = TraceDetailKind.TOOL_CALL,
+                            title = "调用",
+                            text = "打开应用。",
+                        ),
+                        TraceDetail(
+                            id = "args",
+                            kind = TraceDetailKind.TOOL_ARGS_SUMMARY,
+                            title = "参数",
+                            text = "尝试打开 com.tencent.mm。",
+                        ),
+                        TraceDetail(
+                            id = "result",
+                            kind = TraceDetailKind.TOOL_RESULT,
+                            title = "结果",
+                            text = "已发起打开应用操作。",
+                        ),
+                    ),
+                ),
+            ),
+        ).single()
+
+        assertTrue(display.detailLines.isNotEmpty())
+        assertTrue(display.detailLines.all { "：" in it })
+        assertTrue(display.detailLines.none { it.startsWith("调用：") })
+        assertTrue(display.detailLines.none { it.startsWith("参数：") })
+        assertTrue(display.detailLines.none { it.startsWith("结果：") })
+        assertTrue(display.detailLines.none { it.contains("com.tencent.mm") })
     }
 
     @Test

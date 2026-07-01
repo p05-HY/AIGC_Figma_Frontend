@@ -725,6 +725,7 @@ class ChatViewModel(
                             runId = event.runId,
                             threadId = event.threadId,
                             summary = message,
+                            displayContext = prompt.text,
                         )
                         _uiState.update {
                             it.copy(
@@ -766,6 +767,7 @@ class ChatViewModel(
 
                     is ChatStreamEvent.Trace -> {
                         trace = reduceTrace(trace, event.event)
+                        trace = trace?.withDisplayContext(prompt.text)
                         val finalTrace = trace
                         if (event.event is TraceEvent.RunTerminal &&
                             finalTrace?.hasTerminal == true &&
@@ -777,13 +779,13 @@ class ChatViewModel(
                         }
                         _uiState.update {
                             it.copy(
-                                streamingStep = "正在执行手机操作",
+                                streamingStep = "正在处理任务",
                                 streamLifecycleState = StreamLifecycleState.STREAMING,
                             )
                         }
                         updateAssistantMessage(
                             assistantMessageId,
-                            ChatState.CHAT_TOOL_CALLING,
+                            if (trace.hasActionTraceStep()) ChatState.CHAT_TOOL_CALLING else ChatState.CHAT_SIMPLE,
                             ChatSessionState.RESPONDING,
                             refreshHistories = false,
                         ) { msg ->
@@ -793,7 +795,7 @@ class ChatViewModel(
                                 // 只有新版 Trace UI 实际渲染时才隐藏旧进度卡。
                                 toolCalls = legacyToolCallsFor(),
                                 lastReceivedStreamSeq = stream.receivedStreamSeq,
-                                terminalStatus = trace.terminalStatusName(),
+                                terminalStatus = finalTrace.terminalStatusName(),
                             )
                         }
                     }
@@ -1507,8 +1509,33 @@ class ChatViewModel(
     private fun findMessageTrace(messageId: String): AssistantTrace? =
         repo.getActiveSession()?.messages?.firstOrNull { it.id == messageId }?.trace
 
-    private fun AssistantTrace.terminalStatusName(): String? =
-        if (!hasTerminal) null else runStatus.terminalStatusName()
+    private fun AssistantTrace.withDisplayContext(context: String): AssistantTrace =
+        if (displayContext.isNullOrBlank() && context.isNotBlank()) {
+            copy(displayContext = context)
+        } else {
+            this
+        }
+
+    private fun AssistantTrace?.hasActionTraceStep(): Boolean =
+        this?.steps.orEmpty().any { step ->
+            if (!step.visibleToUser) return@any false
+            val key = "${step.kind} ${step.title} ${step.summary}".lowercase()
+            key.contains("phone_action") ||
+                key.contains("launch") ||
+                key.contains("open_app") ||
+                key.contains("tap") ||
+                key.contains("swipe") ||
+                key.contains("type") ||
+                key.contains("observe") ||
+                key.contains("weather_query") ||
+                key.contains("system") ||
+                key.contains("life_service") ||
+                key.contains("office") ||
+                key.contains("approval")
+        }
+
+    private fun AssistantTrace?.terminalStatusName(): String? =
+        if (this == null || !hasTerminal) null else runStatus.terminalStatusName()
 
     private fun TraceRunStatus.terminalStatusName(): String =
         when (this) {

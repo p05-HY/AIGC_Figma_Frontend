@@ -147,6 +147,7 @@ private fun parseTrace(json: String): AssistantTrace? {
             runId = obj.optString("runId"),
             threadId = obj.optString("threadId").takeIf { it.isNotBlank() },
             summary = obj.optString("summary").takeIf { it.isNotBlank() },
+            displayContext = obj.optString("displayContext").takeIf { it.isNotBlank() },
             steps = obj.optJSONArray("steps")?.let { arr ->
                 (0 until arr.length()).mapNotNull { i ->
                     val stepObj = arr.optJSONObject(i) ?: return@mapNotNull null
@@ -165,6 +166,8 @@ private fun parseTrace(json: String): AssistantTrace? {
             }.orEmpty(),
             runStatus = runCatching { TraceRunStatus.valueOf(obj.optString("runStatus")) }
                 .getOrDefault(TraceRunStatus.RUNNING),
+            terminalReason = obj.optString("terminalReason").takeIf { it.isNotBlank() },
+            cancelSource = obj.optString("cancelSource").takeIf { it.isNotBlank() },
             lastSeq = obj.optLong("lastSeq", 0L),
             seenEventIds = obj.optJSONArray("seenEventIds")?.let { arr ->
                 (0 until arr.length()).mapNotNull { i -> arr.optString(i).takeIf { it.isNotBlank() } }.toSet()
@@ -179,6 +182,7 @@ private fun serializeTrace(trace: AssistantTrace): String {
         put("runId", trace.runId)
         trace.threadId?.let { put("threadId", it) }
         trace.summary?.let { put("summary", it) }
+        trace.displayContext?.let { put("displayContext", it) }
         put("steps", JSONArray().apply {
             trace.steps.forEach { step ->
                 put(JSONObject().apply {
@@ -209,6 +213,8 @@ private fun serializeTrace(trace: AssistantTrace): String {
             }
         })
         put("runStatus", trace.runStatus.name)
+        trace.terminalReason?.let { put("terminalReason", it) }
+        trace.cancelSource?.let { put("cancelSource", it) }
         put("lastSeq", trace.lastSeq)
         put("seenEventIds", JSONArray(trace.seenEventIds))
         put("hasTerminal", trace.hasTerminal)

@@ -52,11 +52,13 @@ fun TraceTimeline(
     trace: AssistantTrace,
     modifier: Modifier = Modifier,
     isLiveMessage: Boolean = false,
+    displayContext: String? = null,
 ) {
     AgentTraceCard(
         trace = trace,
         modifier = modifier,
         isLiveMessage = isLiveMessage,
+        displayContext = displayContext,
     )
 }
 
@@ -65,10 +67,11 @@ fun AgentTraceCard(
     trace: AssistantTrace,
     modifier: Modifier = Modifier,
     isLiveMessage: Boolean = false,
+    displayContext: String? = null,
 ) {
-    val shape = RoundedCornerShape(12.dp)
     val colorScheme = MaterialTheme.colorScheme
-    val displayState = traceDisplayState(trace)
+    val combinedDisplayContext = traceDisplayContext(trace, displayContext)
+    val displayState = traceDisplayState(trace, combinedDisplayContext)
     val totalLayouts = visibleTraceStepLayouts(trace.steps)
     val initialExpansion = initialTraceExpansionSnapshot(
         status = displayState.status,
@@ -105,13 +108,16 @@ fun AgentTraceCard(
         expanded = expanded,
         showAll = showAllSteps,
     )
+    val displayModelsById = traceStepDisplayModels(
+        steps = totalLayouts.map { it.step },
+        traceSummary = trace.summary,
+        displayContext = combinedDisplayContext,
+    ).associateBy { it.stepId }
     val canExpand = totalLayouts.isNotEmpty()
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .clip(shape)
-            .background(colorScheme.surfaceContainerLowest.copy(alpha = 0.46f), shape)
-            .padding(horizontal = 10.dp, vertical = 9.dp),
+            .padding(horizontal = 2.dp, vertical = 4.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         TraceHeader(
@@ -148,6 +154,8 @@ fun AgentTraceCard(
                 key(layout.step.id) {
                     TraceStepTimelineItem(
                         step = layout.step,
+                        displayModel = displayModelsById[layout.step.id]
+                            ?: traceStepDisplayModel(layout.step, trace.summary, combinedDisplayContext),
                         depth = layout.depth,
                         defaultExpanded = defaultTraceStepExpanded(layout.step.status),
                         isLast = index == layouts.lastIndex,
@@ -156,7 +164,7 @@ fun AgentTraceCard(
             }
             if (totalLayouts.size > layouts.size || showAllSteps) {
                 Text(
-                    text = if (showAllSteps) "收起步骤" else "显示更多步骤",
+                    text = if (showAllSteps) "收起步骤" else "查看更多步骤",
                     color = colorScheme.primary,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium,
@@ -225,16 +233,17 @@ internal fun TraceHeader(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Text(
-                text = displayState.subtitle,
-                color = colorScheme.onSurfaceVariant,
-                fontSize = 12.sp,
-                lineHeight = 16.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            if (displayState.subtitle.isNotBlank()) {
+                Text(
+                    text = displayState.subtitle,
+                    color = colorScheme.onSurfaceVariant,
+                    fontSize = 12.sp,
+                    lineHeight = 16.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
-        TraceStatusLabel(status = status, accent = accent)
         if (canExpand) {
             Icon(
                 imageVector = if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
@@ -247,20 +256,19 @@ internal fun TraceHeader(
 }
 
 @Composable
-fun TraceStepTimelineItem(
+internal fun TraceStepTimelineItem(
     step: TraceStep,
+    displayModel: TraceStepDisplayModel = traceStepDisplayModel(step),
     depth: Int,
     defaultExpanded: Boolean,
     isLast: Boolean,
 ) {
     val colorScheme = MaterialTheme.colorScheme
-    val spec = traceVisualSpec(step.kind, step.status, colorScheme)
-    val title = userFacingTraceTitle(step)
-    val summary = userFacingTraceSummary(step)
-    val details = visibleTraceDetails(step)
+    val title = displayModel.title
+    val summary = displayModel.summary
+    val details = displayModel.detailLines
     val expandable = details.isNotEmpty() || summary.length > 72 || step.status in expandableTraceStatuses()
     var expanded by rememberSaveable(step.id) { mutableStateOf(defaultExpanded) }
-    val shape = RoundedCornerShape(9.dp)
     val indent = traceStepStartPaddingDp(depth).dp
     Row(
         modifier = Modifier
@@ -273,10 +281,8 @@ fun TraceStepTimelineItem(
         Column(
             modifier = Modifier
                 .weight(1f)
-                .clip(shape)
-                .background(traceStepContainer(step.status, spec.container), shape)
                 .clickable(enabled = expandable) { expanded = !expanded }
-                .padding(horizontal = 8.dp, vertical = 7.dp),
+                .padding(horizontal = 2.dp, vertical = 2.dp),
             verticalArrangement = Arrangement.spacedBy(5.dp),
         ) {
             Row(
@@ -293,13 +299,6 @@ fun TraceStepTimelineItem(
                         color = colorScheme.onSurface,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Medium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        text = spec.label,
-                        color = spec.accent,
-                        fontSize = 11.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -327,7 +326,7 @@ fun TraceStepTimelineItem(
             if (expanded && step.status == TraceStepStatus.WAITING_FOR_USER) {
                 Text(
                     text = waitingForUserGuidanceText(),
-                    color = spec.accent,
+                    color = traceStepStatusAccent(step.status),
                     fontSize = 12.sp,
                     lineHeight = 17.sp,
                 )
@@ -397,45 +396,41 @@ fun TraceKindIcon(
 }
 
 @Composable
-fun TraceDetailList(details: List<TraceDetail>) {
+fun TraceDetailList(details: List<String>) {
     Column(
         modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         details.forEach { detail ->
-            TraceDetailChip(detail = detail)
+            TraceDetailLine(detail = detail)
         }
     }
 }
 
 @Composable
-fun TraceDetailChip(detail: TraceDetail) {
+fun TraceDetailLine(detail: String) {
     val colorScheme = MaterialTheme.colorScheme
-    var expanded by rememberSaveable(detail.id) { mutableStateOf(false) }
-    Column(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .background(traceDetailContainer(detail.kind))
-            .clickable { expanded = !expanded }
-            .padding(horizontal = 8.dp, vertical = 6.dp),
-        verticalArrangement = Arrangement.spacedBy(3.dp),
+            .padding(top = 1.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.Top,
     ) {
-        Text(
-            text = userFacingDetailTitle(detail),
-            color = traceDetailAccent(detail.kind),
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Medium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+        Box(
+            modifier = Modifier
+                .padding(top = 7.dp)
+                .size(3.dp)
+                .background(colorScheme.outlineVariant, CircleShape),
         )
         Text(
-            text = userFacingDetailText(detail),
+            text = detail,
             color = colorScheme.onSurfaceVariant,
             fontSize = 12.sp,
             lineHeight = 17.sp,
-            maxLines = traceDetailMaxLines(expanded),
+            maxLines = 3,
             overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
         )
     }
 }
@@ -544,7 +539,7 @@ private fun traceStepContainer(status: TraceStepStatus, activeContainer: Color):
     }
 
 internal fun defaultTraceStepExpanded(status: TraceStepStatus): Boolean =
-    status in expandableTraceStatuses()
+    false
 
 internal fun traceSummaryMaxLines(expanded: Boolean): Int = if (expanded) 6 else 2
 
@@ -644,18 +639,16 @@ internal fun traceExpansionAfterShowAllToggle(current: TraceExpansionSnapshot): 
 private fun traceRunStatusFromName(name: String): TraceRunStatus? =
     TraceRunStatus.entries.firstOrNull { it.name == name }
 
-internal fun traceDisplayState(trace: AssistantTrace): TraceDisplayState {
+internal fun traceDisplayState(trace: AssistantTrace, displayContext: String? = null): TraceDisplayState {
     val status = effectiveTraceRunStatus(trace)
     val stepCount = trace.steps.count { it.visibleToUser }
-    val subtitle = when (status) {
-        TraceRunStatus.RUNNING -> trace.summary
-            ?.let(::compactTraceSummary)
-            ?.takeIf { it.isNotBlank() }
-            ?: if (stepCount > 0) "正在执行任务步骤" else "正在准备任务"
-        TraceRunStatus.SUCCEEDED -> "已完成 $stepCount 个步骤"
+    val statusDetail = when (status) {
+        TraceRunStatus.RUNNING -> traceHeaderActivityText(trace.steps, traceDisplayContext(trace, displayContext))
+        TraceRunStatus.SUCCEEDED -> "$stepCount 个步骤"
         TraceRunStatus.FAILED -> trace.summary
             ?.let(::compactTraceSummary)
-            ?.takeIf { it.isNotBlank() }
+            ?.takeIf { it.isNotBlank() && it != INTERNAL_TRACE_DATA_MESSAGE }
+            ?: nonUserCancellationDetail(trace)
             ?: "某一步未能完成"
         TraceRunStatus.CANCELLED -> "任务已由你停止"
         TraceRunStatus.WAITING_FOR_USER -> "需要你确认后继续"
@@ -663,8 +656,8 @@ internal fun traceDisplayState(trace: AssistantTrace): TraceDisplayState {
     }
     return TraceDisplayState(
         status = status,
-        title = traceDisplayTitle(status),
-        subtitle = subtitle,
+        title = "${traceDisplayTitle(status)} · $statusDetail",
+        subtitle = "",
         defaultExpanded = status in setOf(
             TraceRunStatus.RUNNING,
             TraceRunStatus.FAILED,
@@ -687,6 +680,12 @@ internal fun traceDisplayState(trace: AssistantTrace): TraceDisplayState {
         ),
     )
 }
+
+internal fun traceDisplayContext(trace: AssistantTrace, displayContext: String? = null): String? =
+    listOfNotNull(trace.displayContext, displayContext)
+        .joinToString(" ")
+        .trim()
+        .takeIf { it.isNotBlank() }
 
 private fun traceDisplayTitle(status: TraceRunStatus): String = when (status) {
     TraceRunStatus.RUNNING -> "正在处理"
@@ -752,7 +751,7 @@ internal fun waitingForUserGuidanceText(): String =
 @Composable
 private fun TraceCompactStatusLine(displayState: TraceDisplayState) {
     Text(
-        text = displayState.subtitle,
+        text = displayState.subtitle.ifBlank { displayState.title },
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         fontSize = 12.sp,
         lineHeight = 17.sp,
@@ -768,12 +767,38 @@ internal fun effectiveTraceRunStatus(trace: AssistantTrace): TraceRunStatus {
         trace.runStatus == TraceRunStatus.FAILED || TraceStepStatus.FAILED in stepStatuses -> TraceRunStatus.FAILED
         trace.runStatus == TraceRunStatus.WAITING_FOR_USER ||
             TraceStepStatus.WAITING_FOR_USER in stepStatuses -> TraceRunStatus.WAITING_FOR_USER
-        trace.runStatus == TraceRunStatus.CANCELLED || TraceStepStatus.CANCELLED in stepStatuses -> TraceRunStatus.CANCELLED
+        trace.runStatus == TraceRunStatus.CANCELLED -> {
+            if (trace.isUserCancelled()) TraceRunStatus.CANCELLED else nonUserCancelledStatus(trace)
+        }
+        TraceStepStatus.CANCELLED in stepStatuses -> TraceRunStatus.CANCELLED
         trace.runStatus == TraceRunStatus.INTERRUPTED -> TraceRunStatus.INTERRUPTED
         trace.runStatus == TraceRunStatus.RUNNING || TraceStepStatus.RUNNING in stepStatuses -> TraceRunStatus.RUNNING
         else -> TraceRunStatus.SUCCEEDED
     }
 }
+
+private fun AssistantTrace.isUserCancelled(): Boolean {
+    val source = cancelSource ?: terminalReason
+    return source == null || source in setOf("user", "user_stop")
+}
+
+private fun nonUserCancelledStatus(trace: AssistantTrace): TraceRunStatus =
+    when (trace.cancelSource ?: trace.terminalReason) {
+        "client_disconnected", "session_deleted", "cleanup" -> TraceRunStatus.INTERRUPTED
+        else -> TraceRunStatus.FAILED
+    }
+
+private fun nonUserCancellationDetail(trace: AssistantTrace): String? =
+    if (trace.runStatus != TraceRunStatus.CANCELLED || trace.isUserCancelled()) {
+        null
+    } else {
+        when (trace.cancelSource ?: trace.terminalReason) {
+            "client_disconnected", "session_deleted", "cleanup" -> "连接中断，任务未确认完成"
+            "stream_error", "provider_exception" -> "服务异常，任务未确认完成"
+            "run_rejected", "thread_busy" -> "当前会话仍有任务在执行"
+            else -> "任务未确认完成"
+        }
+    }
 
 internal fun traceHeaderTitle(status: TraceRunStatus): String = when (status) {
     TraceRunStatus.RUNNING -> "Echo 正在处理"

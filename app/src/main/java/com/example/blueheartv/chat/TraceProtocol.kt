@@ -14,6 +14,16 @@ private const val MAX_TRACE_SUMMARY_CHARS = 240
 private const val MAX_TRACE_DETAIL_TEXT_CHARS = 500
 private val THINK_OPEN_TAG = Regex("<\\s*(?:think|thinking)\\s*>", RegexOption.IGNORE_CASE)
 private val THINK_CLOSE_TAG = Regex("<\\s*/\\s*(?:think|thinking)\\s*>", RegexOption.IGNORE_CASE)
+private val KNOWN_PACKAGE_REPLACEMENTS = listOf(
+    Regex("\\bcom\\.tencent\\.mm\\b", RegexOption.IGNORE_CASE) to "微信",
+    Regex("\\bcom\\.ss\\.android\\.lark\\b", RegexOption.IGNORE_CASE) to "飞书",
+    Regex("\\bcom\\.android\\.settings\\b", RegexOption.IGNORE_CASE) to "系统设置",
+)
+private val KNOWN_PACKAGE_NAME_SENTENCE = Regex(
+    "(微信|飞书|系统设置)的包名是\\s*(微信|飞书|系统设置)",
+    RegexOption.IGNORE_CASE,
+)
+private val RAW_PACKAGE_NAME = Regex("\\b[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*){2,}\\b", RegexOption.IGNORE_CASE)
 
 /** 对安全门面输出做白名单解析。任何未知字段与未识别事件都会被忽略。 */
 fun parseSafeStreamEvent(eventName: String, payload: String): ChatStreamEvent? {
@@ -228,7 +238,7 @@ private fun sanitizeAssistantDelta(chunk: String): String? {
     if (chunk.contains("<think", ignoreCase = true)) return null
     val cleaned = THINK_CLOSE_TAG.replace(chunk, "")
     if (cleaned.containsThinkMarkup()) return null
-    return cleaned.takeIf { it.isNotEmpty() }
+    return sanitizePackageNames(cleaned).takeIf { it.isNotEmpty() }
 }
 
 private fun String.containsThinkMarkup(): Boolean =
@@ -236,6 +246,17 @@ private fun String.containsThinkMarkup(): Boolean =
         THINK_CLOSE_TAG.containsMatchIn(this) ||
         contains("<think", ignoreCase = true) ||
         contains("</think", ignoreCase = true)
+
+private fun sanitizePackageNames(text: String): String {
+    var redacted = text
+    KNOWN_PACKAGE_REPLACEMENTS.forEach { (pattern, displayName) ->
+        redacted = pattern.replace(redacted, displayName)
+    }
+    redacted = KNOWN_PACKAGE_NAME_SENTENCE.replace(redacted) { match ->
+        "${match.groupValues[1]}的应用信息"
+    }
+    return RAW_PACKAGE_NAME.replace(redacted, "应用信息")
+}
 
 private fun String.bounded(limit: Int): String =
     if (length <= limit) this else take(limit - 1) + "…"

@@ -57,6 +57,8 @@ fun reduceTrace(current: AssistantTrace?, event: TraceEvent): AssistantTrace {
 
         is TraceEvent.RunTerminal -> trace.copy(
             runStatus = event.status,
+            terminalReason = event.reason ?: trace.terminalReason,
+            cancelSource = event.cancelSource ?: trace.cancelSource,
             hasTerminal = true,
         )
     }
