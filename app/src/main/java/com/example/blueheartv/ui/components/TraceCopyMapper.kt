@@ -13,14 +13,32 @@ private const val MAX_TRACE_DETAIL_TEXT_CHARS = 500
 
 private val internalTraceMarkers = listOf(
     "<think",
+    "</think",
+    "trace.v1",
+    "assistant.delta",
+    "stream.started",
+    "stream.heartbeat",
+    "stream.eof",
+    "stream.error",
+    "task_progress",
+    "task_complexity",
     "tool_calls",
     "invalid_tool_calls",
     "additional_kwargs",
     "response_metadata",
     "api_key",
+    "x-api-key",
     "access_token",
     "authorization",
-    "base64,",
+    "cookie",
+    "appkey",
+    "secret",
+    "password",
+    "token=",
+    "base64",
+    "screenshot",
+    "ui tree",
+    "traceback",
     "<node",
     "<hierarchy",
     "\"kwargs\"",
@@ -50,6 +68,7 @@ fun userFacingTraceSummary(step: TraceStep): String {
 
 fun userFacingDetailTitle(detail: TraceDetail): String {
     val rawTitle = detail.title.trim()
+    if (rawTitle.isInternalTraceText()) return "详情"
     val mapped = traceDetailKindCopy(detail.kind)
         ?: traceToolCopy(rawTitle)
         ?: rawTitle.takeIf { it.isReadableChineseLabel() }

@@ -12,8 +12,8 @@ private const val MAX_TRACE_EVENT_BYTES = 4 * 1024
 private const val MAX_TRACE_TITLE_CHARS = 48
 private const val MAX_TRACE_SUMMARY_CHARS = 240
 private const val MAX_TRACE_DETAIL_TEXT_CHARS = 500
-private val THINK_OPEN_TAG = Regex("<\\s*think\\s*>", RegexOption.IGNORE_CASE)
-private val THINK_CLOSE_TAG = Regex("<\\s*/\\s*think\\s*>", RegexOption.IGNORE_CASE)
+private val THINK_OPEN_TAG = Regex("<\\s*(?:think|thinking)\\s*>", RegexOption.IGNORE_CASE)
+private val THINK_CLOSE_TAG = Regex("<\\s*/\\s*(?:think|thinking)\\s*>", RegexOption.IGNORE_CASE)
 
 /** 对安全门面输出做白名单解析。任何未知字段与未识别事件都会被忽略。 */
 fun parseSafeStreamEvent(eventName: String, payload: String): ChatStreamEvent? {

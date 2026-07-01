@@ -6,15 +6,16 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -23,9 +24,9 @@ import androidx.compose.material.icons.outlined.ExpandLess
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -50,63 +51,152 @@ import com.example.blueheartv.model.TraceStepStatus
 fun TraceTimeline(
     trace: AssistantTrace,
     modifier: Modifier = Modifier,
+    isLiveMessage: Boolean = false,
 ) {
-    AgentTraceCard(trace = trace, modifier = modifier)
+    AgentTraceCard(
+        trace = trace,
+        modifier = modifier,
+        isLiveMessage = isLiveMessage,
+    )
 }
 
 @Composable
 fun AgentTraceCard(
     trace: AssistantTrace,
     modifier: Modifier = Modifier,
+    isLiveMessage: Boolean = false,
 ) {
-    val shape = RoundedCornerShape(20.dp)
+    val shape = RoundedCornerShape(12.dp)
     val colorScheme = MaterialTheme.colorScheme
-    val layouts = visibleTraceStepLayouts(trace.steps)
+    val displayState = traceDisplayState(trace)
+    val totalLayouts = visibleTraceStepLayouts(trace.steps)
+    val initialExpansion = initialTraceExpansionSnapshot(
+        status = displayState.status,
+        isLiveMessage = isLiveMessage,
+    )
+    var expanded by rememberSaveable(trace.runId) { mutableStateOf(initialExpansion.expanded) }
+    var userTouchedExpansion by rememberSaveable("${trace.runId}:touched") {
+        mutableStateOf(initialExpansion.userTouchedExpansion)
+    }
+    var showAllSteps by rememberSaveable("${trace.runId}:steps") {
+        mutableStateOf(initialExpansion.showAllSteps)
+    }
+    var observedStatusName by rememberSaveable("${trace.runId}:status") {
+        mutableStateOf(initialExpansion.observedStatus.name)
+    }
+    LaunchedEffect(trace.runId, displayState.status, isLiveMessage, userTouchedExpansion) {
+        val next = traceExpansionAfterStatusChange(
+            current = TraceExpansionSnapshot(
+                expanded = expanded,
+                userTouchedExpansion = userTouchedExpansion,
+                showAllSteps = showAllSteps,
+                observedStatus = traceRunStatusFromName(observedStatusName) ?: displayState.status,
+            ),
+            nextStatus = displayState.status,
+        )
+        expanded = next.expanded
+        userTouchedExpansion = next.userTouchedExpansion
+        showAllSteps = next.showAllSteps
+        observedStatusName = next.observedStatus.name
+    }
+    val layouts = visibleTraceStepLayouts(
+        steps = trace.steps,
+        runStatus = displayState.status,
+        expanded = expanded,
+        showAll = showAllSteps,
+    )
+    val canExpand = totalLayouts.isNotEmpty()
     Column(
         modifier = modifier
             .fillMaxWidth()
             .clip(shape)
-            .background(colorScheme.surfaceContainerLowest.copy(alpha = 0.92f), shape)
-            .border(1.dp, colorScheme.outlineVariant.copy(alpha = 0.45f), shape)
-            .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+            .background(colorScheme.surfaceContainerLowest.copy(alpha = 0.46f), shape)
+            .padding(horizontal = 10.dp, vertical = 9.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        TraceHeader(trace = trace)
+        TraceHeader(
+            trace = trace,
+            displayState = displayState,
+            expanded = expanded,
+            canExpand = canExpand,
+            onToggleExpanded = {
+                if (canExpand) {
+                    val next = traceExpansionAfterHeaderToggle(
+                        TraceExpansionSnapshot(
+                            expanded = expanded,
+                            userTouchedExpansion = userTouchedExpansion,
+                            showAllSteps = showAllSteps,
+                            observedStatus = displayState.status,
+                        ),
+                    )
+                    expanded = next.expanded
+                    userTouchedExpansion = next.userTouchedExpansion
+                    showAllSteps = next.showAllSteps
+                    observedStatusName = next.observedStatus.name
+                }
+            },
+        )
         if (layouts.isEmpty()) {
-            val summary = trace.summary?.let(::compactTraceSummary)
-                ?: "已接收请求，正在连接 Agent。"
-            Text(
-                text = summary,
-                color = colorScheme.onSurfaceVariant,
-                fontSize = 12.sp,
-                lineHeight = 17.sp,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (effectiveTraceRunStatus(trace) == TraceRunStatus.RUNNING) {
+            if (expanded) {
+                TraceCompactStatusLine(displayState = displayState)
+            }
+            if (displayState.status == TraceRunStatus.RUNNING && expanded) {
                 StreamingThinkingIndicator()
             }
         } else {
-            layouts.forEach { layout ->
+            layouts.forEachIndexed { index, layout ->
                 key(layout.step.id) {
-                    TraceStepCard(
+                    TraceStepTimelineItem(
                         step = layout.step,
                         depth = layout.depth,
                         defaultExpanded = defaultTraceStepExpanded(layout.step.status),
+                        isLast = index == layouts.lastIndex,
                     )
                 }
+            }
+            if (totalLayouts.size > layouts.size || showAllSteps) {
+                Text(
+                    text = if (showAllSteps) "收起步骤" else "显示更多步骤",
+                    color = colorScheme.primary,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier
+                        .padding(start = 30.dp)
+                        .clickable {
+                            val next = traceExpansionAfterShowAllToggle(
+                                TraceExpansionSnapshot(
+                                    expanded = expanded,
+                                    userTouchedExpansion = userTouchedExpansion,
+                                    showAllSteps = showAllSteps,
+                                    observedStatus = displayState.status,
+                                ),
+                            )
+                            expanded = next.expanded
+                            userTouchedExpansion = next.userTouchedExpansion
+                            showAllSteps = next.showAllSteps
+                            observedStatusName = next.observedStatus.name
+                        },
+                )
             }
         }
     }
 }
 
 @Composable
-fun TraceHeader(trace: AssistantTrace) {
-    val status = effectiveTraceRunStatus(trace)
+internal fun TraceHeader(
+    trace: AssistantTrace,
+    displayState: TraceDisplayState = traceDisplayState(trace),
+    expanded: Boolean = true,
+    canExpand: Boolean = false,
+    onToggleExpanded: () -> Unit = {},
+) {
+    val status = displayState.status
     val colorScheme = MaterialTheme.colorScheme
     val accent = traceRunAccent(status)
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = canExpand, onClick = onToggleExpanded),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(9.dp),
     ) {
@@ -128,33 +218,40 @@ fun TraceHeader(trace: AssistantTrace) {
             verticalArrangement = Arrangement.spacedBy(1.dp),
         ) {
             Text(
-                text = traceHeaderTitle(status),
+                text = displayState.title,
                 color = colorScheme.onSurface,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            trace.summary?.let { summary ->
-                Text(
-                    text = compactTraceSummary(summary),
-                    color = colorScheme.onSurfaceVariant,
-                    fontSize = 12.sp,
-                    lineHeight = 16.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
+            Text(
+                text = displayState.subtitle,
+                color = colorScheme.onSurfaceVariant,
+                fontSize = 12.sp,
+                lineHeight = 16.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
         TraceStatusLabel(status = status, accent = accent)
+        if (canExpand) {
+            Icon(
+                imageVector = if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                contentDescription = if (expanded) "收起执行过程" else "展开执行过程",
+                tint = colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp),
+            )
+        }
     }
 }
 
 @Composable
-fun TraceStepCard(
+fun TraceStepTimelineItem(
     step: TraceStep,
     depth: Int,
     defaultExpanded: Boolean,
+    isLast: Boolean,
 ) {
     val colorScheme = MaterialTheme.colorScheme
     val spec = traceVisualSpec(step.kind, step.status, colorScheme)
@@ -163,7 +260,7 @@ fun TraceStepCard(
     val details = visibleTraceDetails(step)
     val expandable = details.isNotEmpty() || summary.length > 72 || step.status in expandableTraceStatuses()
     var expanded by rememberSaveable(step.id) { mutableStateOf(defaultExpanded) }
-    val shape = RoundedCornerShape(18.dp)
+    val shape = RoundedCornerShape(9.dp)
     val indent = traceStepStartPaddingDp(depth).dp
     Row(
         modifier = Modifier
@@ -172,16 +269,15 @@ fun TraceStepCard(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.Top,
     ) {
-        TraceKindIcon(kind = step.kind, status = step.status)
+        TraceTimelineMarker(kind = step.kind, status = step.status, isLast = isLast)
         Column(
             modifier = Modifier
                 .weight(1f)
                 .clip(shape)
-                .background(spec.container, shape)
-                .border(1.dp, colorScheme.outlineVariant.copy(alpha = 0.32f), shape)
+                .background(traceStepContainer(step.status, spec.container), shape)
                 .clickable(enabled = expandable) { expanded = !expanded }
-                .padding(horizontal = 11.dp, vertical = 9.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+                .padding(horizontal = 8.dp, vertical = 7.dp),
+            verticalArrangement = Arrangement.spacedBy(5.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -244,6 +340,28 @@ fun TraceStepCard(
 }
 
 @Composable
+private fun TraceTimelineMarker(
+    kind: String,
+    status: TraceStepStatus,
+    isLast: Boolean,
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        TraceKindIcon(kind = kind, status = status)
+        if (!isLast) {
+            Box(
+                modifier = Modifier
+                    .width(1.dp)
+                    .height(28.dp)
+                    .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)),
+            )
+        }
+    }
+}
+
+@Composable
 fun TraceStatusDot(status: TraceStepStatus) {
     Box(
         modifier = Modifier
@@ -294,35 +412,31 @@ fun TraceDetailList(details: List<TraceDetail>) {
 fun TraceDetailChip(detail: TraceDetail) {
     val colorScheme = MaterialTheme.colorScheme
     var expanded by rememberSaveable(detail.id) { mutableStateOf(false) }
-    Surface(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { expanded = !expanded },
-        shape = RoundedCornerShape(14.dp),
-        color = traceDetailContainer(detail.kind),
-        tonalElevation = 0.dp,
+            .clip(RoundedCornerShape(8.dp))
+            .background(traceDetailContainer(detail.kind))
+            .clickable { expanded = !expanded }
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(3.dp),
     ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
-            verticalArrangement = Arrangement.spacedBy(3.dp),
-        ) {
-            Text(
-                text = userFacingDetailTitle(detail),
-                color = traceDetailAccent(detail.kind),
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = userFacingDetailText(detail),
-                color = colorScheme.onSurfaceVariant,
-                fontSize = 12.sp,
-                lineHeight = 17.sp,
-                maxLines = traceDetailMaxLines(expanded),
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
+        Text(
+            text = userFacingDetailTitle(detail),
+            color = traceDetailAccent(detail.kind),
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            text = userFacingDetailText(detail),
+            color = colorScheme.onSurfaceVariant,
+            fontSize = 12.sp,
+            lineHeight = 17.sp,
+            maxLines = traceDetailMaxLines(expanded),
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -369,10 +483,10 @@ private fun ExpandableTraceText(text: String, stateKey: String) {
 
 @Composable
 private fun TraceStatusLabel(status: TraceRunStatus, accent: Color) {
-    Surface(
-        shape = RoundedCornerShape(999.dp),
-        color = accent.copy(alpha = 0.10f),
-        tonalElevation = 0.dp,
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(999.dp))
+            .background(accent.copy(alpha = 0.10f)),
     ) {
         Text(
             text = traceHeaderStatusText(status),
@@ -421,6 +535,14 @@ private fun traceDetailAccent(kind: TraceDetailKind): Color {
 private fun traceDetailContainer(kind: TraceDetailKind): Color =
     traceDetailAccent(kind).copy(alpha = 0.08f)
 
+private fun traceStepContainer(status: TraceStepStatus, activeContainer: Color): Color =
+    when (status) {
+        TraceStepStatus.RUNNING,
+        TraceStepStatus.FAILED,
+        TraceStepStatus.WAITING_FOR_USER -> activeContainer
+        else -> Color.Transparent
+    }
+
 internal fun defaultTraceStepExpanded(status: TraceStepStatus): Boolean =
     status in expandableTraceStatuses()
 
@@ -433,7 +555,179 @@ internal data class TraceStepLayout(
     val depth: Int,
 )
 
-internal fun visibleTraceStepLayouts(steps: List<TraceStep>): List<TraceStepLayout> {
+internal enum class TraceSeverity {
+    ACTIVE,
+    SUCCESS,
+    ERROR,
+    WARNING,
+    NEUTRAL,
+}
+
+internal data class TraceDisplayState(
+    val status: TraceRunStatus,
+    val title: String,
+    val subtitle: String,
+    val defaultExpanded: Boolean,
+    val severity: TraceSeverity,
+    val isTerminal: Boolean,
+)
+
+internal data class TraceExpansionSnapshot(
+    val expanded: Boolean,
+    val userTouchedExpansion: Boolean,
+    val showAllSteps: Boolean,
+    val observedStatus: TraceRunStatus,
+)
+
+internal fun initialTraceExpansionSnapshot(
+    status: TraceRunStatus,
+    isLiveMessage: Boolean,
+): TraceExpansionSnapshot =
+    TraceExpansionSnapshot(
+        expanded = when {
+            status == TraceRunStatus.RUNNING -> true
+            isLiveMessage && status in setOf(
+                TraceRunStatus.FAILED,
+                TraceRunStatus.INTERRUPTED,
+                TraceRunStatus.WAITING_FOR_USER,
+            ) -> true
+            else -> false
+        },
+        userTouchedExpansion = false,
+        showAllSteps = false,
+        observedStatus = status,
+    )
+
+internal fun traceExpansionAfterStatusChange(
+    current: TraceExpansionSnapshot,
+    nextStatus: TraceRunStatus,
+): TraceExpansionSnapshot {
+    if (current.observedStatus == nextStatus) {
+        if (nextStatus == TraceRunStatus.RUNNING && !current.userTouchedExpansion) {
+            return current.copy(
+                expanded = true,
+                observedStatus = nextStatus,
+            )
+        }
+        return current.copy(observedStatus = nextStatus)
+    }
+    if (current.userTouchedExpansion) {
+        return current.copy(observedStatus = nextStatus)
+    }
+    val nextExpanded = when (nextStatus) {
+        TraceRunStatus.RUNNING -> true
+        TraceRunStatus.SUCCEEDED,
+        TraceRunStatus.CANCELLED -> false
+        TraceRunStatus.FAILED,
+        TraceRunStatus.INTERRUPTED,
+        TraceRunStatus.WAITING_FOR_USER -> true
+    }
+    return current.copy(
+        expanded = nextExpanded,
+        showAllSteps = if (nextExpanded) current.showAllSteps else false,
+        observedStatus = nextStatus,
+    )
+}
+
+internal fun traceExpansionAfterHeaderToggle(current: TraceExpansionSnapshot): TraceExpansionSnapshot {
+    val nextExpanded = !current.expanded
+    return current.copy(
+        expanded = nextExpanded,
+        userTouchedExpansion = true,
+        showAllSteps = if (nextExpanded) current.showAllSteps else false,
+    )
+}
+
+internal fun traceExpansionAfterShowAllToggle(current: TraceExpansionSnapshot): TraceExpansionSnapshot =
+    current.copy(showAllSteps = !current.showAllSteps)
+
+private fun traceRunStatusFromName(name: String): TraceRunStatus? =
+    TraceRunStatus.entries.firstOrNull { it.name == name }
+
+internal fun traceDisplayState(trace: AssistantTrace): TraceDisplayState {
+    val status = effectiveTraceRunStatus(trace)
+    val stepCount = trace.steps.count { it.visibleToUser }
+    val subtitle = when (status) {
+        TraceRunStatus.RUNNING -> trace.summary
+            ?.let(::compactTraceSummary)
+            ?.takeIf { it.isNotBlank() }
+            ?: if (stepCount > 0) "正在执行任务步骤" else "正在准备任务"
+        TraceRunStatus.SUCCEEDED -> "已完成 $stepCount 个步骤"
+        TraceRunStatus.FAILED -> trace.summary
+            ?.let(::compactTraceSummary)
+            ?.takeIf { it.isNotBlank() }
+            ?: "某一步未能完成"
+        TraceRunStatus.CANCELLED -> "任务已由你停止"
+        TraceRunStatus.WAITING_FOR_USER -> "需要你确认后继续"
+        TraceRunStatus.INTERRUPTED -> "当前任务未确认完成"
+    }
+    return TraceDisplayState(
+        status = status,
+        title = traceDisplayTitle(status),
+        subtitle = subtitle,
+        defaultExpanded = status in setOf(
+            TraceRunStatus.RUNNING,
+            TraceRunStatus.FAILED,
+            TraceRunStatus.INTERRUPTED,
+            TraceRunStatus.WAITING_FOR_USER,
+        ),
+        severity = when (status) {
+            TraceRunStatus.RUNNING -> TraceSeverity.ACTIVE
+            TraceRunStatus.SUCCEEDED -> TraceSeverity.SUCCESS
+            TraceRunStatus.FAILED,
+            TraceRunStatus.INTERRUPTED -> TraceSeverity.ERROR
+            TraceRunStatus.WAITING_FOR_USER -> TraceSeverity.WARNING
+            TraceRunStatus.CANCELLED -> TraceSeverity.NEUTRAL
+        },
+        isTerminal = trace.hasTerminal || status in setOf(
+            TraceRunStatus.SUCCEEDED,
+            TraceRunStatus.FAILED,
+            TraceRunStatus.CANCELLED,
+            TraceRunStatus.WAITING_FOR_USER,
+        ),
+    )
+}
+
+private fun traceDisplayTitle(status: TraceRunStatus): String = when (status) {
+    TraceRunStatus.RUNNING -> "正在处理"
+    TraceRunStatus.SUCCEEDED -> "已完成"
+    TraceRunStatus.FAILED -> "执行失败"
+    TraceRunStatus.CANCELLED -> "已停止"
+    TraceRunStatus.WAITING_FOR_USER -> "等待确认"
+    TraceRunStatus.INTERRUPTED -> "连接中断"
+}
+
+internal fun visibleTraceStepLayouts(steps: List<TraceStep>): List<TraceStepLayout> =
+    traceStepLayouts(steps)
+
+internal fun visibleTraceStepLayouts(
+    steps: List<TraceStep>,
+    runStatus: TraceRunStatus,
+    expanded: Boolean,
+    showAll: Boolean,
+): List<TraceStepLayout> {
+    if (!expanded) return emptyList()
+    val layouts = traceStepLayouts(steps)
+    if (showAll || layouts.size <= TRACE_PREVIEW_STEP_COUNT) return layouts
+    return when (runStatus) {
+        TraceRunStatus.RUNNING,
+        TraceRunStatus.SUCCEEDED,
+        TraceRunStatus.FAILED,
+        TraceRunStatus.CANCELLED,
+        TraceRunStatus.WAITING_FOR_USER,
+        TraceRunStatus.INTERRUPTED -> layouts.takeLast(TRACE_PREVIEW_STEP_COUNT)
+    }
+}
+
+internal fun traceHasMoreSteps(
+    steps: List<TraceStep>,
+    visibleLayouts: List<TraceStepLayout>,
+): Boolean =
+    traceStepLayouts(steps).size > visibleLayouts.size
+
+private const val TRACE_PREVIEW_STEP_COUNT = 5
+
+private fun traceStepLayouts(steps: List<TraceStep>): List<TraceStepLayout> {
     val visibleSteps = steps.filter { it.visibleToUser }
     val visibleIds = visibleSteps.map { it.id }.toSet()
     return visibleSteps.map { step ->
@@ -454,6 +748,19 @@ internal fun visibleTraceDetails(step: TraceStep): List<TraceDetail> =
 
 internal fun waitingForUserGuidanceText(): String =
     "涉及发送、支付、授权或登录，需要你确认后继续。"
+
+@Composable
+private fun TraceCompactStatusLine(displayState: TraceDisplayState) {
+    Text(
+        text = displayState.subtitle,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        fontSize = 12.sp,
+        lineHeight = 17.sp,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.padding(start = 33.dp),
+    )
+}
 
 internal fun effectiveTraceRunStatus(trace: AssistantTrace): TraceRunStatus {
     val stepStatuses = trace.steps.filter { it.visibleToUser }.map { it.status }
@@ -481,7 +788,7 @@ internal fun traceHeaderStatusText(status: TraceRunStatus): String = when (statu
     TraceRunStatus.RUNNING -> "运行中"
     TraceRunStatus.SUCCEEDED -> "已完成"
     TraceRunStatus.FAILED -> "未完成"
-    TraceRunStatus.CANCELLED -> "已取消"
+    TraceRunStatus.CANCELLED -> "已停止"
     TraceRunStatus.WAITING_FOR_USER -> "等待确认"
     TraceRunStatus.INTERRUPTED -> "连接中断"
 }

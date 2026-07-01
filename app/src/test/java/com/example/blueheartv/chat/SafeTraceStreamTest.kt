@@ -82,6 +82,17 @@ class SafeTraceStreamTest {
     }
 
     @Test
+    fun assistantDeltaWithStandaloneClosingThinkingTagIsCleaned() {
+        val event = parseSafeStreamEvent(
+            "assistant.delta",
+            """{"type":"assistant.delta","chunk":"OK</THINKING>","streamSeq":2}""",
+        ) as ChatStreamEvent.TextDelta
+
+        assertEquals("OK", event.chunk)
+        assertEquals(2L, event.streamSeq)
+    }
+
+    @Test
     fun unknownSafeFacadeEventIsRejected() {
         val event = parseSafeStreamEvent(
             "trace.v1",

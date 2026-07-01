@@ -35,6 +35,39 @@ class TraceReducerTest {
     }
 
     @Test
+    fun terminalStatusTransitionsCoverSucceededCanceledInterruptedAndWaiting() {
+        val running = reduceTrace(null, stepEvent(seq = 1))
+
+        listOf(
+            TraceRunStatus.SUCCEEDED,
+            TraceRunStatus.CANCELLED,
+            TraceRunStatus.INTERRUPTED,
+            TraceRunStatus.WAITING_FOR_USER,
+        ).forEachIndexed { index, status ->
+            val terminal = reduceTrace(
+                running.copy(seenEventIds = emptySet()),
+                terminalEvent(seq = (index + 2).toLong(), status = status),
+            )
+
+            assertEquals(status, terminal.runStatus)
+            assertTrue(terminal.hasTerminal)
+        }
+    }
+
+    @Test
+    fun interruptTrace_doesNotOverrideTerminalStatus() {
+        val succeeded = reduceTrace(
+            reduceTrace(null, stepEvent(seq = 1)),
+            terminalEvent(seq = 2, status = TraceRunStatus.SUCCEEDED),
+        )
+
+        val afterEof = interruptTrace(succeeded)
+
+        assertEquals(TraceRunStatus.SUCCEEDED, afterEof.runStatus)
+        assertTrue(afterEof.hasTerminal)
+    }
+
+    @Test
     fun duplicateEventAndStaleSequenceAreIgnored() {
         val first = reduceTrace(null, stepEvent(seq = 1, eventId = "evt-1"))
         val duplicate = reduceTrace(first, stepEvent(seq = 1, eventId = "evt-1"))

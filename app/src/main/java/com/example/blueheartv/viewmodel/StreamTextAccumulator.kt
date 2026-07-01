@@ -39,6 +39,11 @@ internal class StreamTextAccumulator {
         runId?.takeIf { it.isNotBlank() }?.let { "$messageId#$it" } ?: messageId
 
     private class ThinkStripper {
+        private data class Marker(
+            val text: String,
+            val opensBlock: Boolean,
+        )
+
         private var buffer = ""
         private var inside = false
 
@@ -46,7 +51,7 @@ internal class StreamTextAccumulator {
             buffer += chunk
             val output = StringBuilder()
             while (buffer.isNotEmpty()) {
-                val markers = if (inside) listOf(CLOSE) else listOf(OPEN, CLOSE)
+                val markers = if (inside) CLOSE_MARKERS else ALL_MARKERS
                 val match = findFirstMarker(buffer, markers)
                 if (match == null) {
                     val suffixLength = partialSuffixLength(buffer, markers)
@@ -58,11 +63,11 @@ internal class StreamTextAccumulator {
                 val (marker, index) = match
                 if (!inside) {
                     output.append(buffer.take(index))
-                    inside = marker == OPEN
+                    inside = marker.opensBlock
                 } else {
                     inside = false
                 }
-                buffer = buffer.drop(index + marker.length)
+                buffer = buffer.drop(index + marker.text.length)
             }
             return output.toString()
         }
@@ -78,29 +83,36 @@ internal class StreamTextAccumulator {
             return pending
         }
 
-        private fun findFirstMarker(value: String, markers: List<String>): Pair<String, Int>? {
+        private fun findFirstMarker(value: String, markers: List<Marker>): Pair<Marker, Int>? {
             val lower = value.lowercase()
             return markers
                 .mapNotNull { marker ->
-                    val index = lower.indexOf(marker)
+                    val index = lower.indexOf(marker.text)
                     if (index >= 0) marker to index else null
                 }
                 .minByOrNull { it.second }
         }
 
-        private fun partialSuffixLength(value: String, markers: List<String>): Int {
+        private fun partialSuffixLength(value: String, markers: List<Marker>): Int {
             val lower = value.lowercase()
             return markers.maxOf { marker ->
-                val maxLength = minOf(value.length, marker.length - 1)
+                val maxLength = minOf(value.length, marker.text.length - 1)
                 (maxLength downTo 1).firstOrNull { size ->
-                    marker.startsWith(lower.takeLast(size))
+                    marker.text.startsWith(lower.takeLast(size))
                 } ?: 0
             }
         }
 
         private companion object {
-            const val OPEN = "<think>"
-            const val CLOSE = "</think>"
+            val OPEN_MARKERS = listOf(
+                Marker("<think>", opensBlock = true),
+                Marker("<thinking>", opensBlock = true),
+            )
+            val CLOSE_MARKERS = listOf(
+                Marker("</think>", opensBlock = false),
+                Marker("</thinking>", opensBlock = false),
+            )
+            val ALL_MARKERS = OPEN_MARKERS + CLOSE_MARKERS
         }
     }
 }

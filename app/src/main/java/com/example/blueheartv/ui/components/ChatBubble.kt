@@ -332,11 +332,11 @@ fun AiBubble(
                         )
                         .padding(16.dp),
                 ) {
-                    if (message.isLoading && message.content.isBlank()) {
+                    if (shouldShowAiLoadingSkeleton(message, BuildConfig.TRACE_V1_RENDER_ENABLED)) {
                         LoadingDots()
                     } else {
                         val isStreaming = message.deliveryState == com.example.blueheartv.model.MessageDeliveryState.STREAMING
-                        val traceVisible = BuildConfig.TRACE_V1_RENDER_ENABLED && message.trace != null
+                        val traceVisible = shouldRenderAssistantTrace(message, BuildConfig.TRACE_V1_RENDER_ENABLED)
                         val shouldShowAssistantText = message.content.isNotBlank() || !traceVisible
                         val displayText = rememberTypewriterText(
                             if (shouldShowAssistantText) {
@@ -354,7 +354,10 @@ fun AiBubble(
                         )
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             if (traceVisible) {
-                                TraceTimeline(trace = requireNotNull(message.trace))
+                                TraceTimeline(
+                                    trace = requireNotNull(message.trace),
+                                    isLiveMessage = message.isLoading,
+                                )
                             }
                             message.toolCalls?.takeIf { it.isNotEmpty() && !traceVisible }?.let { toolCalls ->
                                 ToolCallCard(toolCalls = toolCalls)
@@ -410,6 +413,28 @@ fun AiBubble(
             }
         }
     }
+}
+
+internal fun shouldShowAiLoadingSkeleton(
+    message: Message,
+    traceRenderEnabled: Boolean,
+): Boolean =
+    message.isLoading &&
+        message.content.isBlank() &&
+        !shouldRenderAssistantTrace(message, traceRenderEnabled)
+
+internal fun shouldRenderAssistantTrace(
+    message: Message,
+    traceRenderEnabled: Boolean,
+): Boolean {
+    val trace = message.trace ?: return false
+    if (!traceRenderEnabled) return false
+    val isPlainCompletedPlaceholder =
+        message.deliveryState == com.example.blueheartv.model.MessageDeliveryState.COMPLETED &&
+            message.content.isNotBlank() &&
+            !trace.hasTerminal &&
+            trace.steps.none { it.visibleToUser }
+    return !isPlainCompletedPlaceholder
 }
 
 @Composable
