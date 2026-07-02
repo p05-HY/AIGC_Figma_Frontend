@@ -111,4 +111,10 @@ interface ChatProvider {
 
     suspend fun getRunStatus(threadId: String, runId: String): MobileRunStatus =
         MobileRunStatus(runId, localStatus = "unknown", backendStatus = "unavailable", terminal = false)
+
+    suspend fun confirmTaskProgress(confirmationId: String): List<ChatStreamEvent> = emptyList()
+
+    suspend fun rejectTaskProgress(confirmationId: String): List<ChatStreamEvent> = emptyList()
+
+    suspend fun takeOverTaskProgress(confirmationId: String): List<ChatStreamEvent> = emptyList()
 }

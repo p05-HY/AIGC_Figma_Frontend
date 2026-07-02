@@ -17,6 +17,12 @@ object ApiPaths {
     const val STREAM = "stream"
     const val STATE = "state"
     const val STATUS = "status"
+    const val DEMO = "demo"
+    const val SCENARIO3 = "scenario3"
+    const val NOTIFICATION = "notification"
+    const val CONFIRM = "confirm"
+    const val REJECT = "reject"
+    const val TAKE_OVER = "take-over"
 
     // ---- WebSocket 路径段 ----
     const val ADB_WS = "adb"

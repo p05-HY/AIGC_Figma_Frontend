@@ -21,6 +21,7 @@ class FloatingBubbleNotification(
     private val context: Context,
     private val windowManager: WindowManager,
     private val ballLayoutParams: WindowManager.LayoutParams,
+    private val message: String,
     private val onDismiss: () -> Unit,
 ) {
     companion object {
@@ -73,7 +74,7 @@ class FloatingBubbleNotification(
         }
 
         val textView = TextView(context).apply {
-            text = context.getString(R.string.floating_task_completed)
+            text = message
             setTextColor(0xFF3C3E40.toInt())
             textSize = 14f
             isSingleLine = true

@@ -181,10 +181,19 @@ private fun parseTaskProgress(json: JSONObject): ChatStreamEvent.TaskProgress? {
         label = label.bounded(MAX_TRACE_TITLE_CHARS),
         status = status.bounded(32),
         phase = phase.bounded(64),
+        taskTitle = json.optString("taskTitle").ifBlank { null }?.bounded(MAX_TRACE_TITLE_CHARS),
+        stepTitle = json.optString("stepTitle").ifBlank { null }?.bounded(MAX_TRACE_TITLE_CHARS),
         message = json.optString("message").ifBlank { null }?.bounded(MAX_TRACE_SUMMARY_CHARS),
+        toolName = json.optString("toolName").ifBlank { null }?.bounded(128),
         progressKey = json.optString("progressKey").ifBlank { null }?.bounded(128),
         currentStep = json.optionalNonNegativeInt("currentStep"),
         totalSteps = json.optionalNonNegativeInt("totalSteps"),
+        completedSteps = json.parseCompletedSteps(),
+        requiresConfirmation = json.optBoolean("requiresConfirmation", false),
+        confirmationId = json.optString("confirmationId").ifBlank { null }?.bounded(128),
+        canCancel = json.optBoolean("canCancel", false),
+        canTakeOver = json.optBoolean("canTakeOver", false),
+        dryRun = json.optBoolean("dryRun", false),
         streamSeq = json.optionalPositiveLong("streamSeq"),
         runId = json.optString("runId").ifBlank { null },
         threadId = json.optString("threadId").ifBlank { null },
@@ -209,6 +218,24 @@ private fun parseTaskComplexity(json: JSONObject): ChatStreamEvent.TaskComplexit
         backendRunId = json.optString("backendRunId").ifBlank { null },
         timestamp = json.optionalPositiveLong("timestamp"),
     )
+}
+
+private fun JSONObject.parseCompletedSteps(): List<ChatStreamEvent.TaskProgressStep> {
+    val array = optJSONArray("completedSteps") ?: return emptyList()
+    return buildList {
+        for (index in 0 until array.length()) {
+            val item = array.optJSONObject(index) ?: continue
+            val name = item.requiredString("name") ?: continue
+            val status = item.requiredString("status") ?: continue
+            add(
+                ChatStreamEvent.TaskProgressStep(
+                    index = item.optionalNonNegativeInt("index"),
+                    name = name.bounded(MAX_TRACE_TITLE_CHARS),
+                    status = status.bounded(32),
+                )
+            )
+        }
+    }
 }
 
 private fun parseStreamStarted(json: JSONObject): ChatStreamEvent.StreamStarted? {

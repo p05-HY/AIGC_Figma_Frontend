@@ -21,6 +21,7 @@ import com.example.blueheartv.util.ToastUtil
 import com.example.blueheartv.util.toImageAttachment
 import com.example.blueheartv.viewmodel.ChatViewModel
 import com.example.blueheartv.viewmodel.TaskComplexityLevel
+import com.example.blueheartv.viewmodel.TaskProgressState
 import com.example.blueheartv.voice.SpeechRecognizerCallback
 import com.example.blueheartv.voice.SpeechRecognizerManager
 import com.example.blueheartv.voice.VoiceRecordingState
@@ -33,6 +34,37 @@ enum class FloatingState {
     STATE2,
     STATE3,
 }
+
+internal enum class FloatingTaskComplexityAction {
+    KEEP,
+    OPEN_CHAT,
+}
+
+internal fun floatingTaskComplexityAction(
+    currentState: FloatingState,
+    complexity: TaskComplexityLevel,
+): FloatingTaskComplexityAction = when (complexity) {
+    TaskComplexityLevel.COMPLEX,
+    TaskComplexityLevel.SIMPLE,
+    TaskComplexityLevel.UNKNOWN -> {
+        if (currentState == FloatingState.STATE1) {
+            FloatingTaskComplexityAction.OPEN_CHAT
+        } else {
+            FloatingTaskComplexityAction.KEEP
+        }
+    }
+}
+
+internal fun floatingTaskNotificationText(taskProgress: TaskProgressState?): String? =
+    when (taskProgress?.status) {
+        "pending", "running", "started" -> "任务执行中"
+        "waiting_confirmation" -> "等待确认"
+        "completed" -> "任务已完成"
+        "cancelled" -> "任务已取消"
+        "taken_over" -> "已接管"
+        "failed" -> "任务失败"
+        else -> null
+    }
 
 class FloatingBallService : Service() {
 
@@ -321,19 +353,9 @@ class FloatingBallService : Service() {
         complexityListenerJob = serviceScope.launch {
             chatViewModel.taskComplexityEvent.collect { event ->
                 mainHandler.post {
-                    when (event.complexity) {
-                        TaskComplexityLevel.COMPLEX -> {
-                            if (currentState == FloatingState.STATE1 || currentState == FloatingState.STATE2) {
-                                transitionToState3()
-                            }
-                        }
-
-                        TaskComplexityLevel.SIMPLE,
-                        TaskComplexityLevel.UNKNOWN -> {
-                            if (currentState == FloatingState.STATE1) {
-                                transitionToState2()
-                            }
-                        }
+                    when (floatingTaskComplexityAction(currentState, event.complexity)) {
+                        FloatingTaskComplexityAction.OPEN_CHAT -> transitionToState2()
+                        FloatingTaskComplexityAction.KEEP -> Unit
                     }
                 }
             }
@@ -342,7 +364,7 @@ class FloatingBallService : Service() {
             chatViewModel.taskCompletionEvent.collect { event ->
                 mainHandler.post {
                     when {
-                        currentState == FloatingState.STATE3 -> onComplexTaskCompleted()
+                        currentState == FloatingState.STATE3 -> onComplexTaskStatusEvent(chatViewModel.uiState.value.taskProgress)
                         currentState == FloatingState.STATE1 && event.complexity != TaskComplexityLevel.COMPLEX -> {
                             transitionToState2()
                         }
@@ -353,14 +375,16 @@ class FloatingBallService : Service() {
     }
 
     @MainThread
-    private fun onComplexTaskCompleted() {
+    private fun onComplexTaskStatusEvent(taskProgress: TaskProgressState?) {
         if (currentState != FloatingState.STATE3) return
 
         val ball = ballView ?: return
+        val message = floatingTaskNotificationText(taskProgress) ?: return
         bubbleNotification = FloatingBubbleNotification(
             context = this,
             windowManager = windowManager,
             ballLayoutParams = ball.getLayoutParams(),
+            message = message,
             onDismiss = {
                 bubbleNotification = null
                 currentState = FloatingState.STATE0

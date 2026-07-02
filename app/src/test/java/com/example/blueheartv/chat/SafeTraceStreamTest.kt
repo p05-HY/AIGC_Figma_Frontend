@@ -196,6 +196,51 @@ class SafeTraceStreamTest {
     }
 
     @Test
+    fun taskProgress_parsesTaskCardFields() {
+        val event = parseSafeStreamEvent(
+            "task_progress",
+            """
+                {
+                  "type":"task_progress",
+                  "label":"会议通知",
+                  "taskTitle":"为会议通知创建提醒",
+                  "status":"waiting_confirmation",
+                  "phase":"confirmation",
+                  "stepTitle":"等待确认是否创建会议提醒",
+                  "message":"检测到会议通知，是否创建提醒？",
+                  "toolName":"needs_confirmation",
+                  "progressKey":"scenario3-demo",
+                  "currentStep":2,
+                  "totalSteps":3,
+                  "requiresConfirmation":true,
+                  "confirmationId":"confirm-123",
+                  "canCancel":true,
+                  "canTakeOver":true,
+                  "runId":"run-1",
+                  "threadId":"thread-1",
+                  "streamSeq":9
+                }
+            """.trimIndent(),
+        ) as ChatStreamEvent.TaskProgress
+
+        assertEquals("会议通知", event.label)
+        assertEquals("为会议通知创建提醒", event.taskTitle)
+        assertEquals("waiting_confirmation", event.status)
+        assertEquals("confirmation", event.phase)
+        assertEquals("等待确认是否创建会议提醒", event.stepTitle)
+        assertEquals("needs_confirmation", event.toolName)
+        assertEquals(2, event.currentStep)
+        assertEquals(3, event.totalSteps)
+        assertTrue(event.requiresConfirmation)
+        assertEquals("confirm-123", event.confirmationId)
+        assertTrue(event.canCancel)
+        assertTrue(event.canTakeOver)
+        assertEquals("run-1", event.runId)
+        assertEquals("thread-1", event.threadId)
+        assertEquals(9L, event.streamSeq)
+    }
+
+    @Test
     fun streamEof_retainsIdentityFieldsForLifecycleFence() {
         val event = parseSafeStreamEvent(
             "stream.eof",

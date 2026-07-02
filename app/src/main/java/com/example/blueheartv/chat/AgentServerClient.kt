@@ -285,11 +285,29 @@ class AgentServerClient(
         )
     }
 
+    fun confirmScenario3Demo(confirmationId: String): List<ChatStreamEvent> =
+        postScenario3DemoAction(ApiPaths.CONFIRM, confirmationId)
+
+    fun rejectScenario3Demo(confirmationId: String): List<ChatStreamEvent> =
+        postScenario3DemoAction(ApiPaths.REJECT, confirmationId)
+
+    fun takeOverScenario3Demo(confirmationId: String): List<ChatStreamEvent> =
+        postScenario3DemoAction(ApiPaths.TAKE_OVER, confirmationId)
+
+    private fun postScenario3DemoAction(action: String, confirmationId: String): List<ChatStreamEvent> {
+        val payload = postJson(
+            url(ApiPaths.MOBILE, ApiPaths.DEMO, ApiPaths.SCENARIO3, action),
+            JSONObject().put("confirmationId", confirmationId),
+        )
+        return payload.safeTaskProgressEvents()
+    }
+
     private fun String?.isSafeFacadeEvent(): Boolean =
         this?.lowercase() in setOf(
             "assistant.delta",
             "trace.v1",
             "task_progress",
+            "task_complexity",
             "stream.started",
             "stream.heartbeat",
             "stream.eof",
@@ -425,6 +443,17 @@ class AgentServerClient(
                         ),
                     ),
                 )
+            }
+        }
+    }
+
+    private fun JSONObject.safeTaskProgressEvents(): List<ChatStreamEvent> {
+        val array = optJSONArray("events") ?: return emptyList()
+        return buildList {
+            for (index in 0 until array.length()) {
+                val item = array.optJSONObject(index) ?: continue
+                val event = parseSafeStreamEvent("task_progress", item.toString())
+                if (event != null) add(event)
             }
         }
     }

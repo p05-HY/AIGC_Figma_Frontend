@@ -85,12 +85,14 @@ data class HomeUiState(
     val streamingStep: String? = null,
     val canCancel: Boolean = false,
     val streamLifecycleState: StreamLifecycleState = StreamLifecycleState.IDLE,
+    val taskProgress: TaskProgressState? = null,
 )
 
 private const val SEND_DEBOUNCE_MS = 500L
 private const val CANCEL_STATUS_POLL_INTERVAL_MS = 500L
 private const val CANCEL_STATUS_MAX_POLLS = 20
 private const val STREAM_ACTIVITY_TIMEOUT_MS = 90_000L
+private const val TASK_PROGRESS_MIN_FIRST_STEP_VISIBLE_MS = 1_000L
 
 private const val TAG = "ChatViewModel"
 
@@ -105,6 +107,7 @@ private enum class CancellationSource {
     STREAM_ERROR,
     APP_BACKGROUND,
     SESSION_DELETED,
+    TAKE_OVER,
 }
 
 private fun CancellationSource.serverValue(): String = when (this) {
@@ -113,6 +116,7 @@ private fun CancellationSource.serverValue(): String = when (this) {
     CancellationSource.STREAM_ERROR -> "stream_error"
     CancellationSource.APP_BACKGROUND -> "client_disconnected"
     CancellationSource.SESSION_DELETED -> "session_deleted"
+    CancellationSource.TAKE_OVER -> "take_over"
 }
 
 private fun ChatSessionState.defaultStreamLifecycleState(): StreamLifecycleState = when (this) {
@@ -155,6 +159,8 @@ class ChatViewModel(
     private var streamTimeoutJob: Job? = null
     private var cancelAttemptCount: Int = 0
     private val streamTextAccumulator = StreamTextAccumulator()
+    private var taskProgressVisibleSinceMillis: Long = 0L
+    private var pendingTaskProgressJob: Job? = null
 
     init {
         restoreSessions()
@@ -818,12 +824,7 @@ class ChatViewModel(
 
                     is ChatStreamEvent.TaskProgress -> {
                         hasToolCalling = true
-                        _uiState.update {
-                            it.copy(
-                                streamingStep = event.message ?: "正在执行 ${event.label}",
-                                streamLifecycleState = StreamLifecycleState.STREAMING,
-                            )
-                        }
+                        applyTaskProgressEvent(event, streamLifecycleState = StreamLifecycleState.STREAMING)
                         val key = toolCallStatus.findToolCallKey(
                             label = event.label,
                             toolName = event.toolName,
@@ -1221,6 +1222,139 @@ class ChatViewModel(
         )
     }
 
+    fun confirmTaskProgress() {
+        val confirmationId = _uiState.value.taskProgress?.confirmationId ?: return
+        submitTaskProgressControl { chatProvider.confirmTaskProgress(confirmationId) }
+    }
+
+    fun rejectTaskProgress() {
+        val confirmationId = _uiState.value.taskProgress?.confirmationId
+        if (confirmationId == null) {
+            cancelActiveRun()
+            return
+        }
+        submitTaskProgressControl { chatProvider.rejectTaskProgress(confirmationId) }
+    }
+
+    fun cancelTaskProgress() {
+        val taskProgress = _uiState.value.taskProgress
+        val confirmationId = taskProgress?.confirmationId
+        if (taskProgress?.status == "waiting_confirmation" && !confirmationId.isNullOrBlank()) {
+            submitTaskProgressControl { chatProvider.rejectTaskProgress(confirmationId) }
+            return
+        }
+        cancelActiveRun()
+    }
+
+    fun takeOverTaskProgress() {
+        val confirmationId = _uiState.value.taskProgress?.confirmationId
+        if (confirmationId == null) {
+            takeOverActiveRun()
+            return
+        }
+        submitTaskProgressControl { chatProvider.takeOverTaskProgress(confirmationId) }
+    }
+
+    private fun takeOverActiveRun() {
+        val stream = streamManager.activeOrPendingSession()
+        if (stream == null) {
+            _uiState.update {
+                it.copy(
+                    taskProgress = it.taskProgress?.copy(
+                        status = "taken_over",
+                        stepTitle = "已停止自动执行，请手动接管",
+                        requiresConfirmation = false,
+                        confirmationId = null,
+                        canCancel = false,
+                        canTakeOver = false,
+                        message = "已停止自动执行，请手动接管",
+                    ),
+                )
+            }
+            return
+        }
+        if (cancellationJob?.isActive == true) return
+        requestRunCancellation(
+            stream = stream,
+            source = CancellationSource.TAKE_OVER,
+            trace = findMessageTrace(stream.assistantMessageId),
+            chatState = ChatState.CHAT_TOOL_CALLING,
+            taskComplexity = TaskComplexityLevel.UNKNOWN,
+            serverMessage = "已停止自动执行，请手动接管",
+        )
+    }
+
+    private fun submitTaskProgressControl(
+        request: suspend () -> List<ChatStreamEvent>,
+    ) {
+        viewModelScope.launch {
+            val events = runCatching { request() }.getOrElse { error ->
+                _uiState.update {
+                    it.copy(lastError = error.message ?: "任务控制请求失败，请稍后重试。")
+                }
+                return@launch
+            }
+            events.forEach { event ->
+                if (event is ChatStreamEvent.TaskProgress) {
+                    applyTaskProgressEvent(event)
+                }
+            }
+        }
+    }
+
+    private fun applyTaskProgressEvent(
+        event: ChatStreamEvent.TaskProgress,
+        streamLifecycleState: StreamLifecycleState? = null,
+    ) {
+        val delayMs = taskProgressDelayMillis(_uiState.value.taskProgress, event)
+        if (delayMs > 0L) {
+            pendingTaskProgressJob?.cancel()
+            pendingTaskProgressJob = viewModelScope.launch {
+                delay(delayMs)
+                if (_uiState.value.taskProgress?.isTerminal == true) return@launch
+                commitTaskProgressEvent(event)
+            }
+            return
+        }
+        pendingTaskProgressJob?.cancel()
+        pendingTaskProgressJob = null
+        commitTaskProgressEvent(event, streamLifecycleState)
+    }
+
+    private fun taskProgressDelayMillis(
+        current: TaskProgressState?,
+        event: ChatStreamEvent.TaskProgress,
+    ): Long {
+        if (current == null || current.isTerminal || current.status == "waiting_confirmation") {
+            return 0L
+        }
+        val currentStep = current.currentStep ?: return 0L
+        val incomingStep = event.currentStep ?: currentStep
+        if (currentStep != 1 || incomingStep == currentStep) {
+            return 0L
+        }
+        val elapsed = (repo.now() - taskProgressVisibleSinceMillis).coerceAtLeast(0L)
+        return (TASK_PROGRESS_MIN_FIRST_STEP_VISIBLE_MS - elapsed).coerceAtLeast(0L)
+    }
+
+    private fun commitTaskProgressEvent(
+        event: ChatStreamEvent.TaskProgress,
+        streamLifecycleState: StreamLifecycleState? = null,
+    ) {
+        _uiState.update { state ->
+            val next = TaskProgressReducer.reduce(state.taskProgress, event)
+            if (state.taskProgress?.currentStep != next.currentStep) {
+                taskProgressVisibleSinceMillis = repo.now()
+            }
+            state.copy(
+                streamingStep = event.message ?: state.streamingStep,
+                streamLifecycleState = streamLifecycleState ?: state.streamLifecycleState,
+                taskProgress = next,
+                lastError = null,
+            )
+        }
+    }
+
     /** 页面进入后台时不再自动取消任务。打开外部 App（如飞书/微信）是正常业务
      * 路径，不应误判为用户离开。取消仅由用户显式点击"停止"按钮触发。 */
     fun onAppBackgrounded() {
@@ -1262,6 +1396,7 @@ class ChatViewModel(
             CancellationSource.STREAM_DISCONNECTED -> "连接中断，正在确认停止服务端任务。"
             CancellationSource.STREAM_ERROR -> "服务异常，正在确认停止服务端任务。"
             CancellationSource.SESSION_DELETED -> "正在停止关联任务。"
+            CancellationSource.TAKE_OVER -> "正在停止自动执行，准备由你接管。"
             CancellationSource.USER -> "正在停止当前任务。"
         }
         updateAssistantMessage(stream.assistantMessageId, chatState, waitingState) { message ->
@@ -1372,6 +1507,13 @@ class ChatViewModel(
         finishActiveStream(stream, cancelCancellationJob = false, cancelStreamJob = true)
         when (backendStatus) {
             "cancelled", "not_started" -> {
+                val tookOver = source == CancellationSource.TAKE_OVER
+                val terminalStatus = if (tookOver) "taken_over" else "cancelled"
+                val terminalMessage = if (tookOver) {
+                    "已停止自动执行，请手动接管"
+                } else {
+                    "已停止当前任务。"
+                }
                 val cancelledTrace = (trace ?: findMessageTrace(stream.assistantMessageId)
                     ?: AssistantTrace(runId = stream.runId)).copy(
                     runStatus = TraceRunStatus.CANCELLED,
@@ -1379,13 +1521,13 @@ class ChatViewModel(
                 )
                 updateAssistantMessage(stream.assistantMessageId, chatState, ChatSessionState.CANCELLED) { message ->
                     message.copy(
-                        content = message.content.ifBlank { "已停止当前任务。" },
+                        content = message.content.ifBlank { terminalMessage },
                         deliveryState = MessageDeliveryState.COMPLETED,
                         trace = cancelledTrace,
                         toolCalls = null,
                         errorMessage = null,
                         lastReceivedStreamSeq = stream.receivedStreamSeq,
-                        terminalStatus = "cancelled",
+                        terminalStatus = terminalStatus,
                     )
                 }
                 _uiState.update {
@@ -1396,6 +1538,15 @@ class ChatViewModel(
                         canRetry = false,
                         canCancel = false,
                         streamLifecycleState = StreamLifecycleState.CANCELED,
+                        taskProgress = it.taskProgress?.copy(
+                            status = terminalStatus,
+                            stepTitle = terminalMessage,
+                            requiresConfirmation = false,
+                            confirmationId = null,
+                            canCancel = false,
+                            canTakeOver = false,
+                            message = terminalMessage,
+                        ),
                     )
                 }
             }

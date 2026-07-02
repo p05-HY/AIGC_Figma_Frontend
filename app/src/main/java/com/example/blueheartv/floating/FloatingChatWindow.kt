@@ -358,7 +358,18 @@ private fun FloatingChatContent(
                         .background(DividerColor),
                 )
 
-                if (uiState.messages.isEmpty()) {
+                uiState.taskProgress?.let { taskProgress ->
+                    FloatingTaskCard(
+                        task = taskProgress,
+                        metrics = metrics,
+                        onConfirm = { viewModel.confirmTaskProgress() },
+                        onReject = { viewModel.rejectTaskProgress() },
+                        onCancel = { viewModel.cancelTaskProgress() },
+                        onTakeOver = { viewModel.takeOverTaskProgress() },
+                    )
+                }
+
+                if (uiState.messages.isEmpty() && uiState.taskProgress == null) {
                     Box(
                         modifier = Modifier
                             .weight(1f)

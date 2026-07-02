@@ -306,6 +306,203 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun taskProgress_updatesSharedUiStateForFloatingWindow() = runTest {
+        val provider = ScriptedProvider { _, _, onEvent ->
+            onEvent(
+                ChatStreamEvent.TaskProgress(
+                    label = "会议通知",
+                    taskTitle = "为会议通知创建提醒",
+                    status = "waiting_confirmation",
+                    phase = "confirmation",
+                    stepTitle = "等待确认是否创建会议提醒",
+                    message = "检测到会议通知，是否创建提醒？",
+                    toolName = "needs_confirmation",
+                    progressKey = "scenario3-demo",
+                    currentStep = 2,
+                    totalSteps = 3,
+                    requiresConfirmation = true,
+                    confirmationId = "confirm-123",
+                    canCancel = true,
+                    canTakeOver = true,
+                )
+            )
+            onEvent(ChatStreamEvent.Completed)
+        }
+        val viewModel = createViewModel(chatProvider = provider)
+        advanceUntilIdle()
+
+        viewModel.onInputChanged("模拟收到一条会议通知")
+        viewModel.sendMessage()
+        advanceUntilIdle()
+
+        val taskProgress = viewModel.uiState.value.taskProgress
+        assertNotNull(taskProgress)
+        assertEquals("为会议通知创建提醒", taskProgress!!.taskTitle)
+        assertEquals("waiting_confirmation", taskProgress.status)
+        assertEquals(2, taskProgress.currentStep)
+        assertEquals(3, taskProgress.totalSteps)
+        assertEquals("等待确认是否创建会议提醒", taskProgress.stepTitle)
+        assertEquals("needs_confirmation", taskProgress.toolName)
+        assertTrue(taskProgress.requiresConfirmation)
+        assertEquals("confirm-123", taskProgress.confirmationId)
+    }
+
+    @Test
+    fun taskProgress_keepsFirstScenarioStepVisibleBeforeShowingWaitingConfirmation() = runTest {
+        val provider = ScriptedProvider { _, _, onEvent ->
+            onEvent(
+                ChatStreamEvent.TaskProgress(
+                    label = "会议通知",
+                    taskTitle = "为会议通知创建提醒",
+                    status = "running",
+                    phase = "phone_tool",
+                    stepTitle = "检测到会议通知",
+                    message = "检测到一条会议通知",
+                    toolName = "list_notifications",
+                    progressKey = "scenario3-demo",
+                    currentStep = 1,
+                    totalSteps = 3,
+                    canCancel = true,
+                    canTakeOver = true,
+                ),
+            )
+            onEvent(
+                ChatStreamEvent.TaskProgress(
+                    label = "会议通知",
+                    taskTitle = "为会议通知创建提醒",
+                    status = "waiting_confirmation",
+                    phase = "confirmation",
+                    stepTitle = "等待确认是否创建会议提醒",
+                    message = "检测到会议通知，是否创建提醒？",
+                    toolName = "needs_confirmation",
+                    progressKey = "scenario3-demo",
+                    currentStep = 2,
+                    totalSteps = 3,
+                    requiresConfirmation = true,
+                    confirmationId = "confirm-123",
+                    canCancel = true,
+                    canTakeOver = true,
+                ),
+            )
+            awaitCancellation()
+        }
+        val viewModel = createViewModel(
+            chatProvider = provider,
+            timeProvider = { 1_000L + testScheduler.currentTime },
+        )
+        advanceUntilIdle()
+
+        viewModel.onInputChanged("模拟收到一条会议通知")
+        viewModel.sendMessage()
+        runCurrent()
+
+        assertEquals(1, viewModel.uiState.value.taskProgress?.currentStep)
+        assertEquals("检测到会议通知", viewModel.uiState.value.taskProgress?.stepTitle)
+
+        advanceTimeBy(999)
+        runCurrent()
+
+        assertEquals(1, viewModel.uiState.value.taskProgress?.currentStep)
+
+        advanceTimeBy(1)
+        runCurrent()
+
+        assertEquals(2, viewModel.uiState.value.taskProgress?.currentStep)
+        assertEquals("waiting_confirmation", viewModel.uiState.value.taskProgress?.status)
+
+        viewModel.cancelActiveRun()
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun cancelTaskProgress_withWaitingConfirmationUsesConfirmationCancelPath() = runTest {
+        val provider = ScriptedProvider(
+            rejectEvents = listOf(
+                ChatStreamEvent.TaskProgress(
+                    label = "会议通知",
+                    taskTitle = "为会议通知创建提醒",
+                    status = "cancelled",
+                    phase = "finalizing",
+                    stepTitle = "已取消创建会议提醒",
+                    message = "已取消创建会议提醒",
+                    toolName = "needs_confirmation",
+                    currentStep = 2,
+                    totalSteps = 3,
+                    canCancel = false,
+                    canTakeOver = false,
+                ),
+            ),
+        ) { _, _, onEvent ->
+            onEvent(
+                ChatStreamEvent.TaskProgress(
+                    label = "会议通知",
+                    taskTitle = "为会议通知创建提醒",
+                    status = "waiting_confirmation",
+                    phase = "confirmation",
+                    stepTitle = "等待确认是否创建会议提醒",
+                    message = "检测到会议通知，是否创建提醒？",
+                    toolName = "needs_confirmation",
+                    currentStep = 2,
+                    totalSteps = 3,
+                    requiresConfirmation = true,
+                    confirmationId = "confirm-123",
+                    canCancel = true,
+                    canTakeOver = true,
+                ),
+            )
+            onEvent(ChatStreamEvent.Completed)
+        }
+        val viewModel = createViewModel(chatProvider = provider)
+        advanceUntilIdle()
+
+        viewModel.onInputChanged("模拟收到一条会议通知")
+        viewModel.sendMessage()
+        advanceUntilIdle()
+
+        viewModel.cancelTaskProgress()
+        advanceUntilIdle()
+
+        assertEquals(listOf("confirm-123"), provider.rejectedConfirmationIds)
+        assertEquals("cancelled", viewModel.uiState.value.taskProgress?.status)
+        assertEquals("已取消创建会议提醒", viewModel.uiState.value.taskProgress?.stepTitle)
+    }
+
+    @Test
+    fun takeOverTaskProgress_withoutConfirmationCancelsRunWithTakeOverSource() = runTest {
+        val provider = ScriptedProvider { _, _, onEvent ->
+            onEvent(
+                ChatStreamEvent.TaskProgress(
+                    label = "长任务",
+                    taskTitle = "执行长任务",
+                    status = "running",
+                    phase = "phone_tool",
+                    stepTitle = "正在执行长任务",
+                    message = "正在执行长任务",
+                    toolName = "observe",
+                    currentStep = 1,
+                    totalSteps = 3,
+                    canCancel = true,
+                    canTakeOver = true,
+                ),
+            )
+            awaitCancellation()
+        }
+        val viewModel = createViewModel(chatProvider = provider)
+        advanceUntilIdle()
+
+        viewModel.onInputChanged("执行长任务")
+        viewModel.sendMessage()
+        runCurrent()
+
+        viewModel.takeOverTaskProgress()
+        advanceUntilIdle()
+
+        assertEquals("take_over", provider.cancelledRuns.single().third)
+        assertEquals("taken_over", viewModel.uiState.value.taskProgress?.status)
+        assertEquals("已停止自动执行，请手动接管", viewModel.uiState.value.taskProgress?.message)
+    }
+
+    @Test
     fun streamStarted_initializesTraceCardImmediately() = runTest {
         val provider = ScriptedProvider { _, _, onEvent ->
             onEvent(
@@ -1337,6 +1534,9 @@ class ChatViewModelTest {
         polledBackendStatus: String = "cancelled",
         polledStatusTerminal: Boolean = true,
         private val loadThreadDelayMs: Long = 0L,
+        private val confirmEvents: List<ChatStreamEvent> = emptyList(),
+        private val rejectEvents: List<ChatStreamEvent> = emptyList(),
+        private val takeOverEvents: List<ChatStreamEvent> = emptyList(),
         private val script: suspend (String, ChatPrompt, (ChatStreamEvent) -> Unit) -> Unit = { _, _, onEvent ->
             onEvent(ChatStreamEvent.Completed)
         },
@@ -1347,6 +1547,9 @@ class ChatViewModelTest {
             private set
         val cancelledRuns = mutableListOf<Triple<String, String, String>>()
         val deletedThreads = mutableListOf<String>()
+        val confirmedConfirmationIds = mutableListOf<String>()
+        val rejectedConfirmationIds = mutableListOf<String>()
+        val takenOverConfirmationIds = mutableListOf<String>()
         var polledBackendStatus: String = polledBackendStatus
         var polledStatusTerminal: Boolean = polledStatusTerminal
         var statusPollCalls: Int = 0
@@ -1406,6 +1609,21 @@ class ChatViewModelTest {
                 backendStatus = polledBackendStatus,
                 terminal = polledStatusTerminal,
             )
+        }
+
+        override suspend fun confirmTaskProgress(confirmationId: String): List<ChatStreamEvent> {
+            confirmedConfirmationIds += confirmationId
+            return confirmEvents
+        }
+
+        override suspend fun rejectTaskProgress(confirmationId: String): List<ChatStreamEvent> {
+            rejectedConfirmationIds += confirmationId
+            return rejectEvents
+        }
+
+        override suspend fun takeOverTaskProgress(confirmationId: String): List<ChatStreamEvent> {
+            takenOverConfirmationIds += confirmationId
+            return takeOverEvents
         }
     }
 }

@@ -64,4 +64,16 @@ class AgentServerChatProvider(
     override suspend fun getRunStatus(threadId: String, runId: String): MobileRunStatus = withContext(Dispatchers.IO) {
         client.getRunStatus(threadId, runId)
     }
+
+    override suspend fun confirmTaskProgress(confirmationId: String): List<ChatStreamEvent> = withContext(Dispatchers.IO) {
+        client.confirmScenario3Demo(confirmationId)
+    }
+
+    override suspend fun rejectTaskProgress(confirmationId: String): List<ChatStreamEvent> = withContext(Dispatchers.IO) {
+        client.rejectScenario3Demo(confirmationId)
+    }
+
+    override suspend fun takeOverTaskProgress(confirmationId: String): List<ChatStreamEvent> = withContext(Dispatchers.IO) {
+        client.takeOverScenario3Demo(confirmationId)
+    }
 }
