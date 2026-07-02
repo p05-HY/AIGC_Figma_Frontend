@@ -66,14 +66,14 @@ class AgentServerChatProvider(
     }
 
     override suspend fun confirmTaskProgress(confirmationId: String): List<ChatStreamEvent> = withContext(Dispatchers.IO) {
-        client.confirmScenario3Demo(confirmationId)
+        client.confirmConfirmation(confirmationId)
     }
 
     override suspend fun rejectTaskProgress(confirmationId: String): List<ChatStreamEvent> = withContext(Dispatchers.IO) {
-        client.rejectScenario3Demo(confirmationId)
+        client.rejectConfirmation(confirmationId)
     }
 
     override suspend fun takeOverTaskProgress(confirmationId: String): List<ChatStreamEvent> = withContext(Dispatchers.IO) {
-        client.takeOverScenario3Demo(confirmationId)
+        client.takeOverConfirmation(confirmationId)
     }
 }

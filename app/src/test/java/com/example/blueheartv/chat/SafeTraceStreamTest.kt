@@ -241,6 +241,44 @@ class SafeTraceStreamTest {
     }
 
     @Test
+    fun needsConfirmation_parsesGenericTransactionFields() {
+        val event = parseSafeStreamEvent(
+            "needs_confirmation",
+            """
+                {
+                  "type":"needs_confirmation",
+                  "runId":"run-1",
+                  "threadId":"thread-1",
+                  "confirmationId":"confirm-123",
+                  "taskTitle":"高风险日程操作确认",
+                  "operation":"创建日程",
+                  "targetApp":"系统日历",
+                  "toolName":"create_event",
+                  "riskLevel":"medium",
+                  "payloadPreview":"是否创建日程：项目会？",
+                  "confirmText":"确认创建",
+                  "cancelText":"取消",
+                  "dryRun":true,
+                  "rawPayload":{"token":"secret"}
+                }
+            """.trimIndent(),
+        ) as ChatStreamEvent.NeedsConfirmation
+
+        assertEquals("run-1", event.runId)
+        assertEquals("thread-1", event.threadId)
+        assertEquals("confirm-123", event.confirmationId)
+        assertEquals("高风险日程操作确认", event.taskTitle)
+        assertEquals("创建日程", event.operation)
+        assertEquals("系统日历", event.targetApp)
+        assertEquals("create_event", event.toolName)
+        assertEquals("medium", event.riskLevel)
+        assertEquals("是否创建日程：项目会？", event.payloadPreview)
+        assertEquals("确认创建", event.confirmText)
+        assertEquals("取消", event.cancelText)
+        assertTrue(event.dryRun)
+    }
+
+    @Test
     fun streamEof_retainsIdentityFieldsForLifecycleFence() {
         val event = parseSafeStreamEvent(
             "stream.eof",

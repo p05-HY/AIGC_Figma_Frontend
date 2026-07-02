@@ -248,6 +248,61 @@ class AgentServerSafeSseTest {
     }
 
     @Test
+    fun genericConfirmationConfirm_postsGenericPathAndParsesTaskProgressEvents() {
+        var capturedPath = ""
+        var capturedBody = ""
+        val client = OkHttpClient.Builder()
+            .addInterceptor { chain ->
+                capturedPath = chain.request().url.encodedPath
+                val requestBody = Buffer()
+                chain.request().body?.writeTo(requestBody)
+                capturedBody = requestBody.readUtf8()
+                Response.Builder()
+                    .request(chain.request())
+                    .protocol(Protocol.HTTP_1_1)
+                    .code(200)
+                    .message("OK")
+                    .body(
+                        """
+                        {
+                          "confirmationId": "confirm-123",
+                          "status": "confirmed",
+                          "dryRun": true,
+                          "events": [
+                            {
+                              "type": "task_progress",
+                              "label": "创建日程",
+                              "taskTitle": "高风险日程操作确认",
+                              "status": "completed",
+                              "phase": "finalizing",
+                              "stepTitle": "创建日程已完成 dry-run",
+                              "toolName": "create_event",
+                              "message": "dry-run 已完成，未执行真实创建日程。",
+                              "dryRun": true
+                            }
+                          ]
+                        }
+                        """.trimIndent().toResponseBody("application/json".toMediaType())
+                    )
+                    .build()
+            }
+            .build()
+        val agentClient = AgentServerClient(
+            configProvider = { AgentServerConfig("http://agent.example", "test-key") },
+            client = client,
+        )
+
+        val events = agentClient.confirmConfirmation("confirm-123")
+
+        assertEquals("/mobile/confirmations/confirm-123/confirm", capturedPath)
+        assertEquals("""{"confirmationId":"confirm-123"}""", capturedBody)
+        val progress = events.single() as ChatStreamEvent.TaskProgress
+        assertEquals("高风险日程操作确认", progress.taskTitle)
+        assertEquals("completed", progress.status)
+        assertTrue(progress.dryRun)
+    }
+
+    @Test
     fun streamRun_keepsTerminalBeforeFollowingStreamError() {
         val payload = """
             event: stream.started

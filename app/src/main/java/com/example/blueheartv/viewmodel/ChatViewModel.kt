@@ -863,6 +863,10 @@ class ChatViewModel(
                         }
                     }
 
+                    is ChatStreamEvent.NeedsConfirmation -> {
+                        // 事务事件只提供通用确认元数据；任务卡展示仍由 task_progress 驱动。
+                    }
+
                     is ChatStreamEvent.TextDelta -> {
                         val raw = streamTextAccumulator.append(
                             messageId = assistantMessageId,

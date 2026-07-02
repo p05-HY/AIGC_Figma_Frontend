@@ -35,6 +35,7 @@ fun parseSafeStreamEvent(eventName: String, payload: String): ChatStreamEvent? {
         }
         "assistant.delta" -> parseAssistantDelta(json)
         "task_progress" -> parseTaskProgress(json)
+        "needs_confirmation" -> parseNeedsConfirmation(json)
         "task_complexity" -> parseTaskComplexity(json)
         "stream.started" -> parseStreamStarted(json)
         "stream.heartbeat" -> if (json.optString("type") == "stream.heartbeat") {
@@ -193,6 +194,31 @@ private fun parseTaskProgress(json: JSONObject): ChatStreamEvent.TaskProgress? {
         confirmationId = json.optString("confirmationId").ifBlank { null }?.bounded(128),
         canCancel = json.optBoolean("canCancel", false),
         canTakeOver = json.optBoolean("canTakeOver", false),
+        dryRun = json.optBoolean("dryRun", false),
+        streamSeq = json.optionalPositiveLong("streamSeq"),
+        runId = json.optString("runId").ifBlank { null },
+        threadId = json.optString("threadId").ifBlank { null },
+        backendRunId = json.optString("backendRunId").ifBlank { null },
+        timestamp = json.optionalPositiveLong("timestamp"),
+    )
+}
+
+private fun parseNeedsConfirmation(json: JSONObject): ChatStreamEvent.NeedsConfirmation? {
+    if (json.optString("type") != "needs_confirmation") return null
+    val confirmationId = json.requiredString("confirmationId") ?: return null
+    val operation = json.requiredString("operation") ?: return null
+    val toolName = json.requiredString("toolName") ?: return null
+    val payloadPreview = json.requiredString("payloadPreview") ?: return null
+    return ChatStreamEvent.NeedsConfirmation(
+        confirmationId = confirmationId.bounded(128),
+        operation = operation.bounded(MAX_TRACE_TITLE_CHARS),
+        toolName = toolName.bounded(128),
+        payloadPreview = payloadPreview.bounded(MAX_TRACE_SUMMARY_CHARS),
+        taskTitle = json.optString("taskTitle").ifBlank { null }?.bounded(MAX_TRACE_TITLE_CHARS),
+        targetApp = json.optString("targetApp").ifBlank { null }?.bounded(MAX_TRACE_TITLE_CHARS),
+        riskLevel = json.optString("riskLevel").ifBlank { null }?.bounded(32),
+        confirmText = json.optString("confirmText").ifBlank { null }?.bounded(32),
+        cancelText = json.optString("cancelText").ifBlank { null }?.bounded(32),
         dryRun = json.optBoolean("dryRun", false),
         streamSeq = json.optionalPositiveLong("streamSeq"),
         runId = json.optString("runId").ifBlank { null },

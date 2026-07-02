@@ -17,6 +17,7 @@ object ApiPaths {
     const val STREAM = "stream"
     const val STATE = "state"
     const val STATUS = "status"
+    const val CONFIRMATIONS = "confirmations"
     const val DEMO = "demo"
     const val SCENARIO3 = "scenario3"
     const val NOTIFICATION = "notification"

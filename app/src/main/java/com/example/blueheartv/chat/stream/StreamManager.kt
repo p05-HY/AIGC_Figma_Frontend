@@ -253,6 +253,7 @@ private fun ChatStreamEvent.streamSeqOrNull(): Long? = when (this) {
     is ChatStreamEvent.Heartbeat -> streamSeq
     is ChatStreamEvent.TaskComplexity -> streamSeq
     is ChatStreamEvent.TaskProgress -> streamSeq
+    is ChatStreamEvent.NeedsConfirmation -> streamSeq
     is ChatStreamEvent.StreamEof -> streamSeq
     is ChatStreamEvent.Error -> streamSeq
     else -> null
@@ -272,6 +273,7 @@ private fun ChatStreamEvent.debugName(): String = when (this) {
     is ChatStreamEvent.Heartbeat -> "stream.heartbeat"
     is ChatStreamEvent.TaskComplexity -> "task_complexity"
     is ChatStreamEvent.TaskProgress -> "task_progress"
+    is ChatStreamEvent.NeedsConfirmation -> "needs_confirmation"
     ChatStreamEvent.Completed -> "completed"
     is ChatStreamEvent.StreamEof -> "stream.eof"
     is ChatStreamEvent.Error -> "stream.error"

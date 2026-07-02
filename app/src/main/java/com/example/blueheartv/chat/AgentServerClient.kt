@@ -285,6 +285,15 @@ class AgentServerClient(
         )
     }
 
+    fun confirmConfirmation(confirmationId: String): List<ChatStreamEvent> =
+        postConfirmationAction(confirmationId, ApiPaths.CONFIRM)
+
+    fun rejectConfirmation(confirmationId: String): List<ChatStreamEvent> =
+        postConfirmationAction(confirmationId, ApiPaths.REJECT)
+
+    fun takeOverConfirmation(confirmationId: String): List<ChatStreamEvent> =
+        postConfirmationAction(confirmationId, ApiPaths.TAKE_OVER)
+
     fun confirmScenario3Demo(confirmationId: String): List<ChatStreamEvent> =
         postScenario3DemoAction(ApiPaths.CONFIRM, confirmationId)
 
@@ -293,6 +302,14 @@ class AgentServerClient(
 
     fun takeOverScenario3Demo(confirmationId: String): List<ChatStreamEvent> =
         postScenario3DemoAction(ApiPaths.TAKE_OVER, confirmationId)
+
+    private fun postConfirmationAction(confirmationId: String, action: String): List<ChatStreamEvent> {
+        val payload = postJson(
+            url(ApiPaths.MOBILE, ApiPaths.CONFIRMATIONS, confirmationId, action),
+            JSONObject().put("confirmationId", confirmationId),
+        )
+        return payload.safeTaskProgressEvents()
+    }
 
     private fun postScenario3DemoAction(action: String, confirmationId: String): List<ChatStreamEvent> {
         val payload = postJson(
@@ -307,6 +324,7 @@ class AgentServerClient(
             "assistant.delta",
             "trace.v1",
             "task_progress",
+            "needs_confirmation",
             "task_complexity",
             "stream.started",
             "stream.heartbeat",
