@@ -541,6 +541,7 @@ class ChatViewModel(
             )
 
             repo.appendPromptMessages(userMessage, assistantPlaceholder, titleHint = prompt)
+            clearTaskProgressForNewPrompt()
 
             AppEventLogger.info(
                 "chat_send",
@@ -1332,6 +1333,15 @@ class ChatViewModel(
         if (current == null || current.isTerminal || current.status == "waiting_confirmation") {
             return 0L
         }
+        if (
+            current.status == "running" &&
+            current.phase == "phone_tool" &&
+            event.phase == "phone_tool" &&
+            event.status in setOf("completed", "failed", "cancelled", "taken_over")
+        ) {
+            val elapsed = (repo.now() - taskProgressVisibleSinceMillis).coerceAtLeast(0L)
+            return (TASK_PROGRESS_MIN_FIRST_STEP_VISIBLE_MS - elapsed).coerceAtLeast(0L)
+        }
         val currentStep = current.currentStep ?: return 0L
         val incomingStep = event.currentStep ?: currentStep
         if (currentStep != 1 || incomingStep == currentStep) {
@@ -1347,7 +1357,11 @@ class ChatViewModel(
     ) {
         _uiState.update { state ->
             val next = TaskProgressReducer.reduce(state.taskProgress, event)
-            if (state.taskProgress?.currentStep != next.currentStep) {
+            if (
+                state.taskProgress?.currentStep != next.currentStep ||
+                state.taskProgress?.status != next.status ||
+                state.taskProgress?.taskTitle != next.taskTitle
+            ) {
                 taskProgressVisibleSinceMillis = repo.now()
             }
             state.copy(
@@ -1356,6 +1370,15 @@ class ChatViewModel(
                 taskProgress = next,
                 lastError = null,
             )
+        }
+    }
+
+    private fun clearTaskProgressForNewPrompt() {
+        pendingTaskProgressJob?.cancel()
+        pendingTaskProgressJob = null
+        taskProgressVisibleSinceMillis = 0L
+        _uiState.update {
+            it.copy(taskProgress = null)
         }
     }
 

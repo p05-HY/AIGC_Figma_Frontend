@@ -348,6 +348,57 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun sendMessage_clearsPreviousTaskProgressBeforeNewTaskProgressArrives() = runTest {
+        var streamCount = 0
+        val provider = ScriptedProvider { _, _, onEvent ->
+            streamCount += 1
+            if (streamCount == 1) {
+                onEvent(
+                    ChatStreamEvent.TaskProgress(
+                        label = "会议通知",
+                        taskTitle = "为会议通知创建提醒",
+                        status = "waiting_confirmation",
+                        phase = "confirmation",
+                        stepTitle = "等待确认是否创建会议提醒",
+                        message = "检测到会议通知，是否创建提醒？",
+                        toolName = "needs_confirmation",
+                        progressKey = "scenario3-demo",
+                        currentStep = 2,
+                        totalSteps = 3,
+                        requiresConfirmation = true,
+                        confirmationId = "confirm-123",
+                        canCancel = true,
+                        canTakeOver = true,
+                    ),
+                )
+                onEvent(ChatStreamEvent.Completed)
+            } else {
+                awaitCancellation()
+            }
+        }
+        val viewModel = createViewModel(
+            chatProvider = provider,
+            timeProvider = { 1_000L + testScheduler.currentTime },
+        )
+        advanceUntilIdle()
+
+        viewModel.onInputChanged("模拟收到一条会议通知")
+        viewModel.sendMessage()
+        advanceUntilIdle()
+        assertEquals("为会议通知创建提醒", viewModel.uiState.value.taskProgress?.taskTitle)
+
+        advanceTimeBy(500)
+        viewModel.onInputChanged("请直接打开微信")
+        viewModel.sendMessage()
+        runCurrent()
+
+        assertNull(viewModel.uiState.value.taskProgress)
+
+        viewModel.cancelActiveRun()
+        advanceUntilIdle()
+    }
+
+    @Test
     fun taskProgress_keepsFirstScenarioStepVisibleBeforeShowingWaitingConfirmation() = runTest {
         val provider = ScriptedProvider { _, _, onEvent ->
             onEvent(
@@ -409,6 +460,64 @@ class ChatViewModelTest {
 
         assertEquals(2, viewModel.uiState.value.taskProgress?.currentStep)
         assertEquals("waiting_confirmation", viewModel.uiState.value.taskProgress?.status)
+
+        viewModel.cancelActiveRun()
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun taskProgress_keepsPhoneToolRunningVisibleBeforeFastCompletedEvent() = runTest {
+        val provider = ScriptedProvider { _, _, onEvent ->
+            onEvent(
+                ChatStreamEvent.TaskProgress(
+                    label = "launch",
+                    status = "running",
+                    phase = "phone_tool",
+                    message = "Running phone tool: launch",
+                    toolName = "launch",
+                    canCancel = true,
+                    canTakeOver = true,
+                ),
+            )
+            onEvent(
+                ChatStreamEvent.TaskProgress(
+                    label = "launch",
+                    status = "completed",
+                    phase = "phone_tool",
+                    message = "Completed phone tool: launch",
+                    toolName = "launch",
+                    canCancel = false,
+                    canTakeOver = false,
+                ),
+            )
+            awaitCancellation()
+        }
+        val viewModel = createViewModel(
+            chatProvider = provider,
+            timeProvider = { 1_000L + testScheduler.currentTime },
+        )
+        advanceUntilIdle()
+
+        viewModel.onInputChanged("请直接打开微信")
+        viewModel.sendMessage()
+        runCurrent()
+
+        assertEquals("running", viewModel.uiState.value.taskProgress?.status)
+        assertEquals("打开手机应用", viewModel.uiState.value.taskProgress?.taskTitle)
+        assertTrue(viewModel.uiState.value.taskProgress?.canCancel == true)
+        assertTrue(viewModel.uiState.value.taskProgress?.canTakeOver == true)
+
+        advanceTimeBy(999)
+        runCurrent()
+
+        assertEquals("running", viewModel.uiState.value.taskProgress?.status)
+
+        advanceTimeBy(1)
+        runCurrent()
+
+        assertEquals("completed", viewModel.uiState.value.taskProgress?.status)
+        assertFalse(viewModel.uiState.value.taskProgress?.canCancel == true)
+        assertFalse(viewModel.uiState.value.taskProgress?.canTakeOver == true)
 
         viewModel.cancelActiveRun()
         advanceUntilIdle()
